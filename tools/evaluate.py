@@ -45,7 +45,7 @@ def load(weights: Path):
     return YOLO(str(weights))
 
 
-def evaluate(weights: Path, data: Path, split: str, imgsz: int, out: Path) -> dict:
+def evaluate(weights: Path, data: Path, split: str, imgsz: int, out: Path, device=None) -> dict:
     model = load(weights)
     print(f"Evaluating {weights} on {data} [{split}] at imgsz={imgsz}\n")
 
@@ -53,6 +53,7 @@ def evaluate(weights: Path, data: Path, split: str, imgsz: int, out: Path) -> di
         data=str(data),
         split=split,
         imgsz=imgsz,
+        device=device,
         plots=True,          # writes the confusion matrix and PR curves
         project=str(out.parent),
         name=out.name,
@@ -165,6 +166,10 @@ def main() -> int:
     parser.add_argument("--split", default="test", choices=["train", "val", "valid", "test"])
     parser.add_argument("--imgsz", type=int, default=960)
     parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--device", default=None,
+                        help="'cpu' or a CUDA index. ONNX models need cpu unless "
+                             "onnxruntime-gpu matches the installed CUDA - Kaggle's does not, "
+                             "and the mismatch surfaces as an IO-binding error, not a clear one.")
     parser.add_argument("--predict", type=Path, help="directory of unlabelled images")
     parser.add_argument("--out", type=Path, default=Path("runs/evaluate"))
     args = parser.parse_args()
@@ -175,7 +180,7 @@ def main() -> int:
         raise SystemExit("give --data (metrics) or --predict (visual check), or both")
 
     if args.data:
-        evaluate(args.weights, args.data, args.split, args.imgsz, args.out)
+        evaluate(args.weights, args.data, args.split, args.imgsz, args.out, args.device)
     if args.predict:
         if args.data:
             print()
