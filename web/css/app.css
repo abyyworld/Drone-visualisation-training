@@ -75,6 +75,11 @@ body {
 .masthead__sub { margin: 2px 0 0; color: var(--text-dim); font-size: 13.5px; }
 .masthead__badges { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Only meaningful on paper: a report with no date is not a record. Hidden on screen,
+   where the results are obviously "now". */
+.masthead__stamp { display: none; }
+@media print { .masthead__stamp { display: block; margin: 6px 0 0; font-size: 11px; color: var(--text-dim); } }
+
 .pill {
   font-size: 12px; padding: 5px 11px; border-radius: 999px;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
