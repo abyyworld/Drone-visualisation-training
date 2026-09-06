@@ -50,6 +50,8 @@ from training.common.labels import iter_split, source_name, split_family_id  # n
 # v1 class ids -> v2. `healthy` (2) is deliberately absent: those images become backgrounds.
 CLASS_REMAP = {0: 0, 1: 1, 3: 2}
 V2_NAMES = ["corrosion", "crack", "surface_peeling"]
+# v1 class 2. Not referenced directly any more — an image is a negative when it has no
+# boxes left after CLASS_REMAP, which covers both `healthy`-only and unannotated images.
 HEALTHY_CLASS = 2
 
 # Contiguous blocks per family, so neighbouring frames land in the same split.
@@ -138,9 +140,14 @@ def main() -> int:
                 "family": family or "<numeric>",
                 "id": capture_id,
                 "boxes": [b for b in boxes if b.cls in CLASS_REMAP],
-                "is_healthy": any(b.cls == HEALTHY_CLASS for b in boxes),
             }
-            (healthy if record["is_healthy"] else defects).append(record)
+            # A negative is anything with no defect to learn from: an image labelled only
+            # `healthy`, OR one the v1 export left with no annotations at all (109 of those).
+            # Testing `any(cls == HEALTHY)` alone silently sorted the empty ones into the
+            # defect pool, where they carried no boxes, went uncounted as backgrounds, and
+            # inflated the denominator of the negative-ratio budget.
+            is_negative = not record["boxes"]
+            (healthy if is_negative else defects).append(record)
 
     if not defects:
         raise SystemExit(f"no defect-class annotations found under {src}")
@@ -272,7 +279,8 @@ def main() -> int:
 
         stats[split] = {
             "images": len(records),
-            "backgrounds": negatives_added.get(split, 0),
+            # Counted from what was written, not from what was intended.
+            "backgrounds": sum(1 for r in records if not r["boxes"]),
             "boxes": sum(counts.values()),
             "per_class": {V2_NAMES[c]: counts.get(c, 0) for c in range(len(V2_NAMES))},
         }
