@@ -40,14 +40,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from training.common.labels import iter_split, source_name, split_family_id  # noqa: E402
+from training.common.sharpness import SOFT, UNUSABLE, laplacian_variance  # noqa: E402
 
 SPLITS = ("train", "valid", "test")
-
-# Below this, an image is soft enough that a small defect may not be localisable. It is a
-# flag for inspection, not a delete threshold — see --help-blur.
-SOFT = 100
-# Below this the image is a smear. A bounding box on it cannot mean much.
-UNUSABLE = 20
 
 BLUR_ADVICE = """
 SHOULD YOU DELETE BLURRY IMAGES?
@@ -87,7 +82,6 @@ WHAT TO DO INSTEAD
 def measure(path: Path):
     """Sharpness, brightness, contrast and size for one image."""
     import numpy as np
-    from numpy.lib.stride_tricks import sliding_window_view
     from PIL import Image
 
     with Image.open(path) as handle:
@@ -95,13 +89,10 @@ def measure(path: Path):
         width, height = grey.size
         array = np.asarray(grey, dtype=np.float32)
 
-    # 4-neighbour Laplacian; its variance is the classic focus measure.
-    kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
-    windows = sliding_window_view(array, (3, 3))
-    laplacian = (windows * kernel).sum(axis=(-1, -2))
-
     return {
-        "sharpness": float(laplacian.var()),
+        # Shared with tools/rebuild_turbine.py, so the number reported here is exactly the
+        # number --min-sharpness filters on.
+        "sharpness": laplacian_variance(path),
         "brightness": float(array.mean()),
         "contrast": float(array.std()),
         "width": width,
