@@ -232,8 +232,14 @@ def main() -> int:
                 unique.setdefault(record["source"], record)
             pool = list(unique.values())
 
+        # A dedicated RNG per split. Sharing the global one meant a change to the TRAIN
+        # pool size consumed a different amount of RNG state and silently reshuffled which
+        # negatives landed in valid/test — quietly invalidating any A/B against an earlier
+        # build. Seeded by split name so each split is reproducible on its own.
+        rng = random.Random(f"{args.seed}:{split}")
         budget = int(len(chosen[split]) * args.negative_ratio)
-        random.shuffle(pool)
+        pool = sorted(pool, key=lambda r: r["image"].name)   # stable order before shuffling
+        rng.shuffle(pool)
         picked = pool[:budget]
         chosen[split].extend(picked)
         negatives_added[split] = len(picked)
