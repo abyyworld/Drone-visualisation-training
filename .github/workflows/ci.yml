@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  web:
+    name: Web app end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet onnx numpy Pillow onnxruntime
+          npm install --no-audit --no-fund onnxruntime-web@1.23.0
+          npm install --no-audit --no-fund --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Build ONNX fixtures
+        run: python3 tests/make_fixtures.py
+
+      - name: Run browser tests
+        run: node tests/test_web.mjs
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-app-screenshot
+          path: docs/web-app.png
+          if-no-files-found: ignore
+
+  dataset:
+    name: Dataset audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Rebuild the turbine dataset
+        run: python3 tools/rebuild_turbine.py
+
+      # The rebuild exists to make these checks pass. If a change to the split logic or the
+      # class mapping reintroduces leakage or a source-family shortcut, this fails.
+      - name: Audit the rebuilt dataset
+        run: python3 tools/audit_dataset.py datasets/turbine_v2
+
+      - name: Confirm the audit still flags the original export
+        # Guards against the audit silently degrading into something that passes everything.
+        run: |
+          if python3 tools/audit_dataset.py . > /dev/null 2>&1; then
+            echo "::error::The audit passed the v1 export. It is meant to fail it."
+            exit 1
+          fi
+          echo "v1 still correctly reported as defective."
