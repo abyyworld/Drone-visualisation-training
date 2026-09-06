@@ -427,9 +427,15 @@ class Pipeline:
             A :class:`~station.core.types.PipelineStatus`. It describes the
             pipeline -- rates, drops, uptime, whether an inference has landed
             recently -- and contains no statement about the scene.
+
+        The state is recomputed here rather than read from the last heartbeat.
+        ``/healthz`` and the heartbeat must never disagree, and a cached state
+        would let a pipeline that stalled half a second ago still answer
+        "running" to whoever asked first -- reporting liveness the station no
+        longer has is precisely the failure this field exists to catch.
         """
-        with self._lock:
-            state, note = self._state, self._note
+        state, note = self._evaluate_state()
+        self._set_state(state, note)
         m = self._metrics
         source = self._source
         source_fps = None
@@ -536,7 +542,16 @@ class Pipeline:
             return
         self._stopping = True
         self._stop.set()
-        self._set_state(PipelineState.STOPPED, self._note)
+        # Replace whatever note was current: "stopped, source reconnecting" is
+        # a contradiction, and the operator needs to know why it stopped rather
+        # than what it was worrying about a second earlier.
+        if self._fatal is not None:
+            reason: str | None = f"stopped on an error: {self._fatal}"
+        elif self._source_exhausted:
+            reason = "source finished"
+        else:
+            reason = None
+        self._set_state(PipelineState.STOPPED, reason)
         self._metrics.stopped_monotonic = time.monotonic()
 
         if self._status_task is not None:
@@ -603,10 +618,13 @@ class Pipeline:
                 down cleanly. A pipeline that dies on a model fault must still
                 close its incident log.
         """
-        await self.start()
         try:
+            await self.start()
             await self.wait()
         finally:
+            # Also on a failed start: by then the incident log may already be
+            # open, and an unclosed log leaves a directory with no final
+            # metadata for a run that never happened.
             await self.stop()
         if self._fatal is not None:
             raise self._fatal
@@ -644,7 +662,7 @@ class Pipeline:
                 # Any decode-level failure is treated as a disconnect. The
                 # ingest layer already retries what it can retry; anything
                 # reaching here means the source object itself is finished.
-                self._note_source_trouble(f"source error: {exc}")
+                self._note_trouble(f"source error: {exc}")
                 log.warning("source read failed (%s); reopening", exc, exc_info=True)
                 self._close_source()
                 if self._stop.wait(backoff):
@@ -747,7 +765,7 @@ class Pipeline:
             self._configure_recorder_fps(info)
             return True
         except Exception as exc:
-            self._note_source_trouble(f"source unavailable: {exc}")
+            self._note_trouble(f"source unavailable: {exc}")
             log.warning("cannot open source %r: %s", self.cfg.source.uri or self.cfg.source.type, exc)
             return False
 
@@ -790,7 +808,7 @@ class Pipeline:
             return True
 
         self._metrics.source_restarts += 1
-        self._note_source_trouble("source ended; reopening")
+        self._note_trouble("source ended; reopening")
         log.warning(
             "source ended (restart %d); reopening in %.1fs",
             self._metrics.source_restarts, self.cfg.source.reconnect_s,
@@ -913,6 +931,17 @@ class Pipeline:
         m.last_inference_wall_time = result.wall_time or utc_now_iso()
         self._inference_rate.tick(now)
 
+        # Transport first, disk second. Publishing is a cheap hand-off to the
+        # event loop; the incident log fsyncs every frame by default, and a
+        # slow disk must not sit between the model finishing and the tablet
+        # getting the box. The log still records the frame a moment later, and
+        # nothing downstream can tell the difference.
+        if self.streamer is not None:
+            try:
+                self.streamer.publish_detections(result)
+            except Exception:
+                log.debug("streamer refused a detections payload", exc_info=True)
+
         writer = self._incident_log
         if writer is not None:
             try:
@@ -922,12 +951,6 @@ class Pipeline:
                 writer.write(result)
             except Exception:
                 log.debug("incident log write raised", exc_info=True)
-
-        if self.streamer is not None:
-            try:
-                self.streamer.publish_detections(result)
-            except Exception:
-                log.debug("streamer refused a detections payload", exc_info=True)
 
         self._dispatch(self._detection_sinks, result)
 
@@ -939,9 +962,8 @@ class Pipeline:
         last_state: str | None = None
         try:
             while not self._stop.is_set():
-                state, note = self._evaluate_state()
-                self._set_state(state, note)
-                status = self.status()
+                status = self.status()  # recomputes and caches the state
+                state, note = status.state, status.note
 
                 if self.streamer is not None:
                     try:
@@ -1109,9 +1131,6 @@ class Pipeline:
     def _note_trouble(self, note: str) -> None:
         with self._lock:
             self._note = note
-
-    def _note_source_trouble(self, note: str) -> None:
-        self._note_trouble(note)
 
     def _note_source_recovered(self) -> None:
         with self._lock:

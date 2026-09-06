@@ -538,9 +538,12 @@ export class OverlaySync {
   _selectTier1(presented) {
     if (presented === null || !this._rtpSamples.length) return null;
     const newest = this._rtpSamples[this._rtpSamples.length - 1];
-    // rVFC stops firing when the tab is hidden or the decoder stalls. A
-    // mapping built from frames that are seconds old would place boxes with
-    // total confidence and total inaccuracy, so it is refused instead.
+    // rVFC stops firing when the tab is hidden or the decoder stalls. The
+    // mapping's slope is exactly 1 so it does not drift with age -- but its
+    // *intercept* only holds until the next RTP timestamp discontinuity, and
+    // frames this far back may already be on the wrong side of one. Refusing
+    // it drops the overlay to tier 2, which is labelled; trusting it would
+    // misplace every box while looking exact.
     if (Math.abs(presented - newest.mediaTime) > this.maxRtpMapAgeS) return null;
 
     const candidates = [];

@@ -258,3 +258,12 @@ body {
   .chip { min-height: 48px; }
   .disclaimer { font-size: 12px; }
 }
+
+/* Immersive fallback for browsers with no element fullscreen (iOS Safari).
+   The picture and the overlay grow; the disclaimer and the chips stay, because
+   an operator must never be looking at boxes without the state of the thing
+   that drew them. */
+body.immersive .chip__note,
+body.immersive .details { display: none; }
+body.immersive .chip { min-height: 44px; }
+body.immersive .topbar { padding: 4px 12px; }
