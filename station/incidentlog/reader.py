@@ -353,11 +353,18 @@ class IncidentSummary:
             lines.append("  video            : none recorded -- detections cannot be checked against frames")
 
         if not self.read.clean:
-            lines.append(
-                f"  READ WARNINGS    : {self.read.corrupt} unreadable record(s)"
-                + (", truncated final line" if self.read.truncated_tail else "")
-                + " -- this log has holes and any audit over it is incomplete"
-            )
+            problems: list[str] = []
+            if self.read.corrupt:
+                problems.append(
+                    f"{self.read.corrupt} unreadable record(s) mid-file -- those frames are lost "
+                    "and any audit over this log is incomplete"
+                )
+            if self.read.truncated_tail:
+                problems.append(
+                    "the final record is truncated, the normal signature of a station stopped "
+                    "mid-write; everything before it is intact"
+                )
+            lines.append("  read warnings    : " + "; ".join(problems))
         lines.append("")
         lines.append(EMPTY_RESULT_CAVEAT)
         return "\n".join(lines)
@@ -1173,11 +1180,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                     break
             if not args.json and not args.summary:
                 stats = reader.last_read
+                limited = args.limit is not None and printed >= args.limit
                 # Always state the denominator. "12 frames had detections" on
                 # its own invites the reader to supply their own meaning for
-                # the other 9,000.
+                # the other 9,000 -- and if --limit cut the scan short, say so
+                # rather than letting a partial read look like the whole log.
+                scope = (
+                    f"stopped at --limit after reading {stats.frames} record(s)"
+                    if limited
+                    else f"out of {stats.frames} frame(s) in the log"
+                )
                 print(
-                    f"\n{printed} record(s) printed from {stats.frames} frame(s) in the log."
+                    f"\n{printed} record(s) printed, {scope}."
                     + (f" {stats.corrupt} damaged record(s)." if stats.corrupt else "")
                 )
                 print(EMPTY_RESULT_CAVEAT)

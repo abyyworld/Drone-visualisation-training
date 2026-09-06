@@ -501,6 +501,13 @@ class IncidentLogWriter:
             ``True`` if the record reached the file, ``False`` if logging is
             off or the write failed. Never raises: a logging fault must not
             propagate into the frame loop and take the video down.
+
+        Note:
+            The record is stored byte-for-byte as it goes on the data channel,
+            because the log's job is to be a faithful copy of what the tablets
+            were told. That includes ``source_id``: unlike ``meta.json``, it is
+            **not** redacted here, so whatever sets it should pass a URI with
+            no credentials in it (see :func:`redact_uri`).
         """
         if not self.enabled or self._closed:
             return False

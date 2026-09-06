@@ -41,47 +41,83 @@ Example:
 
 from __future__ import annotations
 
-from station.incidentlog.reader import (
-    ClassSummary,
-    IncidentLogError,
-    IncidentLogReader,
-    IncidentSummary,
-    ReadStats,
-    VideoPosition,
-    format_frame,
-)
-from station.incidentlog.recorder import Segment, VideoRecorder
-from station.incidentlog.writer import (
-    DETECTIONS_FILENAME,
-    EVENTS_FILENAME,
-    META_FILENAME,
-    VIDEO_SUBDIR,
-    EMPTY_RESULT_NOTE,
-    IncidentCounters,
-    IncidentLogWriter,
-    new_incident_id,
-    redact_uri,
-    slugify,
-)
+from typing import TYPE_CHECKING, Any
 
-__all__ = [
-    "IncidentLogWriter",
-    "IncidentCounters",
-    "VideoRecorder",
-    "Segment",
-    "IncidentLogReader",
-    "IncidentSummary",
-    "ClassSummary",
-    "ReadStats",
-    "VideoPosition",
-    "IncidentLogError",
-    "format_frame",
-    "new_incident_id",
-    "slugify",
-    "redact_uri",
-    "DETECTIONS_FILENAME",
-    "EVENTS_FILENAME",
-    "META_FILENAME",
-    "VIDEO_SUBDIR",
-    "EMPTY_RESULT_NOTE",
-]
+if TYPE_CHECKING:  # pragma: no cover - static tools see the real names
+    from station.incidentlog.reader import (
+        ClassSummary,
+        IncidentLogError,
+        IncidentLogReader,
+        IncidentSummary,
+        ReadStats,
+        VideoPosition,
+        format_frame,
+    )
+    from station.incidentlog.recorder import Segment, VideoRecorder
+    from station.incidentlog.writer import (
+        DETECTIONS_FILENAME,
+        EMPTY_RESULT_NOTE,
+        EVENTS_FILENAME,
+        META_FILENAME,
+        VIDEO_SUBDIR,
+        IncidentCounters,
+        IncidentLogWriter,
+        new_incident_id,
+        redact_uri,
+        slugify,
+    )
+
+#: Which submodule each exported name lives in. Resolved on first access
+#: rather than at import: eagerly importing ``reader`` here would make
+#: ``python -m station.incidentlog.reader`` -- the documented after-action
+#: command -- emit a runpy double-import warning on every run, and an operator
+#: tool that warns about its own plumbing trains people to ignore warnings.
+_EXPORTS: dict[str, str] = {
+    "IncidentLogWriter": "writer",
+    "IncidentCounters": "writer",
+    "new_incident_id": "writer",
+    "slugify": "writer",
+    "redact_uri": "writer",
+    "DETECTIONS_FILENAME": "writer",
+    "EVENTS_FILENAME": "writer",
+    "META_FILENAME": "writer",
+    "VIDEO_SUBDIR": "writer",
+    "EMPTY_RESULT_NOTE": "writer",
+    "VideoRecorder": "recorder",
+    "Segment": "recorder",
+    "IncidentLogReader": "reader",
+    "IncidentSummary": "reader",
+    "ClassSummary": "reader",
+    "ReadStats": "reader",
+    "VideoPosition": "reader",
+    "IncidentLogError": "reader",
+    "format_frame": "reader",
+}
+
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    """Import an exported name from its submodule on first access (PEP 562).
+
+    Args:
+        name: The attribute being looked up on this package.
+
+    Returns:
+        The requested class or constant.
+
+    Raises:
+        AttributeError: ``name`` is not part of this package's public API.
+    """
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    value = getattr(importlib.import_module(f"{__name__}.{module}"), name)
+    globals()[name] = value  # cached: subsequent lookups skip __getattr__
+    return value
+
+
+def __dir__() -> list[str]:
+    return list(__all__)
