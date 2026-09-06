@@ -42,8 +42,9 @@ error in where a crew is pointed.
 aiortc computes the on-the-wire timestamp as
 ``(timestamp_origin + convert_timebase(frame.pts, frame.time_base, 1/90000)) % 2**32``
 -- but ``timestamp_origin`` is a random 32-bit value held in a **local variable**
-inside ``RTCRtpSender._run_rtp``. There is no public API that returns it, and no
-public API that lets it be set. So :class:`RtpTimestampProbe` recovers it by
+inside ``RTCRtpSender._run_rtp`` (verified against aiortc 1.15.0). There is no
+public API that returns it, and none that lets it be set. So
+:class:`RtpTimestampProbe` recovers it by
 observing the first outgoing RTP packets of the sender's own SSRC, once, and
 then computing every subsequent ``rtp_ts`` arithmetically. If the probe cannot
 attach (aiortc internals moved, no video sender, packets never observed), the
@@ -473,9 +474,15 @@ class RtpTimestampProbe:
             return
         # RTP fixed header: V/P/X/CC | M/PT | seq(2) | timestamp(4) | ssrc(4).
         if len(data) < 12 or (data[0] >> 6) != 2:
-            return  # not RTP (RTCP, or a padding/probe packet)
+            return  # not an RTP/RTCP packet at all
+        # aiortc sends RTCP down this same call, and an RTCP sender report's
+        # bytes 8:12 are an NTP fragment that could in principle collide with
+        # our SSRC. RFC 5761's demultiplexing rule separates them: payload
+        # types 72..76 are RTCP, everything else is RTP.
+        if 72 <= (data[1] & 0x7F) <= 76:
+            return
         if int.from_bytes(data[8:12], "big") != self._ssrc:
-            return  # another sender, or the RTX stream
+            return  # another sender, or this sender's RTX stream
         pts_90k = self._pts_of_last_encoded()
         if pts_90k is None:
             return

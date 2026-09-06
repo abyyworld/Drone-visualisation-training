@@ -1,0 +1,147 @@
+###############################################################################
+# wildfire-watch -- MediaMTX configuration (the video-only fallback path)
+#
+# Written against MediaMTX v1.9.x - v1.11.x. MediaMTX rejects unknown keys and
+# exits immediately, so if it will not start, the first suspect is a key that
+# moved between versions -- run `mediamtx --version` and check its own
+# mediamtx.yml. station.stream.mediamtx.MediaMtx.start() captures that error and
+# reports it rather than leaving the tablets on a black screen.
+#
+# What this file is for: RTSP in from the drone's ground-station controller,
+# WebRTC out to the tablets, nothing else. It carries video only. There is no
+# detections data channel here and no rtp_ts, so a tablet playing this stream
+# runs the overlay at synchronisation tier 2 at best -- see the module docstring
+# in mediamtx.py and docs/CONTRACT.md before choosing this path.
+#
+# Launch:
+#   WILDFIRE_RTSP_SOURCE=rtsp://192.168.144.25:8554/main.264 mediamtx mediamtx.yml
+# or let the station do it:
+#   MediaMtx(source=cfg.source.uri).start()
+###############################################################################
+
+logLevel: info
+logDestinations: [stdout]
+
+# 10s is generous for a LAN and short enough that a dead radio link is noticed
+# rather than silently held open.
+readTimeout: 10s
+writeTimeout: 10s
+
+# Frames queued per reader before it is dropped. Deliberately modest: this is a
+# live incident feed, and a viewer that has fallen a second behind wants the
+# newest frame, not the backlog. A deep queue buys smoothness by spending the
+# latency budget the whole system exists to protect.
+writeQueueSize: 512
+
+###############################################################################
+# API -- loopback only.
+#
+# The API can create and delete paths at runtime and has no authentication in
+# this configuration. The incident WiFi has tablets on it, and possibly whoever
+# else is in range; this port must not be one of the things on it.
+###############################################################################
+api: yes
+apiAddress: 127.0.0.1:9997
+metrics: no
+pprof: no
+playback: no
+
+###############################################################################
+# Ingest
+###############################################################################
+rtsp: yes
+rtspAddress: :8554
+# TCP first. A drone downlink is lossy and a partially received H.264 slice over
+# UDP shows up as a smeared, plausible-looking frame -- which is the worst
+# possible artefact for a feed a human is scanning for smoke.
+rtspTransports: [tcp, udp]
+
+rtmp: no
+srt: no
+
+###############################################################################
+# HLS is off, and that is the point of using MediaMTX at all here.
+#
+# HLS is 6-30s behind live and LL-HLS is 2-5s. Either would be useless: a
+# firefighter acting on a 10-second-old aerial view of a moving fire is acting
+# on a view of where the fire was. WebRTC is the only transport in this box that
+# meets the sub-500ms glass-to-glass requirement.
+###############################################################################
+hls: no
+
+###############################################################################
+# WebRTC out (WHEP) -- what the tablets play.
+###############################################################################
+webrtc: yes
+webrtcAddress: :8889
+
+# TLS off here on purpose, with a trap attached: a PWA served over HTTPS cannot
+# fetch an http:// WHEP endpoint -- browsers block it as mixed content and the
+# operator just sees a video element that never starts. Pick one:
+#   (a) reverse-proxy /whep through station/serve, which already holds the
+#       station certificate (recommended -- one certificate, one origin, and
+#       iOS Safari is happiest that way); or
+#   (b) set webrtcEncryption: yes with the same cert/key as StreamConfig.
+webrtcEncryption: no
+# webrtcServerCert: certs/station.crt
+# webrtcServerKey: certs/station.key
+
+# Same-origin in deployment (a); '*' only while developing the PWA off a
+# separate dev server.
+webrtcAllowOrigin: '*'
+webrtcTrustedProxies: []
+
+# Pin the media port so the station's firewall rule is one line, not a range.
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ''
+
+# Advertise every local interface as an ICE candidate. On a fire ground the
+# station may be on ethernet, its own hotspot and the incident WiFi at once, and
+# the tablets may be on any of them.
+webrtcIPsFromInterfaces: yes
+webrtcIPsFromInterfacesList: []
+webrtcAdditionalHosts: []
+
+# NO STUN, NO TURN. This is not an oversight and it is not a placeholder.
+# MediaMTX's default is Google's public STUN server; on a LAN with no internet
+# that host does not resolve, and every tablet connection then pays a gathering
+# timeout before falling back to the host candidates that would have worked
+# immediately. Host candidates are sufficient when the station and the tablets
+# are on the same network, which is the deployment this system is for. Add
+# entries here only if the tablets are genuinely routed, and mirror the change
+# into StreamConfig.ice_servers so the aiortc path agrees.
+webrtcICEServers2: []
+
+###############################################################################
+# Paths
+###############################################################################
+pathDefaults:
+  source: publisher
+  # Recording is the station's job, not the relay's: the incident log has to
+  # pair video with the per-frame detections JSONL, and a second unsynchronised
+  # copy recorded here would be a second story about the same incident.
+  record: no
+
+paths:
+  # The drone feed. MediaMTX expands ${WILDFIRE_RTSP_SOURCE} itself; the
+  # station exports it in station.stream.mediamtx.MediaMtx.start().
+  drone:
+    source: ${WILDFIRE_RTSP_SOURCE}
+    # Stay connected even with no tablets watching. On-demand would mean the
+    # first viewer of an incident waits for an RTSP handshake and a keyframe,
+    # and it would hide a dead downlink until someone happened to look.
+    sourceOnDemand: no
+    # A drone downlink drops; MediaMTX redials a static source by itself, and
+    # readTimeout above is what stops it sitting on a half-open socket first.
+    rtspTransport: tcp
+
+  # Spare path for a second aircraft or a ground camera. Nothing publishes to
+  # it until something does, and an unused path costs nothing.
+  aux:
+    source: publisher
+
+  # Loopback path for bench work: publish a file into it with
+  #   ffmpeg -re -stream_loop -1 -i clip.mp4 -c copy -f rtsp rtsp://127.0.0.1:8554/station
+  # and the tablets see it exactly as they would see the drone.
+  station:
+    source: publisher

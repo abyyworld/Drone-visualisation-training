@@ -21,9 +21,9 @@ station's pure-logic modules have to import and test on a laptop with none of
 that installed, and ``import station.stream`` must not be what breaks that.
 
 Safety note that constrains every message emitted from here: this layer
-publishes detections when the model produced them and a liveness heartbeat
-always. It never emits a message meaning "the scene is clear" -- there is no
-such message in the wire contract, and there must never be one. An empty
+publishes detections when the model produced them, and a liveness heartbeat
+always. No message it can emit asserts an absence of fire -- there is no such
+message in the wire contract and there must never be one. An empty
 ``detections`` list is published faithfully and renders as nothing at all.
 """
 
