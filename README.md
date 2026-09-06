@@ -284,7 +284,11 @@ this repo.
 ## Known gaps
 
 - **No models are trained yet.** The notebooks are ready to run; `best.pt` is the v1 model and
-  should not be deployed.
+  should not be deployed. `web/models/` ships with only `manifest.json` for the same reason —
+  the first v2 export scored mAP50 0.194 (a run that early-stopped inside warmup), and a
+  detector that confidently boxes the wrong thing is worse than no detector. The app reports
+  each missing model as unavailable and stays usable. Drop the `.onnx` files in when a run is
+  worth deploying; `manifest.json` is already the deploy switch.
 - **Background negatives are out-of-domain.** They come from aerial wide shots, not the defect
   close-up domain, so they only partly teach false-positive suppression. In-domain healthy
   frames would be the stronger fix.
