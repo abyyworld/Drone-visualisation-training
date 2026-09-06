@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drone Inspection — Turbine &amp; Solar Defect Analysis</title>
+<meta name="description" content="Upload drone imagery of wind turbine blades or solar panels and get defect detection and severity scoring. Runs entirely in your browser — images are never uploaded.">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛩️</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead__inner">
+    <div>
+      <h1 class="masthead__title">Drone Inspection</h1>
+      <p class="masthead__sub">Wind turbine blade &amp; solar panel defect analysis</p>
+    </div>
+    <div class="masthead__badges">
+      <span class="pill pill--privacy" title="Inference runs locally via ONNX Runtime Web. No image is uploaded to any server.">
+        Runs in your browser
+      </span>
+      <span class="pill" title="Execution provider in use">Backend: <strong id="backend">…</strong></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div id="status-banner" class="banner hidden" role="status"></div>
+
+  <section class="panel">
+    <div id="drop" class="drop" tabindex="0" role="button"
+         aria-label="Upload inspection images. Click, or drag files here.">
+      <svg class="drop__icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 16V4m0 0L8 8m4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.75"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor"
+              stroke-width="1.75" stroke-linecap="round"/>
+      </svg>
+      <p class="drop__title">Drop inspection images here</p>
+      <p class="drop__hint">or click to browse — JPEG, PNG or WebP, up to 100 at once</p>
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
+    </div>
+
+    <div id="override-row" class="override hidden">
+      <label for="domain-override">Inspection type</label>
+      <select id="domain-override">
+        <option value="auto">Detect automatically</option>
+        <option value="turbine">Wind turbine blade</option>
+        <option value="solar">Solar panel</option>
+      </select>
+    </div>
+
+    <div id="progress" class="progress hidden">
+      <div class="progress__track"><div id="progress-bar" class="progress__bar"></div></div>
+      <p id="progress-label" class="progress__label"></p>
+    </div>
+  </section>
+
+  <section id="summary" class="summary hidden" aria-live="polite"></section>
+
+  <section class="toolbar">
+    <button id="export-json" class="button" disabled>Export JSON</button>
+    <button id="export-images" class="button" disabled>Download annotated images</button>
+    <button id="print-report" class="button" disabled>Print / save PDF report</button>
+    <button id="clear" class="button button--ghost" disabled>Clear</button>
+  </section>
+
+  <section id="empty-state" class="empty">
+    <h2>What this does</h2>
+    <p>
+      Every uploaded image is first checked by a domain classifier. Turbine blades and solar
+      panels are routed to the matching detector; anything else is refused rather than
+      guessed at. Detections are scored into a severity band and rolled up into an
+      inspection verdict you can export.
+    </p>
+    <div class="scope">
+      <article>
+        <h3>Wind turbine blades</h3>
+        <p>Detects <strong>corrosion</strong>, <strong>cracks</strong> and
+        <strong>surface peeling</strong>. There is no “healthy” class by design — an image
+        with no detections <em>is</em> the healthy result.</p>
+      </article>
+      <article>
+        <h3>Solar panels <span class="tag">RGB only</span></h3>
+        <p>Detects <strong>soiling</strong>, <strong>bird droppings</strong>,
+        <strong>cracks</strong>, <strong>discoloration</strong>, <strong>vegetation</strong>
+        and <strong>missing modules</strong>.</p>
+        <p class="caution">
+          Cannot detect hotspots, cell defects, bypass-diode failure or offline modules.
+          Those are electrical faults visible only in thermal infrared, and no visible-light
+          model can find them — including this one.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section id="results" class="results"></section>
+
+</main>
+
+<footer class="footer wrap">
+  <p>
+    Inference runs locally with ONNX Runtime Web. Images are processed on your device and are
+    never transmitted. Results are a screening aid, not a certified structural assessment —
+    confirm findings before acting on them.
+  </p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
