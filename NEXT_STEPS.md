@@ -53,13 +53,23 @@ clip — the clip is a fixture, and it looks like one.
 ### Showing it live on tablets and phones
 
 ```bash
+pip install aiortc aiohttp av numpy pyyaml # streaming dependencies
+python -m station check                    # what this laptop can actually do
 python -m station certs                    # self-signed cert for the LAN
-python -m station run --config config.yaml # serves the PWA over local WiFi
+python -m station -c config.yaml run       # serves the PWA over local WiFi
 ```
 
-Then open `https://<laptop-lan-ip>:8443` on the tablet. Expect a certificate warning and
-accept it — that is normal for a self-signed cert and is exactly the step that has not yet
-been tested on a real iPad.
+Add `--stub` to run with no model at all — that is how the whole path was verified here.
+
+Then open `https://<laptop-lan-ip>:8443` on the tablet. `station certs` prints the
+certificate fingerprint and the per-platform trust steps; compare the fingerprint with the
+one the tablet shows before trusting it. Expect a warning and accept it — that is normal for
+a self-signed cert, and it is the step that has **not** yet been tested on a real iPad.
+
+This path is verified working end to end on the build machine: a WebRTC client connected,
+received the video track, 8 status heartbeats, and 121 detection messages carrying
+`rtp_ts` — which means the exact frame-matching tier of the overlay sync is live, not just
+the fallback estimator.
 
 **Have the offline MP4 ready as a fallback.** If the certificate or the WiFi misbehaves in
 the room, you play the video and the demonstration still lands.

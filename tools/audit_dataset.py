@@ -56,7 +56,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 
@@ -970,6 +970,22 @@ def _check_wire_class_order(dataset: Dataset) -> CheckResult:
 
     declared = tuple(n.strip().lower() for n in dataset.names)
     expected = tuple(CLASSES)
+    if not declared:
+        # Distinct from a wrong order, and it needs a different message: there
+        # is nothing to compare, usually because the audit was pointed at a
+        # directory rather than a data.yaml.
+        return CheckResult(
+            "wire-class-order",
+            STATUS_WARN,
+            "the dataset declares no class names, so the class order is unverified",
+            [
+                f"The wire contract expects {list(expected)}, in that order.",
+                "Add 'names: [fire, smoke]' to data.yaml and re-run. Until then the class",
+                "indices in the label files mean whatever the person who wrote them intended,",
+                "and a swap between fire and smoke would be invisible everywhere downstream.",
+            ],
+            {"dataset": [], "wire": list(expected)},
+        )
     if declared == expected:
         return CheckResult(
             "wire-class-order",

@@ -1,0 +1,113 @@
+# Packaging for wildfire-watch.
+#
+# The dependency split here is a design constraint, not tidiness. The pure
+# logic of this system -- the wire contract, the config schema, the safety
+# invariants, the N-of-M temporal filter, the incident-log reader -- must
+# install, import and test on a machine with no GPU, no ffmpeg and no ML
+# stack. That is what makes it possible to run the whole test suite in CI on a
+# free runner, and to hand the repository to a student with a laptop.
+#
+# Everything heavy therefore lives in an optional extra, and every module that
+# needs one imports it *inside the function that uses it*. See docs/HARDWARE.md
+# for what each extra is actually for.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildfire-watch"
+version = "0.1.0"
+description = "Ground-station situational-awareness overlay for drone wildfire video"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["wildfire", "drone", "uav", "webrtc", "situational awareness"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Other Audience",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+# Core: config parsing and frame buffers. Both are pure-python-to-install on
+# every platform CI runs on, and nothing here needs a GPU or a codec.
+dependencies = [
+    "PyYAML>=6.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# The model runtime. Install the CUDA build of torch first, from pytorch.org,
+# and only then ultralytics -- pip will otherwise happily give you the CPU
+# wheel and the station will run inference at 2 fps without telling you why.
+inference = [
+    "ultralytics>=8.3.0",
+    "torch>=2.2",
+]
+
+# The transport: WebRTC to the tablets, HTTPS for the PWA, PyAV for decode and
+# for writing incident video, cryptography for the station's self-signed cert.
+stream = [
+    "aiortc>=1.9.0",
+    "aiohttp>=3.9",
+    "av>=12.0",
+    "cryptography>=41.0",
+]
+
+# Capture-card ingest (HDMI out of the controller) and the fallback decoder.
+cv = [
+    "opencv-python>=4.9",
+]
+
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+# Everything except the model runtime: enough to serve the PWA, stream video
+# and replay an incident on a laptop with no GPU.
+station = [
+    "wildfire-watch[stream,cv]",
+]
+
+[project.scripts]
+wildfire-watch = "station.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["station*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# --strict-markers and --strict-config turn a typo in a marker or an ini key
+# into a failure rather than a silently skipped test. In a repository whose
+# central claim is "the safety invariants are enforced by a test", a test that
+# quietly does not run is the worst available outcome.
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "slow: needs a large fixture or a long run; deselect with -m 'not slow'",
+    "needs_av: requires PyAV (the `stream` extra) to decode or encode video",
+    "needs_torch: requires the `inference` extra and, in practice, a GPU",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["data", "models", "incidents", "datasets", "runs"]
+
+[tool.ruff.lint]
+# E4 imports, E7 statements, E9 syntax/IO errors, F pyflakes, W whitespace.
+# E501 (line length) is deliberately not selected: docstrings in this
+# repository carry the reasoning behind safety decisions, and a hard wrap that
+# forces those to be abbreviated is a bad trade. `line-length` above still
+# governs the formatter.
+select = ["E4", "E7", "E9", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ files re-export the public surface of their submodules;
+# that is the point of them, and pyflakes cannot tell it from an oversight.
+"__init__.py" = ["F401"]
+# station/core/ is the frozen wire contract (docs/CONTRACT.md). It is not
+# edited to satisfy a linter -- a contract file churning for style reasons is
+# how the two sides of a protocol drift apart.
+"station/core/types.py" = ["F401"]

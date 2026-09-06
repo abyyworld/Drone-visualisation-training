@@ -1,0 +1,191 @@
+# wildfire-watch station configuration
+#
+#   cp config.example.yaml config.yaml   # then edit config.yaml
+#   python -m station check -c config.yaml
+#   python -m station run   -c config.yaml
+#
+# Every key below exists in station/core/config.py, and that file is the
+# authority: unknown keys are a hard error, not a warning. That is on purpose.
+# A typo in `max_overlay_age_s` on a laptop in a field, silently ignored,
+# means stale boxes drawn over live video -- the single most dangerous failure
+# this system has. Better to refuse to start.
+#
+# Everything here is optional; omitted keys take the defaults in config.py.
+# The values shown ARE the defaults unless a comment says otherwise.
+
+# Shown in the station banner and written into every incident log, so an
+# after-action review can tell which laptop produced which record.
+station_name: "wildfire-watch station"
+
+
+# ---------------------------------------------------------------- source
+# Where the video comes from. Start with `file`: the entire pipeline can be
+# built and regression-tested against a recorded clip with no drone, no radio
+# and no GPU in the room. Switch to `rtsp` only once that works.
+source:
+  # file | rtsp | rtmp | hdmi | synthetic
+  #   file       a recorded clip. The development and validation path.
+  #   rtsp       the controller's stream. See docs/HARDWARE.md for the URI.
+  #   rtmp       a push-based relay, if the controller cannot serve RTSP.
+  #   hdmi       a capture card on the controller's HDMI out. The fallback
+  #              that works when nothing else does; costs a re-encode.
+  #   synthetic  a generated clip with exact ground truth, for testing
+  #              geometry and timing without any file at all.
+  type: file
+  uri: "demo/assets/wildfire_demo.mp4"
+
+  # Seconds between reconnect attempts. A radio link over a ridge drops; the
+  # station must come back by itself rather than needing someone at the
+  # laptop. Ignored by the file source.
+  reconnect_s: 2.0
+
+  # Cap the frames handed downstream, before inference. `null` means take the
+  # source rate. Leave it null: inference.max_fps is the knob that matters,
+  # and decimating here as well only loses frames the incident log would
+  # otherwise have recorded.
+  target_fps: null
+
+  # Loop a file source forever. Development and demos only -- a looping
+  # source makes pts run backwards, which the overlay synchroniser handles
+  # but which makes an incident log nonsense.
+  loop: false
+
+
+# ------------------------------------------------------------- inference
+inference:
+  # Trained weights. Until training has happened this path does not exist and
+  # `python -m station run` will say so and stop. Use `run --stub` to exercise
+  # the transport and the overlay with no model at all.
+  weights: "models/yolo11s-fire.pt"
+
+  # Model input size. 640 is the trained default. Raising it to 960 or 1280
+  # is the single most effective change for small distant plumes -- and costs
+  # roughly quadratic time. Measure it (tools/evaluate.py) before choosing.
+  imgsz: 640
+
+  # Deliberately low. The asymmetry is the whole argument: a false positive
+  # costs an operator a two-second glance at video they are already watching;
+  # a false negative costs everything this system exists to prevent. The
+  # temporal filter below -- not this threshold -- is what suppresses the
+  # resulting flicker. Do not raise this to "clean up" the overlay.
+  conf_threshold: 0.25
+
+  # NMS IoU. Smoke plumes are large, diffuse and overlapping; a stricter
+  # value than this starts merging separate plumes into one box.
+  iou_nms: 0.45
+
+  # auto | cuda | cuda:0 | cpu | mps. `auto` picks CUDA when torch reports it.
+  # Set it explicitly on a machine with two GPUs.
+  device: auto
+
+  # FP16. Roughly halves inference time on any modern NVIDIA card with no
+  # measurable accuracy cost at this model size. Ignored on CPU.
+  half: true
+
+  # Inference frames per second, independent of the source rate. Fire spreads
+  # in tens of seconds, not tens of milliseconds, so 10 fps is usually ample
+  # and leaves GPU headroom for a second feed. The status message reports
+  # source_fps alongside inference_fps so the operator can see the sampling
+  # gap. See open question 4 in docs/OPEN_QUESTIONS.md before changing it --
+  # this number relaxes or tightens every constraint downstream of it.
+  max_fps: 10.0
+
+  # Recorded with every logged frame, so a log can be replayed against the
+  # model that produced it. Bump model_version on every retrain, even a small
+  # one. `weights_sha` is computed from the file and cannot be forgotten;
+  # this field can be, which is why both are logged.
+  model_name: "yolo11s-fire"
+  model_version: "0.0.0-untrained"
+
+
+# -------------------------------------------------------------- temporal
+# N-of-M persistence: require a detection in n of the last m inferred frames
+# before it is drawn. The cheapest large accuracy win in the system -- single
+# frame false positives are usually uncorrelated between frames, while real
+# fire persists. It costs latency: at 10 fps, 3-of-5 delays first display by
+# up to ~0.3 s, which against a fire's timescale is nothing.
+temporal:
+  n: 3
+  m: 5
+
+  # IoU above which a detection is treated as the same track as last frame.
+  # Low, because aerial video pans and a plume changes shape between frames;
+  # a strict value breaks tracks and resets the n-of-m count on real fire.
+  iou_match: 0.30
+
+  # Inferred frames a track survives unmatched before it is dropped. At 10 fps
+  # this is half a second of tolerance for a flame front the model loses and
+  # re-finds -- common with flicker, and not a reason to drop the track.
+  max_age: 5
+
+  # Emit tracks that have not yet reached n, flagged unconfirmed. Off by
+  # default: the point of the filter is to not show flicker. Turn it on when
+  # tuning n/m against footage, and read the `persisted` field in the log.
+  emit_unconfirmed: false
+
+
+# ---------------------------------------------------------------- stream
+stream:
+  # 0.0.0.0 so tablets on the incident WiFi can reach it. There is no internet
+  # on this network and there is not supposed to be; see docs/DEPLOYMENT.md.
+  bind: "0.0.0.0"
+  port: 8443
+
+  # Browsers gate WebRTC and service workers behind a secure context, so even
+  # a LAN-only station needs TLS. `python -m station certs` issues a
+  # self-signed certificate covering this machine's IP addresses -- iOS
+  # rejects one that does not name the address you typed.
+  cert: "certs/station.crt"
+  key: "certs/station.key"
+
+  # Empty, and that is correct. On a LAN with no internet, host ICE
+  # candidates connect directly; a STUN server that cannot be reached only
+  # adds a gathering timeout to every tablet that joins. Do not "fix" this by
+  # pasting in a public STUN server.
+  ice_servers: []
+
+  # THE STALENESS RULE. Media-seconds after which the tablet stops drawing
+  # boxes entirely and says the overlay is stale. Enforced on the tablet;
+  # configured here so there is one place to change it. Boxes computed from a
+  # scene that has already moved on, drawn over live video, look authoritative
+  # and point a crew at the wrong place. Dropping the overlay degrades the
+  # tool to plain video, which is a safe state -- the operator is watching
+  # the video anyway. Raise this only with evidence. See docs/CONTRACT.md.
+  max_overlay_age_s: 1.0
+
+  # Seconds of detection payloads the tablet buffers for pts matching. Must be
+  # >= max_overlay_age_s (load_config enforces it) or the tablet would discard
+  # payloads it is still allowed to draw. ~3 s absorbs data-channel jitter
+  # without letting a stalled pipeline replay a stale ring buffer.
+  overlay_buffer_s: 3.0
+
+  # Heartbeat cadence. A status message on a fixed interval, independent of
+  # detections, is what lets the tablet tell "the model found nothing" from
+  # "the station fell over" -- otherwise the same empty screen.
+  status_interval_s: 1.0
+
+  # No successful inference for this long and the pipeline reports `stalled`,
+  # at which point the tablet stops drawing.
+  stall_after_s: 3.0
+
+
+# ---------------------------------------------------------- incident log
+incident_log:
+  dir: "incidents"
+
+  # Every inferred frame is logged, including the ones with an empty result.
+  # A log that recorded only frames with detections would be a highlight reel
+  # of what the model happened to catch, and useless for the false-negative
+  # measurement in docs/VALIDATION.md -- which needs exactly the frames where
+  # something was there and the model returned nothing.
+  enabled: true
+
+  # Record the video alongside the detections. Without it the log cannot be
+  # reviewed by a human, and a human reviewing it is the only way false
+  # negatives are ever found. Needs the `stream` extra (PyAV).
+  record_video: true
+
+  # fsync cadence, in frames. 1 = never lose a frame to a crash or a yanked
+  # power cable. The write volume is a few KB per second, so this is cheap;
+  # the record is not.
+  flush_every: 1

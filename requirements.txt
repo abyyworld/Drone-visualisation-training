@@ -1,0 +1,22 @@
+# Core runtime only -- the pure-logic half of the station.
+#
+#   pip install -r requirements.txt
+#
+# This is enough to: parse the wire contract, load and validate a config, run
+# the N-of-M temporal filter, read an incident log, and run the whole test
+# suite. It is NOT enough to decode video, serve the PWA or run the model --
+# that is deliberate, and it is what lets CI run on a bare runner.
+#
+# The rest lives in extras, installed from pyproject.toml:
+#
+#   pip install -e '.[dev]'         tests + linter          (no GPU, no codecs)
+#   pip install -e '.[stream,cv]'   WebRTC, HTTPS, decode   (no GPU)
+#   pip install -e '.[inference]'   the model runtime       (install CUDA torch first)
+#
+# For the model runtime, install torch from pytorch.org with the CUDA index
+# URL *before* ultralytics. Installing ultralytics first pulls the CPU wheel
+# of torch as a dependency, and the station will then run at a few frames per
+# second with no error message to explain it. See docs/HARDWARE.md.
+
+PyYAML>=6.0
+numpy>=1.24
