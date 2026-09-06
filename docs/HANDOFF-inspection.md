@@ -41,6 +41,8 @@ capture-ID blocks, polygons normalised to boxes.
 - `tools/rebuild_turbine.py` — produces `datasets/turbine_v2` (gitignored, regenerable)
 - `tools/export_onnx.py` — opset 12, int8 quantise, rewrites the web manifest
 - `tools/evaluate.py` — per-class AP, confusion matrix, `--predict` for unlabelled images
+- `tools/image_quality.py` — per-class focus measurement; `--help-blur` for why not to filter
+- `tests/test_export_contract.py` — proves a real Ultralytics export matches the browser decoder
 - `web/` — complete browser app, inference via ONNX Runtime Web, domain gate, severity
   scoring, JSON/PNG/PDF export
 - `tests/` — **37 checks passing** in headless Chromium against ONNX fixtures with
@@ -58,6 +60,8 @@ must not be deployed.
 
 ## Next steps, in order
 
+0. **Rebuild with the sharpness floor**: `python3 tools/rebuild_turbine.py --min-sharpness 20`
+   — drops 388 images (15%) where the box sits on a smear. Recommended; see `--help-blur`.
 1. **Train the turbine model.** `training/turbine/turbine_v2_kaggle.ipynb`, ~2–3 h on a Kaggle
    P100. Upload this repo as a Kaggle Dataset and attach it first.
    > **Expect aggregate mAP50 to fall to ~0.45–0.60.** That is the model losing a score it was
@@ -70,7 +74,16 @@ must not be deployed.
    `invalid` class needs diverse negatives, including hard ones like metal structures and
    blue rectangles).
 5. **Export all three**, commit `web/models/`, and Pages deploys automatically.
-6. Optionally add the [Multiclass Wind Turbine Blade Defect dataset](https://pmc.ncbi.nlm.nih.gov/articles/PMC12996307/)
+6. **Before deploying any model**, run the export contract check — it catches an
+   ONNX/manifest mismatch in 30 seconds, versus finding it as subtly-wrong boxes on a live
+   site:
+   ```bash
+   python3 tests/test_export_contract.py --weights runs/turbine_v2/weights/best.pt \
+       --imgsz 960 --name turbine
+   ```
+   Verified already against a real export: output layout `(1, 7, 2100)` matches what
+   `detect.js` assumes, and confidences agree with `model.predict()` to 1.6e-05.
+7. Optionally add the [Multiclass Wind Turbine Blade Defect dataset](https://pmc.ncbi.nlm.nih.gov/articles/PMC12996307/)
    (1,065 real UAV images, 6 classes) — real drone imagery with defects and healthy blade in
    the same frame, which is exactly what the current data lacks. The PDF is already in the repo.
 

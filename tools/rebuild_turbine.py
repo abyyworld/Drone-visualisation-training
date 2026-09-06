@@ -100,6 +100,11 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("datasets/turbine_v2"))
     parser.add_argument("--copy", action="store_true", help="copy files instead of hardlinking")
     parser.add_argument("--negative-ratio", type=float, default=NEGATIVE_RATIO)
+    parser.add_argument(
+        "--min-sharpness", type=float, metavar="VAR",
+        help="drop ANNOTATED images below this Laplacian variance (see tools/image_quality.py "
+             "--help-blur before raising it above ~20). Requires numpy and Pillow.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -133,6 +138,44 @@ def main() -> int:
 
     if not defects:
         raise SystemExit(f"no defect-class annotations found under {src}")
+
+    # --- Optional sharpness floor ------------------------------------------------------
+    # Only ANNOTATED images are filtered. A blurry background is still a correct negative,
+    # and it teaches the model not to hallucinate defects on soft frames — which is exactly
+    # what real drone footage looks like. A blurry *annotated* image is different: if the
+    # defect is a smear, its box cannot teach localisation, only noise.
+    dropped_by_class: Counter = Counter()
+    if args.min_sharpness is not None:
+        try:
+            from training.common.sharpness import laplacian_variance
+        except ImportError as exc:  # pragma: no cover - dependency guard
+            raise SystemExit(f"--min-sharpness needs numpy and Pillow ({exc})")
+
+        kept = []
+        for record in defects:
+            if laplacian_variance(record["image"]) >= args.min_sharpness:
+                kept.append(record)
+            else:
+                for cls in {b.cls for b in record["boxes"]}:
+                    dropped_by_class[V2_NAMES[CLASS_REMAP[cls]]] += 1
+        removed = len(defects) - len(kept)
+        defects = kept
+
+        if not defects:
+            raise SystemExit(
+                f"--min-sharpness {args.min_sharpness} removed every annotated image. "
+                "That threshold is far too high — see tools/image_quality.py --help-blur."
+            )
+        share = removed / (removed + len(defects))
+        print(f"Sharpness floor {args.min_sharpness}: dropped {removed} annotated images "
+              f"({share:.1%})")
+        for name, count in dropped_by_class.most_common():
+            print(f"    {name:<20}{count:>6}")
+        if share > 0.35:
+            print("  ! That is a large share of your only defect data. Real drone footage is\n"
+                  "    blurry, so filtering to sharp frames makes training less like deployment.\n"
+                  "    Read tools/image_quality.py --help-blur before keeping this threshold.")
+        print()
 
     # --- Group-aware split, computed per family over capture IDs ----------------------
     # Every augmented copy of a source shares that source's id, so copies cannot straddle
@@ -240,6 +283,8 @@ def main() -> int:
         "classes": V2_NAMES,
         "dropped_class": "healthy (kept as background negatives)",
         "duplicates_removed": duplicates,
+        "min_sharpness": args.min_sharpness,
+        "dropped_by_sharpness": dict(dropped_by_class),
         "splits": stats,
     }
     (out / "build_summary.json").write_text(json.dumps(summary, indent=2))

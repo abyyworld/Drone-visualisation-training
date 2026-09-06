@@ -72,6 +72,41 @@ python3 tools/audit_dataset.py datasets/turbine_v2      # 7 of 7 pass
 > mAP50 will likely fall to roughly **0.45–0.60**. That is the model losing a score it was
 > cheating for. Judge it on **per-class defect AP** and on real photos, not the aggregate.
 
+### Image sharpness
+
+```bash
+python3 tools/image_quality.py .            # per-class focus breakdown
+python3 tools/image_quality.py --help-blur  # why not to bulk-delete blurry images
+```
+
+Measured with Laplacian variance. The defect images are markedly softer than the healthy ones:
+
+| Class | n | % soft (<100) | % unusable (<20) |
+|---|---|---|---|
+| `surface_peeling` | 533 | 65.7% | **17.1%** |
+| `corrosion` | 351 | 59.3% | **12.3%** |
+| `crack` | 1,333 | 57.5% | **14.0%** |
+| background (healthy) | 635 | 38.3% | 0.8% |
+
+Every defect class is roughly 15× more likely to be an unusable smear than a healthy image.
+
+**Do not bulk-delete blurry images.** Real drone footage is blurry, so filtering to sharp
+frames makes the training set *less* like deployment — the same class of error as the source
+shortcut. It would also remove most of the only images carrying defect labels, and Laplacian
+variance cannot tell "out of focus" from "smooth surface" anyway.
+
+Trim only the extreme tail, where a box sits on a smear and cannot teach localisation:
+
+```bash
+python3 tools/rebuild_turbine.py --min-sharpness 20    # drops 388 images (15%)
+```
+
+Recommended for the real training run. It stays opt-in so the choice is deliberate, and it is
+recorded in `build_summary.json`. Note the test split is blurrier than train (20.3% vs 10.2%
+unusable) — a side effect of block-splitting on capture ID, since conditions correlate with ID
+range. Shuffling would fix it and reintroduce leakage, so stratify evaluation by sharpness
+instead of trading away a leakage-free split.
+
 ---
 
 ## Training
