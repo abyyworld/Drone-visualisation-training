@@ -151,6 +151,10 @@ function wireEvents() {
   el['export-json'].addEventListener('click', exportJson);
   el['export-images'].addEventListener('click', exportImages);
   el['print-report'].addEventListener('click', () => window.print());
+
+  // Stamp the report as it goes to paper rather than at page load, so a tab left open
+  // overnight cannot print yesterday's date onto today's inspection.
+  window.addEventListener('beforeprint', stampReport);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -377,6 +381,24 @@ function renderSummary() {
     row.appendChild(tile);
   }
   el.summary.appendChild(row);
+}
+
+/** Date, image count and model versions, for the printed report only. */
+function stampReport() {
+  const stamp = document.getElementById('report-stamp');
+  if (!stamp) return;
+
+  const analysed = state.results.filter((r) => r.status === 'analysed').length;
+  const models = ['gate', 'turbine', 'solar']
+    .filter((k) => state.available[k])
+    .map((k) => `${k} ${state.manifest?.[k]?.file ?? '?'}`)
+    .join(', ');
+
+  stamp.textContent =
+    `Generated ${new Date().toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}`
+    + ` · ${analysed} of ${state.results.length} image${state.results.length === 1 ? '' : 's'} analysed`
+    + (models ? ` · models: ${models}` : '');
+  stamp.hidden = false;
 }
 
 function setProgress(percent, label) {
