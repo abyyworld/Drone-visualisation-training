@@ -1,0 +1,478 @@
+{
+  "scanned": 3090,
+  "distance_median": 0.062049269676208496,
+  "distance_p95": 0.13219723105430603,
+  "blank_frames": [
+    "train/images/1008_jpg.rf.6a23c963745c9be2569eb4dd047ce401.jpg",
+    "train/images/1063_jpg.rf.265e02da5a6a16308e5674793e7d42e6.jpg",
+    "train/images/171_jpg.rf.265141ab3f705cfe7fc3d45a398c45ba.jpg",
+    "train/images/279_jpg.rf.1b35f924344b50f7f30869e78f587f96.jpg",
+    "train/images/58_jpg.rf.30d792b9a7631aa5b80765cc2c193f26.jpg",
+    "train/images/614_jpg.rf.4a38ddb341d341c6db888c0d0b1220ea.jpg",
+    "train/images/620_jpg.rf.5757af1120871fa3102294c05d1e7ee4.jpg",
+    "train/images/645_jpg.rf.7d98a34a5576b7ee7a809f1bb909d7d1.jpg",
+    "train/images/725_jpg.rf.08470bbf22495479d14842a987a25631.jpg",
+    "train/images/751_jpg.rf.53ccb7092fcbbf83b36bb36e05d34f74.jpg",
+    "train/images/760_jpg.rf.3f948a4dd52619adab297b1e3adcf5a4.jpg",
+    "train/images/764_jpg.rf.04a239c424df7a4113d8a407101d143d.jpg",
+    "train/images/787_jpg.rf.05f4c7d1d16eab5ee2f3a6750c1cfd38.jpg",
+    "train/images/796_jpg.rf.1f64d1d91bde58c2d5f23e442c31f785.jpg",
+    "train/images/83_jpg.rf.37a4828920d76bc6f72af0f336ce20f3.jpg",
+    "train/images/845_jpg.rf.6bb8cb290693a08fd4f9a2710a41e51c.jpg",
+    "train/images/863_jpg.rf.584086fd6fd57cf9ebe4f1ac5ac7e204.jpg",
+    "train/images/864_jpg.rf.23198648cd9a077bcb9c609e9fa3d0ef.jpg",
+    "train/images/86_jpg.rf.388212bf042884340730dc3e79b49a40.jpg",
+    "train/images/911_jpg.rf.1949f581462e4cb017fee5e7b6a60437.jpg",
+    "train/images/940_jpg.rf.589555cd614207665f1316e76a716255.jpg",
+    "train/images/949_jpg.rf.0173eaf51ac04e4533784800706da26e.jpg",
+    "train/images/963_jpg.rf.03deaf08630526c2d5fd01068fa3ac4c.jpg",
+    "train/images/975_jpg.rf.5098e27543406e300ccc4504310bf8e1.jpg",
+    "train/images/976_jpg.rf.0bb3f7e8ebb263916510ac0af146d1ba.jpg",
+    "train/images/983_jpg.rf.1d4ed176514c9155e6412645e3d349b7.jpg",
+    "train/images/989_jpg.rf.85dd0746095b9464297c6481c3812ace.jpg",
+    "train/images/992_jpg.rf.33a637765e57f830f6e14860d0f4f21c.jpg",
+    "train/images/999_jpg.rf.15f191b63f603e4554158dcbf5c82d06.jpg",
+    "valid/images/1001_jpg.rf.a6f4d113f47258cdd8fefe11ba3809fa.jpg",
+    "valid/images/244_jpg.rf.84eb9ddf54dcef2ec275c8944965fafb.jpg",
+    "valid/images/256_jpg.rf.5fb56bd9a0d0ca01c6f80b05d4c8bb23.jpg",
+    "valid/images/424_jpg.rf.9bcce516b3cb3a195d28587c470eca98.jpg",
+    "valid/images/508_jpg.rf.c87a74cb9bbb22977d6b94b5d008ec94.jpg",
+    "valid/images/511_jpg.rf.f295e1b2fb96e47cb230dfed5e28dea0.jpg",
+    "valid/images/687_jpg.rf.dd14396c8fb0fea0b902844934dad774.jpg",
+    "valid/images/903_jpg.rf.0998a636e16c1bfb527e71561a81eac0.jpg",
+    "valid/images/914_jpg.rf.be226869c4124347a18a03c7b896ca4e.jpg",
+    "valid/images/927_jpg.rf.5bc54a483220fd27d905e6a1dde0bfcd.jpg",
+    "valid/images/954_jpg.rf.6053bd96da92875c5daca5ac5544363f.jpg",
+    "valid/images/984_jpg.rf.81f6b56a4281418dadec0f607950334d.jpg",
+    "test/images/1013_jpg.rf.a9b058a46bc2d461925dbebf3c1ee238.jpg",
+    "test/images/1056_jpg.rf.b414b7c949a7dd1df56631bec06c547c.jpg",
+    "test/images/1057_jpg.rf.30c3727d592b693867065b27b6920417.jpg",
+    "test/images/234_jpg.rf.c2c27b72a5a3c7cc57472a0e5c855d2c.jpg",
+    "test/images/803_jpg.rf.a532b2e16db4d55886a323ca1b03caf4.jpg",
+    "test/images/827_jpg.rf.ff91c808f2c0f901c1134226070c3338.jpg",
+    "test/images/848_jpg.rf.0a6d4a79caf30fb7853239c8579911d4.jpg",
+    "test/images/861_jpg.rf.097ad4aa0e32a31507752358a15f2098.jpg"
+  ],
+  "furthest": [
+    {
+      "path": "test/images/Healthy_Train166_jpg.rf.4b266b7f05f03025c8d9afa442379c53.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.2268,
+      "blank": false
+    },
+    {
+      "path": "test/images/803_jpg.rf.a532b2e16db4d55886a323ca1b03caf4.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.2009,
+      "blank": true
+    },
+    {
+      "path": "test/images/Healthy_Train301_jpg.rf.527f86ad68918ec17215a0665f80518f.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.2005,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train1381_jpg.rf.6a852aeefaa4ceee56abb23ae60f00a7.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1974,
+      "blank": false
+    },
+    {
+      "path": "train/images/131_jpg.rf.4d33ebf7d1d5902d8380db9a762dc412.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1952,
+      "blank": false
+    },
+    {
+      "path": "train/images/925_jpg.rf.45226c24e0a28a75225fd4ce341e08ea.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1913,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train857_jpg.rf.49503509a3172b2981bb6ded5fff3bb0.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1878,
+      "blank": false
+    },
+    {
+      "path": "test/images/176_jpg.rf.84f24d19764b23660c459c98beb3b0c2.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1863,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train34_jpg.rf.377397ac9bcda9f03c6303903ced2363.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1841,
+      "blank": false
+    },
+    {
+      "path": "valid/images/687_jpg.rf.dd14396c8fb0fea0b902844934dad774.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1831,
+      "blank": true
+    },
+    {
+      "path": "test/images/827_jpg.rf.ff91c808f2c0f901c1134226070c3338.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1808,
+      "blank": true
+    },
+    {
+      "path": "train/images/23_jpg.rf.93da4a63084be8f789d126ecd077050e.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1805,
+      "blank": false
+    },
+    {
+      "path": "test/images/Healthy_Train463_jpg.rf.165e4a35778d7f8764145530e5df4a8b.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1793,
+      "blank": false
+    },
+    {
+      "path": "test/images/Healthy_Train412_jpg.rf.daae2374e0c6cde71bc9963a9b2b5e5d.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.179,
+      "blank": false
+    },
+    {
+      "path": "test/images/234_jpg.rf.c2c27b72a5a3c7cc57472a0e5c855d2c.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1781,
+      "blank": true
+    },
+    {
+      "path": "train/images/107_jpg.rf.1d4fc522e3184a79d96434d5bc9c001c.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.175,
+      "blank": false
+    },
+    {
+      "path": "train/images/863_jpg.rf.584086fd6fd57cf9ebe4f1ac5ac7e204.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1741,
+      "blank": true
+    },
+    {
+      "path": "valid/images/250_jpg.rf.c852dede587e356a5685a1fb31d72d34.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1727,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train618_jpg.rf.731db8423cc1a4b43b675fccb793798b.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1718,
+      "blank": false
+    },
+    {
+      "path": "train/images/790_jpg.rf.0ebff05ae41fe373b449cedd5bae54a5.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1716,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train241_jpg.rf.1b11a533bc20f18ccba1b07ee3401da9.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1713,
+      "blank": false
+    },
+    {
+      "path": "valid/images/747_jpg.rf.633bad0d37ad37abd2300eab725fc909.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1705,
+      "blank": false
+    },
+    {
+      "path": "valid/images/643_jpg.rf.988f1af724c81a970d29eea2e3bf0587.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1702,
+      "blank": false
+    },
+    {
+      "path": "valid/images/21_jpg.rf.fc1a8d51ad7b96a5fccbf620c49559b4.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1692,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train657_jpg.rf.d733a6f32491f8089aaa5aa8ee65ee80.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1691,
+      "blank": false
+    },
+    {
+      "path": "train/images/434_jpg.rf.1524f4954eca863582fe42c69e2e07aa.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.169,
+      "blank": false
+    },
+    {
+      "path": "train/images/20_jpg.rf.7736d8215f6094f193cb11609c8cd587.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1685,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train3_jpg.rf.6977516c0cedb8d3d02769257bcfa3b1.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1672,
+      "blank": false
+    },
+    {
+      "path": "valid/images/693_jpg.rf.859a9ac42fdf9fac7461eca6745a9c60.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.167,
+      "blank": false
+    },
+    {
+      "path": "valid/images/1001_jpg.rf.a6f4d113f47258cdd8fefe11ba3809fa.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1669,
+      "blank": true
+    },
+    {
+      "path": "train/images/Healthy_Train1323_jpg.rf.53b84cc9c5f878a877e20d668cf0441f.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1665,
+      "blank": false
+    },
+    {
+      "path": "train/images/890_jpg.rf.202ae62f11077227d2d944e71f0a914a.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1664,
+      "blank": false
+    },
+    {
+      "path": "test/images/438_jpg.rf.70492997bd05caa85cb3e67c61309061.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1659,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train741_jpg.rf.969dcc3f91d2ef6a304702089190e106.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1653,
+      "blank": false
+    },
+    {
+      "path": "train/images/1014_jpg.rf.0301c551b467585aacc25993ad02c88d.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1643,
+      "blank": false
+    },
+    {
+      "path": "train/images/113_jpg.rf.46d7a8ad21ffebf44745c66b6a117456.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1638,
+      "blank": false
+    },
+    {
+      "path": "test/images/991_jpg.rf.dbe83641c895ae5a99552b6a366638b9.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1627,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train303_jpg.rf.6d7ad9daa5081b8b68a6bb8fff33d158.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1623,
+      "blank": false
+    },
+    {
+      "path": "valid/images/704_jpg.rf.f6081760a89d9ca8b2b91f5e2dba7feb.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1622,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train90_jpg.rf.9b690843afdc5dbf8f8f37cd2bfb6bf0.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1613,
+      "blank": false
+    },
+    {
+      "path": "train/images/683_jpg.rf.0c8dd4b5d76a9aa62a3b566bd67b7b09.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1611,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train873_jpg.rf.d952684bb753bbb6a1ef09b3b1250b7a.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1609,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Areial_Healthy530_jpg.rf.1a14f573e6b8bb1495ab8ea01e752885.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1604,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train104_jpg.rf.04ee14ec14e0cf3c879a2c727ed70714.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1599,
+      "blank": false
+    },
+    {
+      "path": "test/images/565_jpg.rf.505dcbbebaee00387f2032231dee66e9.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1599,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train1378_jpg.rf.39e7e81effdfd6d602f98f6904af099e.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1598,
+      "blank": false
+    },
+    {
+      "path": "test/images/252_jpg.rf.ff4834a1fbc83bc2d8bc36cac58db224.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1592,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train176_jpg.rf.037330f8d86ec8d81c7edb6ba3bffd5f.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1586,
+      "blank": false
+    },
+    {
+      "path": "test/images/861_jpg.rf.097ad4aa0e32a31507752358a15f2098.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.1575,
+      "blank": true
+    },
+    {
+      "path": "train/images/835_jpg.rf.91698ea8725c79ab0904ce1d1d0efdec.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1575,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train410_jpg.rf.41c18662943390fe39e2c44e9bb669cc.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1572,
+      "blank": false
+    },
+    {
+      "path": "valid/images/261_jpg.rf.d7ca205eebac93f89f6d72705dcad3d6.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1572,
+      "blank": false
+    },
+    {
+      "path": "train/images/996_jpg.rf.a54737c2f6b6ad88cc3cdd1c070f8058.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1561,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train1377_jpg.rf.68e482ed74dfed4116e7b260d819eb3a.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1561,
+      "blank": false
+    },
+    {
+      "path": "train/images/Healthy_Train1276_jpg.rf.514debe08e729766c921238dea40536e.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1561,
+      "blank": false
+    },
+    {
+      "path": "valid/images/Healthy_Train405_jpg.rf.87e36e2e25ddc328a0580c2aee415744.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.156,
+      "blank": false
+    },
+    {
+      "path": "train/images/999_jpg.rf.15f191b63f603e4554158dcbf5c82d06.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1557,
+      "blank": true
+    },
+    {
+      "path": "train/images/Areial_Healthy276_jpg.rf.383f9b395cb6eaf0c0a37cd3697cd3bc.jpg",
+      "split": "train",
+      "labelled": true,
+      "distance": 0.1556,
+      "blank": false
+    },
+    {
+      "path": "valid/images/638_jpg.rf.31042b8bb0eefc955e6343e8eb6b9555.jpg",
+      "split": "valid",
+      "labelled": true,
+      "distance": 0.1552,
+      "blank": false
+    },
+    {
+      "path": "test/images/Areial_Healthy538_jpg.rf.887a74f53f93104fc76c4e427b90c9d8.jpg",
+      "split": "test",
+      "labelled": true,
+      "distance": 0.155,
+      "blank": false
+    }
+  ]
+}
