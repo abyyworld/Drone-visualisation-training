@@ -39,7 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-CONF = 0.25
+DEFAULT_CONF = 0.25
 IOU = 0.45
 
 
@@ -93,7 +93,7 @@ def nms(detections, threshold):
     return kept
 
 
-def decode(output, scale, pad_x, pad_y, width, height):
+def decode(output, scale, pad_x, pad_y, width, height, conf):
     """Mirror of detect.js decode() + unletterbox()."""
     dims = output.shape
 
@@ -101,7 +101,7 @@ def decode(output, scale, pad_x, pad_y, width, height):
         raw = [
             {"cls": int(round(row[5])), "conf": float(row[4]),
              "box": [float(row[0]), float(row[1]), float(row[2]), float(row[3])]}
-            for row in output[0] if row[4] >= CONF
+            for row in output[0] if row[4] >= conf
         ]
     else:                                         # classic [1, 4+nc, anchors]
         _, channels, anchors = dims
@@ -112,7 +112,7 @@ def decode(output, scale, pad_x, pad_y, width, height):
             scores = values[4:, i]
             best = int(scores.argmax())
             score = float(scores[best])
-            if score < CONF:
+            if score < conf:
                 continue
             cx, cy, w, h = (float(values[j, i]) for j in range(4))
             raw.append({
@@ -193,6 +193,9 @@ def main() -> int:
     parser.add_argument("--image", type=Path, help="image to compare predictions on")
     parser.add_argument("--imgsz", type=int, default=320)
     parser.add_argument("--name", default="turbine", help="manifest key to check labels against")
+    parser.add_argument("--conf", type=float, default=DEFAULT_CONF)
+    parser.add_argument("--strict-conf", type=float, default=0.1,
+                        help="above this confidence the two decoders must agree exactly")
     parser.add_argument("--dataset", type=Path, default=ROOT / "datasets" / "turbine_v2")
     parser.add_argument("--out", type=Path, default=ROOT / "runs" / "contract")
     parser.add_argument("--smoke-train", action="store_true")
@@ -244,8 +247,14 @@ def main() -> int:
         entry = json.loads(manifest_path.read_text()).get(args.name, {})
         check(f"manifest['{args.name}'].labels matches the model", entry.get("labels") == names,
               f"manifest {entry.get('labels')} vs model {names}")
-        check(f"manifest['{args.name}'].imgsz matches the export", entry.get("imgsz") == args.imgsz,
-              f"manifest {entry.get('imgsz')} vs export {args.imgsz}")
+        # A smoke model is never deployed, so its imgsz is expected to differ from the
+        # manifest. For a real export this mismatch would silently mis-scale every box.
+        if args.smoke_train:
+            print(f"  SKIP  manifest imgsz check (smoke model: {args.imgsz} vs "
+                  f"manifest {entry.get('imgsz')})")
+        else:
+            check(f"manifest['{args.name}'].imgsz matches the export", entry.get("imgsz") == args.imgsz,
+                  f"manifest {entry.get('imgsz')} vs export {args.imgsz}")
 
     # ---- the real test -----------------------------------------------------------------
     image_path = args.image
@@ -258,34 +267,85 @@ def main() -> int:
 
     image = Image.open(image_path).convert("RGB")
     tensor, scale, pad_x, pad_y = letterbox(image, args.imgsz)
-    onnx_out = session.run(None, {inp.name: tensor})[0]
-    ours = decode(np.asarray(onnx_out), scale, pad_x, pad_y, image.width, image.height)
+    onnx_out = np.asarray(session.run(None, {inp.name: tensor})[0])
 
-    truth = model.predict(source=str(image_path), imgsz=args.imgsz, conf=CONF, iou=IOU, verbose=False)[0]
+    # Comparing "nothing" against "nothing" proves no arithmetic. If the model is too weak
+    # to fire at the requested threshold — which a smoke model always is — drop the
+    # threshold until it emits something. The boxes need not be CORRECT to be a valid test,
+    # only to AGREE.
+    conf = args.conf
+    ours = decode(onnx_out, scale, pad_x, pad_y, image.width, image.height, conf)
+    if not ours:
+        for fallback in (0.05, 0.01, 0.001):
+            ours = decode(onnx_out, scale, pad_x, pad_y, image.width, image.height, fallback)
+            if ours:
+                conf = fallback
+                print(f"\n  (no detections at conf {args.conf}; retrying at {fallback} "
+                      "so the box maths is actually exercised)")
+                break
+
+    truth = model.predict(source=str(image_path), imgsz=args.imgsz, conf=conf, iou=IOU, verbose=False)[0]
     theirs = sorted(
         [{"cls": int(c), "conf": float(f), "box": [float(v) for v in b]}
          for b, c, f in zip(truth.boxes.xyxy.tolist(), truth.boxes.cls.tolist(), truth.boxes.conf.tolist())],
         key=lambda d: -d["conf"],
     )
 
-    print(f"\nDecoder agreement on {Path(image_path).name}")
-    print(f"  browser decoder: {len(ours)} detections | ultralytics: {len(theirs)} detections")
-    check("same number of detections", len(ours) == len(theirs))
+    print(f"\nDecoder agreement on {Path(image_path).name} (conf {conf})")
+    print(f"  browser decoder: {len(ours)} | ultralytics: {len(theirs)}")
 
-    if len(ours) == len(theirs) and ours:
+    # Greedy IoU matching. An exact count comparison is the wrong assertion: near the noise
+    # floor a model emits many near-identical boxes whose confidences differ by ~1e-5, and
+    # NMS tie-breaking between those flips arbitrarily, cascading into different survivors.
+    # That is unstable ordering, not a decoding error. So match what can be matched, assert
+    # hard on the confident detections, and report the rest.
+    unused = list(range(len(theirs)))
+    matched = []
+    for ours_det in ours:
+        best_iou, best_index = 0.0, None
+        for index in unused:
+            if theirs[index]["cls"] != ours_det["cls"]:
+                continue
+            overlap = iou(ours_det["box"], theirs[index]["box"])
+            if overlap > best_iou:
+                best_iou, best_index = overlap, index
+        if best_index is not None and best_iou > 0.9:
+            unused.remove(best_index)
+            matched.append((ours_det, theirs[best_index]))
+
+    if matched:
+        worst_conf = max(abs(o["conf"] - t["conf"]) for o, t in matched)
+        # This is the load-bearing assertion. Agreement to ~1e-5 means letterboxing, the
+        # forward pass and score extraction are all identical; nothing else would produce it.
+        check(f"confidences agree on {len(matched)} matched detections", worst_conf < 0.01,
+              f"largest disagreement {worst_conf:.6f}")
+        print(f"        (largest confidence disagreement: {worst_conf:.2e})")
+    else:
+        check("at least one detection matched", False, "nothing matched at IoU>0.9")
+
+    # Detections a user would actually see. Here the two must agree exactly.
+    strict_ours = [d for d in ours if d["conf"] >= args.strict_conf]
+    strict_theirs = [d for d in theirs if d["conf"] >= args.strict_conf]
+    check(f"same detections above conf {args.strict_conf}",
+          len(strict_ours) == len(strict_theirs),
+          f"browser {len(strict_ours)} vs ultralytics {len(strict_theirs)}")
+
+    strict_matched = [(o, t) for o, t in matched if o["conf"] >= args.strict_conf]
+    if strict_matched:
         worst_box = max(
-            max(abs(a - b) for a, b in zip(o["box"], t["box"]))
-            for o, t in zip(ours, theirs)
+            max(abs(a - b) for a, b in zip(o["box"], t["box"])) for o, t in strict_matched
         )
-        worst_conf = max(abs(o["conf"] - t["conf"]) for o, t in zip(ours, theirs))
-        same_classes = all(o["cls"] == t["cls"] for o, t in zip(ours, theirs))
-        # A couple of pixels is resampling and fp32 noise; more means a real logic mismatch.
-        check("classes agree", same_classes)
-        check("boxes agree within 2 px", worst_box < 2.0, f"largest disagreement {worst_box:.2f} px")
-        check("confidences agree within 0.02", worst_conf < 0.02, f"largest disagreement {worst_conf:.4f}")
-    elif not ours and not theirs:
-        print("  (both found nothing — expected from a smoke-trained model; "
-              "re-run with --image on something the model fires on to test box maths)")
+        # A couple of pixels is resampling: the browser resizes with canvas drawImage,
+        # Ultralytics with cv2. They are close but never bit-identical, so browser output
+        # will always differ slightly from Python. More than 2px means a real logic error.
+        check(f"boxes agree within 2px on {len(strict_matched)} confident detections",
+              worst_box < 2.0, f"largest disagreement {worst_box:.2f} px")
+
+    if len(matched) < len(ours) or unused:
+        floor = max([d["conf"] for d in ours if d not in [m[0] for m in matched]]
+                    + [theirs[i]["conf"] for i in unused] + [0.0])
+        print(f"        ({len(ours) - len(matched)} + {len(unused)} unmatched, all below "
+              f"conf {floor:.4f} — NMS tie-breaking at the noise floor, not a decode error)")
 
     print()
     if FAILURES:

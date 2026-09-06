@@ -26,3 +26,6 @@ inspection_results/
 
 # Test artefacts (regenerate with tests/make_fixtures.py)
 tests/fixtures/
+
+# Smoke-train and evaluation outputs
+runs/
