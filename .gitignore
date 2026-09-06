@@ -1,0 +1,25 @@
+# Rebuilt datasets — regenerate with tools/rebuild_turbine.py
+datasets/
+
+# Training run outputs
+runs/
+wandb/
+*.pt.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local inference scratch
+inspection_results/
