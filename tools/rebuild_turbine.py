@@ -105,6 +105,12 @@ def main() -> int:
         help="drop ANNOTATED images below this Laplacian variance (see tools/image_quality.py "
              "--help-blur before raising it above ~20). Requires numpy and Pillow.",
     )
+    parser.add_argument(
+        "--keep-augmented", action="store_true",
+        help="keep Roboflow's 3 pre-baked variants per source image in train. Off by default: "
+             "Ultralytics augments online every epoch with fresh random parameters, which "
+             "strictly dominates 3 fixed variants and does not triple epoch time.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -195,30 +201,32 @@ def main() -> int:
         return assignment[record["family"]][record["id"]]
 
     # --- Choose which files land where ------------------------------------------------
-    # Defects: every augmented copy in train, one copy per source in valid/test.
+    # One copy per source everywhere by default. Roboflow baked 3 augmented variants of each
+    # training image, but Ultralytics applies mosaic, flip, HSV, scale and rotation online
+    # each epoch with fresh parameters — strictly more varied than 3 frozen variants. Keeping
+    # both means every epoch costs 3x as much to show the model the same scenes.
     chosen: dict[str, list] = {"train": [], "valid": [], "test": []}
-    held_out_sources: dict[str, set] = {"valid": set(), "test": set()}
+    seen_sources: dict[str, set] = {"train": set(), "valid": set(), "test": set()}
 
     for record in defects:
         split = split_of(record)
-        if split == "train":
+        if args.keep_augmented and split == "train":
             chosen["train"].append(record)
-        elif record["source"] not in held_out_sources[split]:
-            held_out_sources[split].add(record["source"])
+        elif record["source"] not in seen_sources[split]:
+            seen_sources[split].add(record["source"])
             chosen[split].append(record)
+    held_out_sources = seen_sources
 
     # Negatives: subsample per split, again one copy per source outside train.
     by_split_healthy = defaultdict(list)
     for record in healthy:
         split = split_of(record)
-        if split != "train" and record["source"] in held_out_sources.get(split, set()):
-            continue
         by_split_healthy[split].append(record)
 
     negatives_added = {}
     for split, pool in by_split_healthy.items():
-        if split != "train":
-            # One copy per source, so val/test measure each scene once.
+        if not (args.keep_augmented and split == "train"):
+            # One copy per source, so each scene is counted once.
             unique: dict[str, dict] = {}
             for record in pool:
                 unique.setdefault(record["source"], record)
@@ -284,6 +292,7 @@ def main() -> int:
         "dropped_class": "healthy (kept as background negatives)",
         "duplicates_removed": duplicates,
         "min_sharpness": args.min_sharpness,
+        "kept_augmented_copies": args.keep_augmented,
         "dropped_by_sharpness": dict(dropped_by_class),
         "splits": stats,
     }
