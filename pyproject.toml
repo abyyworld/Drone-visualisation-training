@@ -111,3 +111,7 @@ select = ["E4", "E7", "E9", "F", "W"]
 # edited to satisfy a linter -- a contract file churning for style reasons is
 # how the two sides of a protocol drift apart.
 "station/core/types.py" = ["F401"]
+# Training notebooks. A notebook installs its dependencies in one cell and
+# imports them in the next, and groups imports on a line to keep a cell short.
+# Both are correct for the medium and neither says anything about the station.
+"*.ipynb" = ["E401", "E402"]

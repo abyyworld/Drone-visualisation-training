@@ -160,8 +160,8 @@ Offline, through the real pipeline, with the real temporal filter:
 ```bash
 # Per clip: writes incidents/<id>/detections.jsonl -- every frame, including
 # the empty ones, which is what the miss analysis reads.
-python -m station run --source-type file --source validation/clips/0007.mp4 \
-                      --no-stream -c config.yaml
+python -m station -c config.yaml run --source-type file \
+                      --source validation/clips/0007.mp4 --no-stream
 ```
 
 Use the same config the department would deploy. If you are validating a

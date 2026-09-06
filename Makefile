@@ -58,13 +58,13 @@ config-check:  ## Validate config.example.yaml against the schema
 
 .PHONY: check
 check:  ## Ask the station what this machine can actually do (run before an incident)
-	$(PY) -m station check $(if $(wildcard $(CONFIG)),-c $(CONFIG),)
+	$(PY) -m station $(if $(wildcard $(CONFIG)),-c $(CONFIG),) check
 
 # -------------------------------------------------------------------- run
 
 .PHONY: certs
 certs:  ## Issue the station's self-signed certificate for this network
-	$(PY) -m station certs $(if $(wildcard $(CONFIG)),-c $(CONFIG),)
+	$(PY) -m station $(if $(wildcard $(CONFIG)),-c $(CONFIG),) certs
 
 .PHONY: run-file
 run-file:  ## Step 1: the whole pipeline over a recorded clip. VIDEO=path/to.mp4
@@ -76,7 +76,7 @@ run-stub:  ## Transport and overlay only: NO MODEL RUNS, the boxes are generated
 
 .PHONY: run
 run:  ## The deployment. Needs config.yaml and trained weights.
-	$(PY) -m station run -c $(CONFIG)
+	$(PY) -m station -c $(CONFIG) run
 
 .PHONY: replay
 replay:  ## Re-serve a recorded incident. INCIDENT=incidents/<id>
