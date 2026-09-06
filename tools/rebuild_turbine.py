@@ -252,13 +252,17 @@ def main() -> int:
         negatives_added[split] = len(picked)
 
     # --- Write it out -----------------------------------------------------------------
-    if out.exists():
-        shutil.rmtree(out)
+    # Build into a sibling directory and swap at the end. Deleting `out` up front destroys
+    # the dataset out from under anything currently reading it — a training run pointed at
+    # this path dies mid-epoch with FileNotFoundError, which is exactly what happened once.
+    staging = out.with_name(out.name + ".building")
+    if staging.exists():
+        shutil.rmtree(staging)
 
     stats = {}
     for split, records in chosen.items():
-        images_dir = out / split / "images"
-        labels_dir = out / split / "labels"
+        images_dir = staging / split / "images"
+        labels_dir = staging / split / "labels"
         images_dir.mkdir(parents=True, exist_ok=True)
         labels_dir.mkdir(parents=True, exist_ok=True)
 
@@ -287,7 +291,7 @@ def main() -> int:
 
     # data.yaml with absolute paths, so it works from any working directory. The v1 file
     # used `../train/images`, which resolved correctly from nowhere.
-    (out / "data.yaml").write_text(
+    (staging / "data.yaml").write_text(
         f"path: {out}\n"
         "train: train/images\n"
         "val: valid/images\n"
@@ -310,7 +314,17 @@ def main() -> int:
         "dropped_by_sharpness": dict(dropped_by_class),
         "splits": stats,
     }
-    (out / "build_summary.json").write_text(json.dumps(summary, indent=2))
+    (staging / "build_summary.json").write_text(json.dumps(summary, indent=2))
+
+    # Swap only once the new copy is complete.
+    previous = out.with_name(out.name + ".previous")
+    if previous.exists():
+        shutil.rmtree(previous)
+    if out.exists():
+        out.rename(previous)
+    staging.rename(out)
+    if previous.exists():
+        shutil.rmtree(previous)
 
     print(f"Rebuilt {src} -> {out}")
     print(f"  duplicates removed: {duplicates}\n")
