@@ -50,28 +50,43 @@ def value_noise(shape: tuple[int, int], cells: int, rng: np.random.Generator) ->
     return (g00 * (1 - fx) * (1 - fy) + g01 * fx * (1 - fy) + g10 * (1 - fx) * fy + g11 * fx * fy)
 
 
-def fbm(shape: tuple[int, int], rng: np.random.Generator, octaves: int = 5) -> np.ndarray:
+def fbm(shape: tuple[int, int], rng: np.random.Generator, octaves: int = 5,
+        persistence: float = 0.5) -> np.ndarray:
+    """Fractal noise.
+
+    ``persistence`` is the knob that decides whether ground looks airbrushed or
+    photographed. At 0.5 the ninth octave contributes 0.4% and the fine detail
+    is invisible; forest canopy from altitude needs the high frequencies to
+    carry real weight, so terrain uses ~0.68.
+    """
     out = np.zeros(shape)
     amp, cells, norm = 1.0, 3, 0.0
     for _ in range(octaves):
         out += amp * value_noise(shape, cells, rng)
         norm += amp
-        amp *= 0.5
+        amp *= persistence
         cells *= 2
     return out / norm
 
 
 def build_terrain(rng: np.random.Generator) -> np.ndarray:
-    """Forested terrain: greens and browns broken up by clearings."""
+    """Forested terrain: greens and browns broken up by clearings.
+
+    The octave count matters more than it looks. Too few and the ground reads as
+    smooth blobs -- the giveaway that says 'render' rather than 'aerial photo'.
+    Canopy at altitude is high-frequency, so the fine octaves carry the realism.
+    """
     h = fbm((WORLD_H, WORLD_W), rng, octaves=6)
-    detail = fbm((WORLD_H, WORLD_W), rng, octaves=7)
+    detail = fbm((WORLD_H, WORLD_W), rng, octaves=9, persistence=0.68)
+    speckle = fbm((WORLD_H, WORLD_W), rng, octaves=10, persistence=0.72)
     canopy = 0.65 * h + 0.35 * detail
 
     img = np.zeros((WORLD_H, WORLD_W, 3))
     # dark conifer -> lighter scrub -> dry grass, by elevation-ish value
-    img[..., 0] = 38 + 90 * np.clip((canopy - 0.45) * 2.2, 0, 1) + 18 * detail
-    img[..., 1] = 55 + 85 * np.clip((canopy - 0.35) * 1.9, 0, 1) + 14 * detail
-    img[..., 2] = 30 + 40 * np.clip((canopy - 0.55) * 1.6, 0, 1) + 10 * detail
+    grain = (speckle - 0.5) * 74.0          # individual tree crowns
+    img[..., 0] = 30 + 78 * np.clip((canopy - 0.45) * 2.2, 0, 1) + 26 * detail + grain
+    img[..., 1] = 46 + 92 * np.clip((canopy - 0.35) * 1.9, 0, 1) + 22 * detail + grain
+    img[..., 2] = 24 + 38 * np.clip((canopy - 0.55) * 1.6, 0, 1) + 14 * detail + grain * 0.6
     # a few clearings so the scene is not uniform texture
     clear = (fbm((WORLD_H, WORLD_W), rng, octaves=3) > 0.72)
     img[clear] = img[clear] * 0.75 + np.array([120, 115, 78]) * 0.25
@@ -96,6 +111,11 @@ def main() -> None:
     W, H = args.width, args.height
 
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
+
+    # One noise field, generated once and slid per frame. Regenerating noise
+    # every frame cost 4 minutes of wall clock for 20 seconds of video.
+    TEX_W, TEX_H = W + 420, H + 420
+    texfield = fbm((TEX_H, TEX_W), np.random.default_rng(args.seed + 999), octaves=8, persistence=0.62)
 
     # Fire ignites at t0 and the front grows; smoke lags and drifts downwind.
     # Starting a few seconds in gives the demo an honest "before" -- the model
@@ -133,50 +153,92 @@ def main() -> None:
         fire_box = smoke_box = None
 
         if burn > 0:
-            # --- smoke: blobs emitted along the burn history, advected downwind,
-            # expanding and thinning. Thin, wide and soft-edged on purpose.
+            # --- smoke plume -----------------------------------------------
+            # Each puff is drawn into its own small window rather than across
+            # the whole frame: 120 full-frame gaussians per frame is what made
+            # the first version unusably slow.
+            #
+            # The shape rule that matters: downwind drift must outrun radial
+            # growth, or the plume collapses into a disc instead of stretching
+            # into a plume. Drift ~70px per age-unit against radius +9.
             smoke_alpha = np.zeros((H, W))
-            n_puff = int(min(burn, 17.0) * 7)
+            max_age = min(burn, 9.0)
+            n_puff = 130
             for k in range(n_puff):
-                age = burn - k * (min(burn, 17.0) / max(n_puff, 1))
-                if age <= 0:
+                age = max_age * (k + 0.5) / n_puff
+                drift = wind * age * 70.0
+                turb_x = math.sin(k * 0.83 + t * 0.6) * (10 + age * 7)
+                turb_y = math.cos(k * 1.27 + t * 0.5) * (7 + age * 6)
+                cx, cy = fx + drift[0] + turb_x, fy + drift[1] + turb_y
+                radius = 15.0 + age * 9.0
+                a = 0.235 * math.exp(-age / 6.2) * (0.52 + 0.48 * math.sin(k * 2.1 + t))
+                if a <= 0.004:
                     continue
-                drift = wind * age * 27.0
-                jitter = np.array([math.sin(k * 1.7 + t * 0.9) * 16, math.cos(k * 2.3 + t * 0.7) * 11])
-                cx, cy = fx + drift[0] + jitter[0], fy + drift[1] + jitter[1]
-                radius = 26 + age * 15.0
-                # thins as it disperses -- the far plume is the hard case
-                a = 0.60 * math.exp(-age / 9.0)
-                d2 = (xx - cx) ** 2 + (yy - cy) ** 2
-                smoke_alpha += a * np.exp(-d2 / (2 * radius * radius))
-            smoke_alpha = np.clip(smoke_alpha, 0, 0.93)
-            texture = 0.75 + 0.5 * fbm((H, W), np.random.default_rng(args.seed + i), octaves=4)
-            smoke_alpha *= np.clip(texture, 0, 1.35)
-            smoke_alpha = np.clip(smoke_alpha, 0, 0.93)
+                r3 = int(radius * 2.6)
+                lx0, lx1 = max(0, int(cx) - r3), min(W, int(cx) + r3)
+                ly0, ly1 = max(0, int(cy) - r3), min(H, int(cy) + r3)
+                if lx1 <= lx0 or ly1 <= ly0:
+                    continue
+                sub_x = xx[ly0:ly1, lx0:lx1] - cx
+                sub_y = yy[ly0:ly1, lx0:lx1] - cy
+                smoke_alpha[ly0:ly1, lx0:lx1] += a * np.exp(
+                    -(sub_x * sub_x + sub_y * sub_y) / (2 * radius * radius))
 
-            grey = np.array([176, 172, 168])
+            # Break up the smooth gaussian sum so the plume has internal
+            # structure. Reusing one precomputed noise field and sliding it with
+            # the camera is far cheaper than regenerating noise every frame.
+            ty0 = (y0 + int(t * 9)) % (TEX_H - H)
+            tx0 = (x0 + int(t * 13)) % (TEX_W - W)
+            smoke_alpha *= 0.30 + 1.30 * texfield[ty0:ty0 + H, tx0:tx0 + W]
+            smoke_alpha = np.clip(smoke_alpha, 0, 0.88)
+
+            grey = np.array([182, 179, 175])
             frame = frame * (1 - smoke_alpha[..., None]) + grey * smoke_alpha[..., None]
 
-            # ground truth at a stated threshold; see module docstring
             m = smoke_alpha > 0.14
             if m.any():
                 ys_, xs_ = np.where(m)
                 smoke_box = (xs_.min() / W, ys_.min() / H, xs_.max() / W, ys_.max() / H)
 
-            # --- flame front: an ellipse that grows, with per-frame flicker
-            fr_x = 30 + burn * 5.2
-            fr_y = 19 + burn * 3.1
-            flick = 0.80 + 0.20 * math.sin(t * 13.0) + 0.10 * math.sin(t * 27.7)
-            e = ((xx - fx) ** 2) / (fr_x ** 2) + ((yy - fy) ** 2) / (fr_y ** 2)
-            core = np.clip(1.0 - e, 0, 1) ** 0.55 * flick
-            hot = core > 0.06
-            if hot.any():
-                frame[..., 0] = np.where(hot, np.clip(frame[..., 0] * (1 - core) + 255 * core, 0, 255), frame[..., 0])
-                frame[..., 1] = np.where(hot, np.clip(frame[..., 1] * (1 - core) + 165 * core, 0, 255), frame[..., 1])
-                frame[..., 2] = np.where(hot, np.clip(frame[..., 2] * (1 - core) + 45 * core, 0, 255), frame[..., 2])
-                ys_, xs_ = np.where(core > 0.12)
-                if len(xs_):
-                    fire_box = (xs_.min() / W, ys_.min() / H, xs_.max() / W, ys_.max() / H)
+            # --- flame front ------------------------------------------------
+            # An irregular perimeter, not an ellipse: angular noise modulates
+            # the radius so the front has the ragged edge a real fire has.
+            fr_x = 30 + burn * 5.4
+            fr_y = 13 + burn * 1.9
+            r3 = int(max(fr_x, fr_y) * 2.2)
+            lx0, lx1 = max(0, int(fx) - r3), min(W, int(fx) + r3)
+            ly0, ly1 = max(0, int(fy) - r3), min(H, int(fy) + r3)
+            if lx1 > lx0 and ly1 > ly0:
+                sx_ = xx[ly0:ly1, lx0:lx1] - fx
+                sy_ = yy[ly0:ly1, lx0:lx1] - fy
+                ang = np.arctan2(sy_, sx_)
+                ragged = (1.0
+                          + 0.085 * np.sin(ang * 6 + t * 3.1)
+                          + 0.055 * np.sin(ang * 11 - t * 4.7)
+                          + 0.035 * np.sin(ang * 19 + t * 8.3)
+                          + 0.025 * np.sin(ang * 31 - t * 11.2))
+                e = ((sx_ / (fr_x * ragged)) ** 2 + (sy_ / (fr_y * ragged)) ** 2)
+                flick = 0.86 + 0.14 * math.sin(t * 13.0) + 0.07 * math.sin(t * 27.7)
+                core = np.clip(1.0 - e, 0, 1) ** 0.75 * flick
+                hot = core > 0.05
+                if hot.any():
+                    sub = frame[ly0:ly1, lx0:lx1]
+                    # white-hot centre grading out to deep orange at the edge
+                    c2 = core * core
+                    sub[..., 0] = np.where(hot, np.clip(sub[..., 0] * (1 - core) + (255 * core), 0, 255), sub[..., 0])
+                    sub[..., 1] = np.where(hot, np.clip(sub[..., 1] * (1 - core) + (110 + 145 * c2) * core, 0, 255), sub[..., 1])
+                    sub[..., 2] = np.where(hot, np.clip(sub[..., 2] * (1 - core) + (20 + 180 * c2 * c2) * core, 0, 255), sub[..., 2])
+                    frame[ly0:ly1, lx0:lx1] = sub
+                    ys_, xs_ = np.where(core > 0.12)
+                    if len(xs_):
+                        fire_box = ((xs_.min() + lx0) / W, (ys_.min() + ly0) / H,
+                                    (xs_.max() + lx0) / W, (ys_.max() + ly0) / H)
+                    # glow cast on the smoke just downwind of the front
+                    glow = np.clip(1.0 - e * 0.34, 0, 1) ** 2 * 0.30 * flick
+                    sub = frame[ly0:ly1, lx0:lx1]
+                    sub[..., 0] = np.clip(sub[..., 0] + 96 * glow, 0, 255)
+                    sub[..., 1] = np.clip(sub[..., 1] + 48 * glow, 0, 255)
+                    frame[ly0:ly1, lx0:lx1] = sub
 
         # atmospheric haze so it does not look like clip art
         frame = frame * 0.94 + 12.0
