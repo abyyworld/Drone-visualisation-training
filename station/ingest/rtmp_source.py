@@ -26,6 +26,8 @@ from station.core.config import SourceConfig
 
 from station.ingest.base import (
     FrameReader,
+    IngestError,
+    backend_failure,
     MissingDependencyError,
     OpenCVReader,
     PyAVReader,
@@ -106,7 +108,7 @@ class RtmpSource(ReconnectingSource):
 
     def _connect(self) -> FrameReader:
         """Open the stream with whichever backend is available."""
-        errors: list[str] = []
+        errors: list[IngestError] = []
         if self._backend_choice in ("auto", "pyav"):
             reader: Any = PyAVReader(
                 self._info.uri,
@@ -121,11 +123,11 @@ class RtmpSource(ReconnectingSource):
             except MissingDependencyError as exc:
                 if self._backend_choice == "pyav":
                     raise
-                errors.append(str(exc))
+                errors.append(exc)
             except SourceUnavailableError as exc:
                 if self._backend_choice == "pyav":
                     raise
-                errors.append(str(exc))
+                errors.append(exc)
         if self._backend_choice in ("auto", "opencv"):
             reader = OpenCVReader(
                 self._info.uri,
@@ -140,7 +142,5 @@ class RtmpSource(ReconnectingSource):
                     self._add_note("PyAV unavailable; RTMP decoded with OpenCV")
                 return reader
             except (MissingDependencyError, SourceUnavailableError) as exc:
-                errors.append(str(exc))
-        raise SourceUnavailableError(
-            f"could not open {self._info.uri}: " + "; ".join(errors or ["no backend available"])
-        )
+                errors.append(exc)
+        raise backend_failure(str(self._info.uri), errors)

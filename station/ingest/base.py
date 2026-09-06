@@ -62,6 +62,7 @@ __all__ = [
     "MissingDependencyError",
     "SourceUnavailableError",
     "SourceConfigError",
+    "backend_failure",
     "PtsOrigin",
     "Frame",
     "SourceInfo",
@@ -102,10 +103,13 @@ class MissingDependencyError(IngestError):
     logic can be tested there.
     """
 
-    def __init__(self, package: str, purpose: str, install: str) -> None:
+    def __init__(self, package: str, purpose: str, install: str, *, message: str | None = None) -> None:
         super().__init__(
-            f"{purpose} needs the '{package}' package, which is not installed. "
-            f"Install it with: {install}"
+            message
+            or (
+                f"{purpose} needs the '{package}' package, which is not installed. "
+                f"Install it with: {install}"
+            )
         )
         self.package = package
         self.install = install
@@ -117,6 +121,37 @@ class SourceUnavailableError(IngestError):
 
 class SourceConfigError(IngestError, ValueError):
     """The SourceConfig cannot describe a source that could be opened."""
+
+
+def backend_failure(target: str, errors: Sequence[IngestError]) -> IngestError:
+    """Summarise a failed attempt to open a source with several backends.
+
+    Keeps the distinction between "this machine has no decoder installed" and
+    "the decoders are here and the source would not open", because they need
+    different actions from whoever is holding the laptop: one is a one-line
+    install, the other is a cable, an IP address or a firewall.
+
+    Args:
+        target: What was being opened, for the message.
+        errors: One error per backend attempted, in the order attempted.
+
+    Returns:
+        A :class:`MissingDependencyError` when *every* backend was simply
+        absent, otherwise a :class:`SourceUnavailableError`. Returned rather
+        than raised so the caller keeps its own traceback.
+    """
+    if not errors:
+        return SourceUnavailableError(f"could not open {target}: no backend is available")
+    detail = "; ".join(str(exc) for exc in errors)
+    missing = [exc for exc in errors if isinstance(exc, MissingDependencyError)]
+    if len(missing) == len(errors):
+        return MissingDependencyError(
+            missing[0].package,
+            f"opening {target}",
+            missing[0].install,
+            message=f"could not open {target}: no decoder for it is installed. {detail}",
+        )
+    return SourceUnavailableError(f"could not open {target}: {detail}")
 
 
 class PtsOrigin:
@@ -270,7 +305,10 @@ class SourceInfo:
         rate = f"{self.fps:.3g} fps"
         if self.target_fps is not None:
             rate += f" -> {self.output_fps:.3g} fps"
-        bits = [f"{self.type}:{self.uri or '-'}", res, rate, f"via {self.backend}", f"pts={self.pts_origin}"]
+        target = self.uri or "-"
+        if not target.startswith(self.type):
+            target = f"{self.type}:{target}"
+        bits = [target, res, rate, f"via {self.backend}", f"pts={self.pts_origin}"]
         line = " | ".join(bits)
         if self.notes:
             line += " | " + "; ".join(self.notes)
@@ -370,6 +408,12 @@ class PtsClock:
         self._count = 0
         self.repairs = 0
         self.synthesised = 0
+        #: Whether the most recent :meth:`stamp` invented its value. Read per
+        #: frame rather than inferred from "the reader gave us no timestamp":
+        #: a reader can hand over a timestamp this clock is right to ignore
+        #: (a capture device reporting a constant zero, say), and the frame
+        #: must be flagged on what actually happened to it.
+        self.last_synthesised = False
         #: Origin of the most recent stamp; the source copies this into
         #: SourceInfo once the first frame has proved what the source really is.
         self.origin = PtsOrigin.UNKNOWN
@@ -422,6 +466,7 @@ class PtsClock:
             origin = PtsOrigin.FRAME_INDEX
             synthesised = True
 
+        self.last_synthesised = synthesised
         if synthesised:
             self.synthesised += 1
 
@@ -1031,7 +1076,7 @@ class FrameSource(abc.ABC):
                 wall_time=utc_now_iso(),
                 rtp_ts=None,  # only the sender knows the real one; see module docstring
                 source_pts=raw_pts,
-                pts_synthesised=raw_pts is None,
+                pts_synthesised=clock.last_synthesised,
             )
             self._next_frame_id += 1
             self._stats.frames_out += 1
@@ -1072,8 +1117,16 @@ class FrameSource(abc.ABC):
             self._info = replace(self._info, notes=self._info.notes + (note,))
 
     def _init_clock(self, mode: str, fps: float | None = None) -> PtsClock:
-        """Create the pts clock. Every ``_open_impl`` must call this."""
+        """Create the pts clock. Every ``_open_impl`` must call this.
+
+        The intended origin is published immediately so that a station logging
+        ``info.describe()`` at startup sees something useful rather than
+        "unknown". It is a statement of intent for exactly one frame:
+        :meth:`_observe_first_frame` replaces it with what the source really
+        turned out to do, and adds a note when the two differ.
+        """
         self._clock = PtsClock(nominal_fps=fps if fps is not None else self._info.fps, mode=mode)
+        self._set_info(pts_origin=mode)
         return self._clock
 
     def _observe_first_frame(self, frame: Frame, clock: PtsClock) -> None:
@@ -1190,8 +1243,13 @@ class ReconnectingSource(FrameSource):
                 self._policy.reset()
                 return item
             if self._closing or self._policy.exhausted or self._policy.cancelled:
+                self._stats.reconnecting = False
                 return None
             if not self._reconnect():
+                # Out of attempts, or closed while backing off. The source is
+                # finished, so clear the flag: a stopped pipeline must not go on
+                # telling the operator it is about to come back.
+                self._stats.reconnecting = False
                 return None
 
     def _reconnect(self) -> bool:
@@ -1251,6 +1309,7 @@ class ReconnectingSource(FrameSource):
 
     def _close_impl(self) -> None:
         self._policy.cancel()
+        self._stats.reconnecting = False
         reader, self._reader = self._reader, None
         if reader is not None:
             try:

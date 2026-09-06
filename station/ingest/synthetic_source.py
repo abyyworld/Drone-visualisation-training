@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Any, Iterator, Sequence
+from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
 import numpy as np
@@ -62,6 +62,16 @@ DEFAULT_FRAME_COUNT = 300
 
 #: Warm orange in BGR -- the channel order every Frame in this system uses.
 _BLOB_BGR = (30.0, 140.0, 250.0)
+
+#: Shapes the blob's edge. Deliberately well below 1.0, which makes the disc
+#: nearly flat-topped and its edge steep. The reason is the ground truth: the
+#: box published by ``SyntheticScene.box`` is the disc's exact geometric
+#: extent, so a gentle falloff would leave a rim of nearly-background pixels
+#: inside the box and the "true" box would sit several percent of IoU away
+#: from anything measurable on the pixels. A steep edge makes the published
+#: box tight against a brightness threshold as well as against the geometry,
+#: which is what lets a test assert IoU against it and mean something.
+_EDGE_EXPONENT = 0.35
 
 
 def _as_bool(value: Any) -> bool:
@@ -217,7 +227,7 @@ class SyntheticScene:
             yy, xx = self._grid()
             # Squared normalised distance; clipped so the disc has hard support
             # and the ground-truth box is exactly its extent.
-            falloff = np.clip(1.0 - (((xx - cx) ** 2 + (yy - cy) ** 2) / (r * r)), 0.0, 1.0) ** 0.6
+            falloff = np.clip(1.0 - (((xx - cx) ** 2 + (yy - cy) ** 2) / (r * r)), 0.0, 1.0) ** _EDGE_EXPONENT
             alpha = falloff[:, :, None]
             colour = np.array(_BLOB_BGR, dtype=np.float32)
             image = image * (1.0 - alpha) + colour * alpha

@@ -43,6 +43,8 @@ from station.core.config import SourceConfig
 
 from station.ingest.base import (
     FrameReader,
+    IngestError,
+    backend_failure,
     MissingDependencyError,
     OpenCVReader,
     PtsOrigin,
@@ -171,7 +173,7 @@ class HdmiSource(ReconnectingSource):
 
     def _connect(self) -> FrameReader:
         """Open the capture device with whichever backend is available."""
-        errors: list[str] = []
+        errors: list[IngestError] = []
         api_name, ffmpeg_format = _PLATFORM.get(sys.platform, (None, None))
         api = self._params.get("api") or api_name
         if self._backend_choice in ("auto", "opencv"):
@@ -191,14 +193,18 @@ class HdmiSource(ReconnectingSource):
             except MissingDependencyError as exc:
                 if self._backend_choice == "opencv":
                     raise
-                errors.append(str(exc))
+                errors.append(exc)
             except SourceUnavailableError as exc:
                 if self._backend_choice == "opencv":
                     raise
-                errors.append(str(exc))
+                errors.append(exc)
         if self._backend_choice in ("auto", "pyav"):
             if ffmpeg_format is None:
-                errors.append(f"no FFmpeg capture format known for platform {sys.platform!r}")
+                errors.append(
+                    SourceUnavailableError(
+                        f"no FFmpeg capture format known for platform {sys.platform!r}"
+                    )
+                )
             else:
                 reader = PyAVReader(
                     self._ffmpeg_device(ffmpeg_format),
@@ -212,11 +218,8 @@ class HdmiSource(ReconnectingSource):
                         self._add_note("OpenCV unavailable; capture device opened with PyAV")
                     return reader
                 except (MissingDependencyError, SourceUnavailableError) as exc:
-                    errors.append(str(exc))
-        raise SourceUnavailableError(
-            f"could not open capture device {self.device!r}: "
-            + "; ".join(errors or ["no backend available"])
-        )
+                    errors.append(exc)
+        raise backend_failure(f"capture device {self.device!r}", errors)
 
     def _ffmpeg_device(self, ffmpeg_format: str) -> str:
         """Device string in the form the platform's FFmpeg input expects."""

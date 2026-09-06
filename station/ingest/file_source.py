@@ -38,6 +38,7 @@ from station.core.config import SourceConfig
 
 from station.ingest.base import (
     FrameSource,
+    backend_failure,
     IngestError,
     MissingDependencyError,
     OpenCVReader,
@@ -103,7 +104,7 @@ class FileSource(FrameSource):
 
     def _connect(self) -> Any:
         """Open the best available decoder for this file."""
-        errors: list[str] = []
+        errors: list[IngestError] = []
         if self._backend_choice in ("auto", "pyav"):
             reader = PyAVReader(str(self.path))
             try:
@@ -112,14 +113,14 @@ class FileSource(FrameSource):
             except MissingDependencyError as exc:
                 if self._backend_choice == "pyav":
                     raise
-                errors.append(str(exc))
+                errors.append(exc)
             except SourceUnavailableError as exc:
                 if self._backend_choice == "pyav":
                     raise
                 # A file PyAV cannot demux is worth mentioning even when
                 # OpenCV goes on to manage it: it usually means an unusual
                 # container that will behave differently in other ways too.
-                errors.append(str(exc))
+                errors.append(exc)
         if self._backend_choice in ("auto", "opencv"):
             reader = OpenCVReader(str(self.path), use_timestamps=True)
             try:
@@ -128,10 +129,8 @@ class FileSource(FrameSource):
                     self._add_note("PyAV unavailable for this file; decoding with OpenCV")
                 return reader
             except (MissingDependencyError, SourceUnavailableError) as exc:
-                errors.append(str(exc))
-        raise SourceUnavailableError(
-            f"could not decode {self.path}: " + "; ".join(errors or ["no backend available"])
-        )
+                errors.append(exc)
+        raise backend_failure(str(self.path), errors)
 
     def _read_raw(self) -> tuple[np.ndarray, float | None] | None:
         while True:
