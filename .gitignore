@@ -27,9 +27,6 @@ inspection_results/
 # Test artefacts (regenerate with tests/make_fixtures.py)
 tests/fixtures/
 
-# Smoke-train and evaluation outputs
-runs/
-
 # Pretrained weights - downloaded on demand by Ultralytics, not ours to vendor
 yolo11*.pt
 yolov8*.pt
