@@ -72,6 +72,34 @@ python3 tools/audit_dataset.py datasets/turbine_v2      # 7 of 7 pass
 > mAP50 will likely fall to roughly **0.45–0.60**. That is the model losing a score it was
 > cheating for. Judge it on **per-class defect AP** and on real photos, not the aggregate.
 
+### How much data is actually here
+
+```bash
+python3 tools/scene_count.py .     # distinct scenes, not file count
+```
+
+A file count is the most misleading number in a vision dataset. Two inflations stack:
+
+| | Count |
+|---|---|
+| Files | 7,520 |
+| Unique source images | 3,133 — **58% of files are augmented copies** |
+| Distinct scenes (near-duplicates merged) | **2,281** |
+| Distinct **defect** scenes | **~750** |
+
+Roboflow baked 3 fixed variants per training image, and the capture IDs are dense contiguous
+runs — the signature of video frames, where consecutive frames are not independent samples.
+The file count overstates the annotated training signal by **3.3x**.
+
+~750 distinct defect scenes across three classes is thin. That number, not 7,520, is the
+ceiling on what a model can learn here, and it is the argument for **adding** data rather
+than tuning harder.
+
+The rebuild therefore keeps **one copy per source** by default. This is not data loss:
+Ultralytics applies mosaic, flip, HSV, scale and rotation online every epoch with fresh
+random parameters, which strictly dominates 3 frozen variants — while 3 frozen variants also
+triple epoch time. `--keep-augmented` restores the old behaviour.
+
 ### Image sharpness
 
 ```bash
