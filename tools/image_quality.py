@@ -70,7 +70,7 @@ WHAT TO DO INSTEAD
 
   b) Use sharpness as an EVALUATION STRATIFIER, not a training filter. Report mAP separately
      on sharp and soft test images. If the model only works on sharp frames, you have learned
-     something that predicts field performance — and no aggregate metric would have told you.
+     something that predicts field performance - and no aggregate metric would have told you.
 
   c) Fix composition, not sharpness. The reason to add data here is that no image in this
      dataset contains a defect and a healthy region together, so the model can win by
@@ -166,7 +166,7 @@ def main() -> int:
         import numpy  # noqa: F401
         from PIL import Image  # noqa: F401
     except ImportError:
-        raise SystemExit("needs numpy and Pillow — run `pip install numpy Pillow`")
+        raise SystemExit("needs numpy and Pillow - run `pip install numpy Pillow`")
 
     root = args.root.resolve()
     names = load_class_names(root)
@@ -195,7 +195,7 @@ def main() -> int:
 
     print(f"Dataset: {root}\nImages measured: {len(records)}")
     print(f"\nSharpness = variance of the Laplacian. Soft < {SOFT}, unusable < {UNUSABLE}.")
-    print("It measures focus, NOT quality — smooth content scores low too. See --help-blur.")
+    print("It measures focus, NOT quality - smooth content scores low too. See --help-blur.")
 
     by_split = defaultdict(list)
     by_family = defaultdict(list)
@@ -214,7 +214,7 @@ def main() -> int:
 
     resolutions = {(r["width"], r["height"]) for r in records}
     print(f"\nResolutions: {len(resolutions)} distinct"
-          + (f" — all {resolutions.pop()}" if len(resolutions) == 1 else ""))
+          + (f" - all {resolutions.pop()}" if len(resolutions) == 1 else ""))
 
     overall = summarise([r["sharpness"] for r in records])
     unusable = [r for r in records if r["sharpness"] < UNUSABLE]
@@ -226,11 +226,11 @@ def main() -> int:
         for record in unusable:
             for cls in record["classes"] or [None]:
                 affected[names[cls] if cls is not None and cls < len(names) else "(background)"] += 1
-        print(f"\n{len(unusable)} images below {UNUSABLE} (a smear — a box on one cannot mean much):")
+        print(f"\n{len(unusable)} images below {UNUSABLE} (a smear - a box on one cannot mean much):")
         for name, count in sorted(affected.items(), key=lambda kv: -kv[1]):
             print(f"    {name:<20}{count:>6}")
         print(f"\n  Drop them with: tools/rebuild_turbine.py --min-sharpness {UNUSABLE}")
-        print("  Do NOT raise that threshold to 'clean up' the dataset — run --help-blur first.")
+        print("  Do NOT raise that threshold to 'clean up' the dataset - run --help-blur first.")
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)

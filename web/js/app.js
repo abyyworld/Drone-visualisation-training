@@ -58,7 +58,7 @@ async function loadManifest() {
     return;
   }
 
-  // A manifest entry is a promise, not a fact — check each file is actually there. A HEAD
+  // A manifest entry is a promise, not a fact - check each file is actually there. A HEAD
   // request is enough and costs nothing next to downloading the weights.
   const keys = ['gate', 'turbine', 'solar'];
   await Promise.all(
@@ -86,7 +86,7 @@ function reportModelStatus() {
       'warning',
       'No detection models are deployed yet. Train them with the notebooks in training/, '
       + 'export with tools/export_onnx.py into web/models/, and this page will pick them up '
-      + 'automatically — no code changes needed.',
+      + 'automatically - no code changes needed.',
     );
     el.drop.setAttribute('aria-disabled', 'true');
     return;
@@ -181,7 +181,7 @@ async function handleFiles(files) {
   el.progress.classList.remove('hidden');
 
   for (const [index, file] of batch.entries()) {
-    setProgress((index / batch.length) * 100, `Analysing ${index + 1} of ${batch.length} — ${file.name}`);
+    setProgress((index / batch.length) * 100, `Analysing ${index + 1} of ${batch.length} - ${file.name}`);
     const result = await analyse(file);
     state.results.push(result);
     appendResultCard(result);
@@ -222,7 +222,7 @@ async function analyse(file) {
       image,
       (loaded, total) => setProgress(
         (loaded / total) * 100,
-        `Downloading ${domain.key} model — ${(loaded / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(1)} MB`,
+        `Downloading ${domain.key} model - ${(loaded / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(1)} MB`,
       ),
     );
 
@@ -317,7 +317,7 @@ function appendResultCard(result) {
         item.appendChild(swatch);
         item.appendChild(
           document.createTextNode(
-            `${detection.label} — ${(detection.confidence * 100).toFixed(1)}%`,
+            `${detection.label} - ${(detection.confidence * 100).toFixed(1)}%`,
           ),
         );
         list.appendChild(item);

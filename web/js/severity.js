@@ -3,7 +3,7 @@
  *
  * Confidence-weighted rather than a raw count, so five borderline detections do not
  * outrank one certain crack. Class weights live in the manifest so the scoring can be
- * retuned without touching code — they encode engineering judgement (a structural crack
+ * retuned without touching code - they encode engineering judgement (a structural crack
  * matters more than surface soiling), not anything the model learned.
  *
  * The thresholds match `score_to_label` in report_generator.py. Change them in both places
@@ -64,7 +64,7 @@ export function summarise(results) {
   if (severePct >= 10) overall = 'Severe damage detected';
   else if (severePct > 0 || moderatePct >= 20) overall = 'Moderate damage detected';
   else if (defectPct >= 10) overall = 'Minor wear detected';
-  else overall = 'Majority healthy — minor issues noted';
+  else overall = 'Majority healthy - minor issues noted';
 
   return { counts, total, overall, defectRate: defectPct };
 }

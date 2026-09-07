@@ -3,7 +3,7 @@
 
 These are NOT trained models. They are fixtures with hand-computed outputs, so the browser
 test can assert exact boxes, classes and severity scores. That catches the failures that a
-"does the page load" smoke test never would — a transposed YOLO output, letterbox padding
+"does the page load" smoke test never would - a transposed YOLO output, letterbox padding
 applied in the wrong direction, NMS that suppresses nothing, an off-by-one in the class map.
 
 The gate fixture is a real (if trivial) computation over the input: global-average-pool the

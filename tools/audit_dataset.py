@@ -3,20 +3,20 @@
 
 Checks, in order of how badly each one burns you:
 
-  1. Shortcut leakage  — does the filename family predict the class? If a model can infer the
+  1. Shortcut leakage  - does the filename family predict the class? If a model can infer the
      label from the image *domain* it never has to learn the defect.
-  2. Split leakage     — are near-duplicate frames (consecutive capture IDs) split across
+  2. Split leakage     - are near-duplicate frames (consecutive capture IDs) split across
      train and val/test? Then validation is partly a memorisation test.
-  3. Class imbalance   — including per-split instance counts too small to measure AP on.
-  4. Box scale spread  — classes whose median box area differs by an order of magnitude
+  3. Class imbalance   - including per-split instance counts too small to measure AP on.
+  4. Box scale spread  - classes whose median box area differs by an order of magnitude
      cannot be balanced by the detection loss.
-  5. Format and integrity — mixed polygon/box labels, duplicate images, orphan files.
+  5. Format and integrity - mixed polygon/box labels, duplicate images, orphan files.
 
 Usage:
     python3 tools/audit_dataset.py [DATASET_ROOT] [--json OUT] [--markdown OUT]
 
 DATASET_ROOT defaults to the repo root and must contain train/ valid/ test/ and data.yaml.
-Pure standard library — no numpy, no torch, no install step.
+Pure standard library - no numpy, no torch, no install step.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from training.common.imagehash import available, cluster, dhash  # noqa: E402
 from training.common.labels import (  # noqa: E402
     Box,
     is_polygon_file,
@@ -89,7 +90,7 @@ def collect(root: Path) -> dict:
 def check_shortcut(records, names) -> dict:
     """Does the source family determine the class? This is the model-killer.
 
-    The dangerous pattern is not "some family is single-class" — it is that the families
+    The dangerous pattern is not "some family is single-class" - it is that the families
     *partition* the classes, so no class is ever seen in more than one visual domain. When
     that holds, a detector can score well by recognising the capture style (aerial wide shot
     vs. defect close-up) without ever learning what the defect looks like. It then behaves
@@ -301,7 +302,6 @@ def check_integrity(records, root: Path) -> dict:
 # there, so it is checked rather than assumed.
 MAX_FILES_PER_SCENE = 2.5    # above this, augmented copies dominate real photographs
 MIN_DEFECT_SCENES = 300      # below this, per-class AP is sampling noise whatever the count
-HAMMING_NEAR_DUPLICATE = 6   # dHash bits differing; empirically separates scenes from copies
 
 
 def check_variety(records) -> dict:
@@ -318,24 +318,20 @@ def check_variety(records) -> dict:
     defect_sources = {r["source"] for r in records if r["boxes"]}
 
     scenes, defect_scenes, method = len(sources), len(defect_sources), "filename sources"
-    try:
-        from PIL import Image  # noqa: F401
-    except ImportError:
-        pass
-    else:
+    if available():
         by_source = {}
         for record in records:
             by_source.setdefault(record["source"], record)
         hashes, labelled = {}, set()
         for source, record in by_source.items():
-            digest = _dhash(record["image"])
+            digest = dhash(record["image"])
             if digest is None:
                 continue
             hashes[source] = digest
             if record["boxes"]:
                 labelled.add(source)
         if hashes:
-            groups = _cluster_near_duplicates(hashes)
+            groups = cluster(hashes)
             scenes = len(groups)
             defect_scenes = len({key for key, members in groups.items()
                                  if members & labelled})
@@ -349,48 +345,6 @@ def check_variety(records) -> dict:
         "inflated": ratio > MAX_FILES_PER_SCENE,
         "too_few_scenes": defect_scenes < MIN_DEFECT_SCENES,
     }
-
-
-def _dhash(path: Path, size: int = 8):
-    """64-bit difference hash. Mirror-invariant comparison happens in the clustering."""
-    try:
-        from PIL import Image
-
-        with Image.open(path) as handle:
-            grey = handle.convert("L").resize((size + 1, size), Image.Resampling.LANCZOS)
-        pixels = list(grey.getdata())
-        bits = 0
-        for row in range(size):
-            offset = row * (size + 1)
-            for column in range(size):
-                bits = (bits << 1) | (pixels[offset + column] > pixels[offset + column + 1])
-        return bits
-    except Exception:
-        return None
-
-
-def _cluster_near_duplicates(hashes: dict) -> dict:
-    """Union-find over Hamming distance. Returns representative -> set of members."""
-    parent = {key: key for key in hashes}
-
-    def find(key):
-        while parent[key] != key:
-            parent[key] = parent[parent[key]]
-            key = parent[key]
-        return key
-
-    items = list(hashes.items())
-    for index, (key_a, digest_a) in enumerate(items):
-        for key_b, digest_b in items[index + 1:]:
-            if bin(digest_a ^ digest_b).count("1") <= HAMMING_NEAR_DUPLICATE:
-                root_a, root_b = find(key_a), find(key_b)
-                if root_a != root_b:
-                    parent[root_a] = root_b
-
-    groups = defaultdict(set)
-    for key in hashes:
-        groups[find(key)].add(key)
-    return groups
 
 
 def build_report(root: Path) -> dict:
@@ -471,7 +425,7 @@ def verdicts(report: dict) -> list[tuple[str, bool, str]]:
 
 
 def to_markdown(report: dict) -> str:
-    out = [f"# Dataset audit — `{report['dataset']}`", ""]
+    out = [f"# Dataset audit - `{report['dataset']}`", ""]
     out += ["## Verdict", "", "| Check | Result | Detail |", "|---|---|---|"]
     for label, passed, detail in verdicts(report):
         out.append(f"| {label} | {'PASS' if passed else 'FAIL'} | {detail} |")
@@ -485,7 +439,7 @@ def to_markdown(report: dict) -> str:
 
     out += ["", "## Source families", "", "| Family | Files | Boxes | Purity | Classes |", "|---|---|---|---|---|"]
     for fam in report["shortcut"]["families"]:
-        classes = ", ".join(f"{k} {v}" for k, v in fam["classes"].items()) or "—"
+        classes = ", ".join(f"{k} {v}" for k, v in fam["classes"].items()) or "-"
         out.append(
             f"| `{fam['family']}` | {fam['files']} | {fam['boxes']} | {fam['purity']:.0%} | {classes} |"
         )

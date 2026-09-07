@@ -1,5 +1,5 @@
 /**
- * Domain gate — decides whether an upload is a turbine blade, a solar panel, or neither.
+ * Domain gate - decides whether an upload is a turbine blade, a solar panel, or neither.
  *
  * This exists because a detector has no way to say "that's a cat". Shown an out-of-domain
  * image it will still emit boxes, often confident ones, and reporting those as inspection
@@ -69,7 +69,7 @@ export async function classify(spec, modelUrl, image, onProgress) {
   return { verdict, confidence, scores };
 }
 
-/** Numerically stable softmax — the max subtraction stops large logits overflowing. */
+/** Numerically stable softmax - the max subtraction stops large logits overflowing. */
 function softmax(logits) {
   const max = Math.max(...logits);
   const exps = logits.map((v) => Math.exp(v - max));

@@ -64,7 +64,7 @@ export function drawDetections(canvas, image, detections) {
     const labelWidth = ctx.measureText(text).width + padding * 2;
     const labelHeight = fontSize + padding * 2;
 
-    // Keep the label inside the frame on all four edges — a detection against the right or
+    // Keep the label inside the frame on all four edges - a detection against the right or
     // top border would otherwise have its label clipped away, which is exactly when the
     // reader most needs to know what it is.
     const labelX = Math.max(0, Math.min(x1 - lineWidth / 2, image.width - labelWidth));

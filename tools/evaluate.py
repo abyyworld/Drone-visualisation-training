@@ -2,13 +2,13 @@
 """Evaluate a detector and report the numbers that actually mean something.
 
 The v1 run only ever recorded aggregate mAP. With `healthy` at 62% of instances and
-trivially separable, that aggregate said almost nothing about defect detection — which is
+trivially separable, that aggregate said almost nothing about defect detection - which is
 the entire job. This prints per-class AP, precision and recall, and a confusion matrix.
 
 Two things worth knowing before comparing v1 against v2:
 
   * They have different class sets. v1 has four classes including `healthy`; v2 has three
-    and treats "no detections" as healthy. Aggregate mAP is therefore NOT comparable —
+    and treats "no detections" as healthy. Aggregate mAP is therefore NOT comparable -
     v2 loses an easy majority class and its aggregate will look worse while the model is
     better. Compare the three shared defect classes.
   * They have different test splits, because v2 re-split on capture-ID blocks to remove
@@ -41,7 +41,7 @@ def load(weights: Path):
     try:
         from ultralytics import YOLO
     except ImportError:
-        raise SystemExit("ultralytics is not installed — run `pip install ultralytics`")
+        raise SystemExit("ultralytics is not installed - run `pip install ultralytics`")
     return YOLO(str(weights))
 
 

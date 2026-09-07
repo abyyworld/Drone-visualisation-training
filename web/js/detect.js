@@ -2,7 +2,7 @@
  * YOLO inference and post-processing.
  *
  * Handles both output layouts you can get from an Ultralytics export, because which one you
- * get depends on the model family and the export flags — and a mismatch here produces
+ * get depends on the model family and the export flags - and a mismatch here produces
  * confident nonsense rather than an error:
  *
  *   [1, 4+nc, N]  classic YOLOv8/YOLO11 head. Needs sigmoid-free class scores, argmax and NMS.

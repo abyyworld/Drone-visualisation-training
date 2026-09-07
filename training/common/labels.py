@@ -4,7 +4,7 @@ The Roboflow export stores `healthy` as segmentation polygons and every defect c
 5-value bounding boxes. A naive 5-field parse silently mis-reads the polygons and reports
 thousands of bogus out-of-bounds boxes, so every tool here goes through `parse_label_file`.
 
-Pure standard library on purpose — these run on a laptop, on Kaggle, and in CI without
+Pure standard library on purpose - these run on a laptop, on Kaggle, and in CI without
 installing anything.
 """
 

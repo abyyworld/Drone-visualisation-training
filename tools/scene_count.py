@@ -6,7 +6,7 @@ advertises 7,520 images. It contains roughly 750 distinct defect scenes. Two sep
 inflations stack up:
 
   1. OFFLINE AUGMENTATION. Roboflow wrote 3 variants of each training image (flip, +-15
-     rotation, +-25% brightness, 0-1px blur). Those are not new information — the model sees
+     rotation, +-25% brightness, 0-1px blur). Those are not new information - the model sees
      the same scene three times. 58% of the files here are copies of another file.
 
   2. NEAR-DUPLICATE FRAMES. The capture IDs are dense contiguous runs, the signature of
@@ -19,7 +19,7 @@ need more data.
 
 Method: 64-bit difference hash per unique source image, min-distance against the mirrored
 hash too so horizontal flips do not read as distinct, then union-find clustering at a Hamming
-threshold. A threshold of 6/64 is conservative — it merges only genuinely near-identical
+threshold. A threshold of 6/64 is conservative - it merges only genuinely near-identical
 frames. 10 starts merging distinct scenes and is reported for context, not for quoting.
 
 Usage:
@@ -51,7 +51,7 @@ REPORT_THRESHOLDS = (0, 3, 6, 10)
 def dhash(path: Path, mirror: bool = False, size: int = 8) -> bytes:
     """64-bit difference hash: compare each pixel with its right neighbour.
 
-    Robust to brightness and compression (which is what we want — those are the
+    Robust to brightness and compression (which is what we want - those are the
     augmentations), sensitive to content and geometry.
     """
     import numpy as np
@@ -108,7 +108,7 @@ def main() -> int:
     try:
         import numpy as np
     except ImportError:
-        raise SystemExit("needs numpy and Pillow — run `pip install numpy Pillow`")
+        raise SystemExit("needs numpy and Pillow - run `pip install numpy Pillow`")
 
     root = args.root.resolve()
 

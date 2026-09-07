@@ -4,7 +4,7 @@
 WHAT DID NOT WORK, AND WHY IT IS RECORDED HERE
     The first version of this tool used two hand-built heuristics: a COCO-pretrained
     detector flagging off-domain classes, and an edge-structure score for burnt-in text.
-    On 3,090 turbine images it flagged 1,099 (35.6%) — and inspection of the flagged
+    On 3,090 turbine images it flagged 1,099 (35.6%) - and inspection of the flagged
     samples showed almost all were ordinary blade photographs.
 
     Both heuristics were mismatched to the domain in the same way. A turbine blade is a
@@ -19,8 +19,8 @@ WHAT THIS DOES INSTEAD
     Outlier-ness is defined relative to the dataset rather than against a fixed idea of what
     the images should contain: embed every image with a pretrained backbone, take the
     centroid, and rank by cosine distance from it. Whatever the dataset is mostly made of
-    becomes the norm, and genuine intruders — a screenshot, a colour smear, a photo of
-    something else entirely — sit far out in the tail regardless of subject.
+    becomes the norm, and genuine intruders - a screenshot, a colour smear, a photo of
+    something else entirely - sit far out in the tail regardless of subject.
 
     This has no opinion about turbines, so it transfers to the solar dataset unchanged.
 

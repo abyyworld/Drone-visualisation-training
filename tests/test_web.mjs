@@ -1,8 +1,8 @@
 /**
  * End-to-end browser test for the inspection web app.
  *
- * Runs the real pipeline — ONNX Runtime Web, letterboxing, YOLO decoding, NMS, severity
- * scoring, canvas rendering — against the hand-computed fixtures from make_fixtures.py, so
+ * Runs the real pipeline - ONNX Runtime Web, letterboxing, YOLO decoding, NMS, severity
+ * scoring, canvas rendering - against the hand-computed fixtures from make_fixtures.py, so
  * the expected boxes and scores below are arithmetic, not snapshots.
  *
  *   python3 tests/make_fixtures.py
@@ -38,8 +38,8 @@ const MIME = {
 // solar:   soiling 0.85 (weight 1.0) + missing_module 0.75 (weight 4.0) = 0.85 + 3.00 = 3.85
 // Both land in [2, 5) -> "Moderate damage".
 const EXPECT = {
-  turbine: { score: '4.20', severity: 'Moderate damage', detections: ['corrosion — 90.0%', 'crack — 80.0%'] },
-  solar: { score: '3.85', severity: 'Moderate damage', detections: ['soiling — 85.0%', 'missing_module — 75.0%'] },
+  turbine: { score: '4.20', severity: 'Moderate damage', detections: ['corrosion - 90.0%', 'crack - 80.0%'] },
+  solar: { score: '3.85', severity: 'Moderate damage', detections: ['soiling - 85.0%', 'missing_module - 75.0%'] },
 };
 
 let failures = 0;
@@ -107,7 +107,7 @@ async function cardFor(page, filename) {
 
 async function main() {
   if (!existsSync(join(FIXTURES, 'gate.onnx'))) {
-    throw new Error('fixtures missing — run `python3 tests/make_fixtures.py` first');
+    throw new Error('fixtures missing - run `python3 tests/make_fixtures.py` first');
   }
 
   await buildSite();
@@ -122,7 +122,7 @@ async function main() {
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 
     console.log('\nPage load');
-    equal('title', await page.title(), 'Drone Inspection — Turbine & Solar Defect Analysis');
+    equal('title', await page.title(), 'Drone Inspection - Turbine & Solar Defect Analysis');
     check('backend reported', /WebGPU|WASM/.test(await page.locator('#backend').textContent()));
     check('no model-missing banner', await page.locator('#status-banner').isHidden());
     check('domain override stays hidden when gate is present',
@@ -156,7 +156,7 @@ async function main() {
     check('RGB-only limitation is stated on the card',
       (await solar.locator('.card__note').textContent()).includes('thermal infrared'));
 
-    console.log('\nInvalid image (green) — the rejection path');
+    console.log('\nInvalid image (green) - the rejection path');
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'invalid_green.png'));
     const invalid = await cardFor(page, 'invalid_green.png');
     await invalid.locator('.card__message').waitFor({ timeout: 30000 });
@@ -206,7 +206,7 @@ async function main() {
 
     // Degraded mode: the site must stay honest when weights have not been deployed yet,
     // which is exactly the state a fresh clone is in.
-    console.log('\nDegraded mode — no models deployed');
+    console.log('\nDegraded mode - no models deployed');
     for (const model of ['gate.onnx', 'turbine.onnx', 'solar.onnx']) {
       await rm(join(SITE, 'models', model), { force: true });
     }
@@ -219,7 +219,7 @@ async function main() {
     check('page still renders rather than erroring', await page.locator('.empty').isVisible());
 
     // Gate absent but a detector present: fall back to a manual choice instead of guessing.
-    console.log('\nDegraded mode — detector without gate');
+    console.log('\nDegraded mode - detector without gate');
     await cp(join(FIXTURES, 'turbine.onnx'), join(SITE, 'models', 'turbine.onnx'));
     await page.goto(`http://127.0.0.1:${port}/?nogate`, { waitUntil: 'networkidle' });
     check('offers manual inspection type', await page.locator('#override-row').isVisible());

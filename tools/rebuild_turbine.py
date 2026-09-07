@@ -6,7 +6,7 @@ audit_dataset.py` shows why. This script fixes each cause:
 
   1. `healthy` is dropped as a detection class. It never co-occurs with a defect and its
      median box covers 44% of the frame, so it is a whole-image scene label wearing an
-     object-detection costume — and it dominates the box/DFL loss, drowning out the small
+     object-detection costume - and it dominates the box/DFL loss, drowning out the small
      defects. An image with no boxes *is* the healthy prediction.
 
   2. Healthy images are kept, as explicit background negatives (empty label files). They are
@@ -24,7 +24,7 @@ audit_dataset.py` shows why. This script fixes each cause:
 
   5. Byte-identical duplicate images are dropped.
 
-Val and test keep one copy per source image — offline augmentation belongs in train only,
+Val and test keep one copy per source image - offline augmentation belongs in train only,
 where it is data; in val it is just the same picture scored three times.
 
 Usage:
@@ -54,7 +54,7 @@ from training.common.labels import iter_split, source_name, split_family_id  # n
 # on different data relabels every box in the set.
 CLASS_REMAP: dict[int, int] = {}
 V2_NAMES: list[str] = []
-# v1 class 2. Not referenced directly any more — an image is a negative when it has no
+# v1 class 2. Not referenced directly any more - an image is a negative when it has no
 # boxes left after CLASS_REMAP, which covers both `healthy`-only and unannotated images.
 HEALTHY_CLASS = 2
 
@@ -86,7 +86,7 @@ def block_split(ids: list[int]) -> dict[int, str]:
 
 
 def place(src: Path, dst: Path, copy: bool) -> None:
-    """Hardlink by default — same bytes, no extra disk, and still a real file when zipped."""
+    """Hardlink by default - same bytes, no extra disk, and still a real file when zipped."""
     if dst.exists():
         dst.unlink()
     if copy:
@@ -183,7 +183,7 @@ def main() -> int:
 
     # --- Optional sharpness floor ------------------------------------------------------
     # Only ANNOTATED images are filtered. A blurry background is still a correct negative,
-    # and it teaches the model not to hallucinate defects on soft frames — which is exactly
+    # and it teaches the model not to hallucinate defects on soft frames - which is exactly
     # what real drone footage looks like. A blurry *annotated* image is different: if the
     # defect is a smear, its box cannot teach localisation, only noise.
     dropped_by_class: Counter = Counter()
@@ -206,7 +206,7 @@ def main() -> int:
         if not defects:
             raise SystemExit(
                 f"--min-sharpness {args.min_sharpness} removed every annotated image. "
-                "That threshold is far too high — see tools/image_quality.py --help-blur."
+                "That threshold is far too high - see tools/image_quality.py --help-blur."
             )
         share = removed / (removed + len(defects))
         print(f"Sharpness floor {args.min_sharpness}: dropped {removed} annotated images "
@@ -239,7 +239,7 @@ def main() -> int:
     # --- Choose which files land where ------------------------------------------------
     # One copy per source everywhere by default. Roboflow baked 3 augmented variants of each
     # training image, but Ultralytics applies mosaic, flip, HSV, scale and rotation online
-    # each epoch with fresh parameters — strictly more varied than 3 frozen variants. Keeping
+    # each epoch with fresh parameters - strictly more varied than 3 frozen variants. Keeping
     # both means every epoch costs 3x as much to show the model the same scenes.
     chosen: dict[str, list] = {"train": [], "valid": [], "test": []}
     seen_sources: dict[str, set] = {"train": set(), "valid": set(), "test": set()}
@@ -270,7 +270,7 @@ def main() -> int:
 
         # A dedicated RNG per split. Sharing the global one meant a change to the TRAIN
         # pool size consumed a different amount of RNG state and silently reshuffled which
-        # negatives landed in valid/test — quietly invalidating any A/B against an earlier
+        # negatives landed in valid/test - quietly invalidating any A/B against an earlier
         # build. Seeded by split name so each split is reproducible on its own.
         rng = random.Random(f"{args.seed}:{split}")
         budget = int(len(chosen[split]) * args.negative_ratio)
@@ -282,7 +282,7 @@ def main() -> int:
 
     # --- Write it out -----------------------------------------------------------------
     # Build into a sibling directory and swap at the end. Deleting `out` up front destroys
-    # the dataset out from under anything currently reading it — a training run pointed at
+    # the dataset out from under anything currently reading it - a training run pointed at
     # this path dies mid-epoch with FileNotFoundError, which is exactly what happened once.
     staging = out.with_name(out.name + ".building")
     if staging.exists():

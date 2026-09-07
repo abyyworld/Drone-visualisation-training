@@ -41,7 +41,7 @@ def export_ultralytics(weights: Path, imgsz: int) -> tuple[Path, list[str]]:
     try:
         from ultralytics import YOLO
     except ImportError:
-        raise SystemExit("ultralytics is not installed — run `pip install ultralytics`")
+        raise SystemExit("ultralytics is not installed - run `pip install ultralytics`")
 
     model = YOLO(str(weights))
     names = [model.names[i] for i in sorted(model.names)]
@@ -61,11 +61,11 @@ def export_ultralytics(weights: Path, imgsz: int) -> tuple[Path, list[str]]:
 
 
 def quantize(source: Path, target: Path) -> None:
-    """Dynamic int8 quantisation — weights only, no calibration dataset needed."""
+    """Dynamic int8 quantisation - weights only, no calibration dataset needed."""
     try:
         from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError:
-        raise SystemExit("onnxruntime is not installed — run `pip install onnxruntime`")
+        raise SystemExit("onnxruntime is not installed - run `pip install onnxruntime`")
 
     quantize_dynamic(
         model_input=str(source),
@@ -77,7 +77,7 @@ def quantize(source: Path, target: Path) -> None:
 def update_manifest(name: str, filename: str, imgsz: int, labels: list[str]) -> None:
     """Keep models/manifest.json in step with what was actually exported.
 
-    Class order and image size must match the export exactly — the web app trusts the
+    Class order and image size must match the export exactly - the web app trusts the
     manifest, so a stale entry mislabels every detection rather than failing loudly.
     """
     path = WEB_MODELS / "manifest.json"
@@ -142,7 +142,7 @@ def main() -> int:
     size_mb = target.stat().st_size / 1e6
     print(f"\n  {target}  {size_mb:.1f} MB")
     if size_mb > 15:
-        print("  ! over 15 MB — that is a slow first visit. Consider a smaller model "
+        print("  ! over 15 MB - that is a slow first visit. Consider a smaller model "
               "(yolo11n), a lower imgsz, or quantisation if you disabled it.")
 
     update_manifest(args.name, target.name, args.imgsz, labels)

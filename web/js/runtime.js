@@ -5,7 +5,7 @@
  * to pay for or keep warm, and GitHub Pages can host the whole thing as static files.
  *
  * WebGPU is tried first and falls back to WASM automatically. The fallback is not optional
- * politeness — Safari and older Chrome still ship without usable WebGPU, and a hard failure
+ * politeness - Safari and older Chrome still ship without usable WebGPU, and a hard failure
  * there would take the whole site down.
  */
 
@@ -16,7 +16,7 @@ export const ORT_VERSION = '1.23.0';
 const CDN_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 
 // Where to load the runtime and its WASM assets from. Override via `runtime.ortBase` in
-// models/manifest.json to self-host — worth doing for a production deployment, so the site
+// models/manifest.json to self-host - worth doing for a production deployment, so the site
 // does not depend on a third-party CDN staying up (and so the tests can run offline).
 let ortBase = CDN_BASE;
 
@@ -73,7 +73,7 @@ export async function getSession(key, url, onProgress) {
   const promise = (async () => {
     const ort = await loadOrt();
 
-    // Fetch the weights ourselves so the UI can show real download progress — model files
+    // Fetch the weights ourselves so the UI can show real download progress - model files
     // are the slowest part of first load and a silent wait reads as a broken page.
     const buffer = await fetchWithProgress(url, onProgress);
 

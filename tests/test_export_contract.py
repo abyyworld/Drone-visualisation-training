@@ -3,7 +3,7 @@
 
 The browser suite (tests/test_web.mjs) validates the JavaScript decoder against ONNX
 fixtures whose outputs I chose by hand. That proves the decoder is self-consistent. It does
-NOT prove the decoder agrees with what Ultralytics actually exports — output layout, class
+NOT prove the decoder agrees with what Ultralytics actually exports - output layout, class
 ordering, normalisation and opset are all assumptions until something checks them against a
 genuine model.
 
@@ -12,7 +12,7 @@ model, at deployment, with detections that are subtly wrong rather than obviousl
 
 What it checks:
   1. The exported graph's input is [1, 3, imgsz, imgsz] float32.
-  2. The output is a layout web/js/detect.js handles — [1, 4+nc, anchors] or [1, N, 6].
+  2. The output is a layout web/js/detect.js handles - [1, 4+nc, anchors] or [1, N, 6].
   3. The class count matches the label list in web/models/manifest.json.
   4. **A Python port of the JS decoder, run on the ONNX output, reproduces Ultralytics' own
      predictions on the same image.** This is the real test: if these agree, the browser is
@@ -44,7 +44,7 @@ IOU = 0.45
 
 
 # --------------------------------------------------------------------------------------
-# Python port of web/js/detect.js + preprocess.js. Kept deliberately literal — this only
+# Python port of web/js/detect.js + preprocess.js. Kept deliberately literal - this only
 # has value if it mirrors the JavaScript, so prefer an awkward transcription over an
 # idiomatic rewrite.
 # --------------------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def check(name, ok, detail=""):
 def smoke_train(dataset: Path, out: Path) -> Path:
     """Train a deliberately worthless model, fast, just to get a real .pt to export.
 
-    Accuracy is irrelevant here — this exists so the export path can be exercised on CPU
+    Accuracy is irrelevant here - this exists so the export path can be exercised on CPU
     without waiting on a real training run.
     """
     from ultralytics import YOLO
@@ -177,7 +177,7 @@ def smoke_train(dataset: Path, out: Path) -> Path:
         f"nc: {len(names)}\nnames: {names}\n"
     )
 
-    print(f"Smoke-training on {subset} (yolo11n @ 320, 2 epochs — the model will be bad on purpose)\n")
+    print(f"Smoke-training on {subset} (yolo11n @ 320, 2 epochs - the model will be bad on purpose)\n")
     model = YOLO("yolo11n.pt")
     model.train(
         data=str(subset / "data.yaml"), epochs=2, imgsz=320, batch=8,
@@ -207,14 +207,14 @@ def main() -> int:
         from PIL import Image
         from ultralytics import YOLO
     except ImportError as exc:
-        raise SystemExit(f"missing dependency ({exc}) — pip install ultralytics onnxruntime")
+        raise SystemExit(f"missing dependency ({exc}) - pip install ultralytics onnxruntime")
 
     args.out.mkdir(parents=True, exist_ok=True)
 
     weights = args.weights
     if args.smoke_train or weights is None:
         if not (args.dataset / "data.yaml").exists():
-            raise SystemExit(f"{args.dataset} not found — run tools/rebuild_turbine.py first")
+            raise SystemExit(f"{args.dataset} not found - run tools/rebuild_turbine.py first")
         weights = smoke_train(args.dataset, args.out)
 
     print(f"\nWeights: {weights}")
@@ -262,7 +262,7 @@ def main() -> int:
         candidates = sorted((args.dataset / "valid" / "images").iterdir())
         image_path = candidates[0] if candidates else None
     if image_path is None or not Path(image_path).exists():
-        print("\nNo image available — skipping the decoder-agreement check.")
+        print("\nNo image available - skipping the decoder-agreement check.")
         return 1 if FAILURES else 0
 
     image = Image.open(image_path).convert("RGB")
@@ -270,7 +270,7 @@ def main() -> int:
     onnx_out = np.asarray(session.run(None, {inp.name: tensor})[0])
 
     # Comparing "nothing" against "nothing" proves no arithmetic. If the model is too weak
-    # to fire at the requested threshold — which a smoke model always is — drop the
+    # to fire at the requested threshold - which a smoke model always is - drop the
     # threshold until it emits something. The boxes need not be CORRECT to be a valid test,
     # only to AGREE.
     conf = args.conf
@@ -345,13 +345,13 @@ def main() -> int:
         floor = max([d["conf"] for d in ours if d not in [m[0] for m in matched]]
                     + [theirs[i]["conf"] for i in unused] + [0.0])
         print(f"        ({len(ours) - len(matched)} + {len(unused)} unmatched, all below "
-              f"conf {floor:.4f} — NMS tie-breaking at the noise floor, not a decode error)")
+              f"conf {floor:.4f} - NMS tie-breaking at the noise floor, not a decode error)")
 
     print()
     if FAILURES:
         print(f"{len(FAILURES)} check(s) failed: {', '.join(FAILURES)}")
         return 1
-    print("Export contract holds — the browser decoder matches Ultralytics.")
+    print("Export contract holds - the browser decoder matches Ultralytics.")
     return 0
 
 

@@ -4,7 +4,7 @@ One implementation on purpose: the audit reports a number and the rebuild filter
 same number, so if the two ever computed it differently the tool would drop a different set
 of images than the one it just told you about.
 
-Unlike the rest of `training/common`, this needs numpy and Pillow — image decoding cannot be
+Unlike the rest of `training/common`, this needs numpy and Pillow - image decoding cannot be
 done from the standard library. Callers import it lazily so the dependency-free tools stay
 dependency-free.
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Below this an image is soft. It is a flag to look at, NOT a verdict — the metric cannot
+# Below this an image is soft. It is a flag to look at, NOT a verdict - the metric cannot
 # tell "out of focus" from "genuinely smooth content", and a blade against clear sky is
 # legitimately low-texture.
 SOFT = 100.0
@@ -23,7 +23,7 @@ UNUSABLE = 20.0
 
 
 def laplacian_variance(path: Path) -> float:
-    """Variance of the Laplacian — the standard focus measure. Higher is sharper.
+    """Variance of the Laplacian - the standard focus measure. Higher is sharper.
 
     Computed on the greyscale image at native resolution. Note this is scale-dependent:
     comparing values across datasets with different resolutions is meaningless. Every image

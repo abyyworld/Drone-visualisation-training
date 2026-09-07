@@ -3,12 +3,12 @@
  *
  * Two different resize policies, because the two model types were trained differently:
  *
- *   letterbox() — for the detectors. Preserves aspect ratio and pads, exactly as Ultralytics
+ *   letterbox() - for the detectors. Preserves aspect ratio and pads, exactly as Ultralytics
  *                 does at inference. Stretching instead would distort every box the model
  *                 learned, which is the kind of silent mismatch that makes a model look
  *                 broken when it is merely being fed wrong.
  *
- *   centerCrop() — for the gate classifier, matching standard ImageNet-style eval.
+ *   centerCrop() - for the gate classifier, matching standard ImageNet-style eval.
  */
 
 // ImageNet statistics, used by the torchvision-pretrained gate backbone. The YOLO detectors
@@ -53,7 +53,7 @@ export function letterbox(source, size) {
   return { data, width: size, height: size, scale, padX, padY };
 }
 
-/** Resize the short side then centre-crop — the standard classification eval transform. */
+/** Resize the short side then centre-crop - the standard classification eval transform. */
 export function centerCrop(source, size) {
   const sourceWidth = source.naturalWidth ?? source.width;
   const sourceHeight = source.naturalHeight ?? source.height;
@@ -109,6 +109,6 @@ export async function loadImage(file) {
   try {
     return await createImageBitmap(file);
   } catch {
-    throw new Error(`${file.name} could not be decoded — it may be corrupt or an unsupported format.`);
+    throw new Error(`${file.name} could not be decoded - it may be corrupt or an unsupported format.`);
   }
 }

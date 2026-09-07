@@ -93,10 +93,10 @@ def build_cover(styles, meta):
     meta_rows = [
         ['Inspection Date', date_str],
         ['Asset ID',        meta.get('turbine_id', 'TRB-001')],
-        ['Site',            meta.get('site', 'Wind Farm — Location TBC')],
+        ['Site',            meta.get('site', 'Wind Farm - Location TBC')],
         ['Operator',        meta.get('operator', 'DRONE EDUTRAIN LLC')],
         ['Model Used',      meta.get('model_name', 'Unspecified')],
-        ['Total Images',    str(meta.get('total_images', '—'))],
+        ['Total Images',    str(meta.get('total_images', '-'))],
     ]
     meta_tbl = Table(meta_rows, colWidths=[50*mm, 100*mm])
     meta_tbl.setStyle(TableStyle([
@@ -287,7 +287,7 @@ def build_detail_pages(styles, results, annotated_dir):
 def generate_report(
     json_path, annotated_dir, output_pdf,
     asset_id='TRB-001',
-    site='Wind Farm — Location TBC',
+    site='Wind Farm - Location TBC',
     operator='DRONE EDUTRAIN LLC',
     model_name=None,
     title='WIND TURBINE INSPECTION REPORT',
@@ -296,7 +296,7 @@ def generate_report(
 
     Consumes the JSON the web app exports, so the browser tool and this generator agree on
     one schema. Results that were rejected by the domain gate or errored carry no severity
-    and are excluded from the statistics — counting a refused upload as "healthy" would
+    and are excluded from the statistics - counting a refused upload as "healthy" would
     quietly inflate the pass rate, which is the one number a report must not overstate.
     """
     with open(json_path) as f:
@@ -333,7 +333,7 @@ def generate_report(
     if severe_pct >= 10:                        overall = 'Severe damage detected'
     elif severe_pct > 0 or moderate_pct >= 20:  overall = 'Moderate damage detected'
     elif defect_pct >= 10:                      overall = 'Minor wear detected'
-    else:                                       overall = 'Majority healthy — minor issues noted'
+    else:                                       overall = 'Majority healthy - minor issues noted'
 
     meta = {
         'turbine_id':    asset_id,
@@ -374,7 +374,7 @@ def main():
     parser.add_argument('--annotated-dir', default='',
                         help='directory of annotated images, named to match the JSON entries')
     parser.add_argument('--asset-id', default='TRB-001')
-    parser.add_argument('--site', default='Site — Location TBC')
+    parser.add_argument('--site', default='Site - Location TBC')
     parser.add_argument('--operator', default='DRONE EDUTRAIN LLC')
     parser.add_argument('--model', dest='model_name', default=None,
                         help='model name to print on the cover')
