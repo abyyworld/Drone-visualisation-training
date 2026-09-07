@@ -25,21 +25,13 @@
     "file": "turbine.onnx",
     "task": "detect",
     "imgsz": 960,
-    "labels": [
-      "corrosion",
-      "crack",
-      "surface_peeling"
-    ],
+    "labels": [],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
-    "severityWeights": {
-      "crack": 3.0,
-      "corrosion": 2.0,
-      "surface_peeling": 1.0
-    },
+    "severityWeights": {},
     "displayName": "Wind turbine blade",
-    "notes": "No 'healthy' class by design: an image with no detections is the healthy result.",
-    "zeroDetectionNote": "Found none of: corrosion, crack, surface peeling. Trained on close-up blade imagery, so structural failure, missing or severed blade sections, and damage seen at long range are outside what it can assess. On a distant or whole-turbine photo this means \u201cnot assessed\u201d, not \u201cundamaged\u201d \u2014 use close-range shots of the blade surface."
+    "notes": "Awaiting a model. Set labels to match the export (tools/export_onnx.py writes them from the model), and severityWeights to one entry per label - higher means more serious. Both described the previous dataset's three surface classes and were cleared with it.",
+    "zeroDetectionNote": ""
   },
   "solar": {
     "file": "solar.onnx",
