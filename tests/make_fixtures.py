@@ -113,7 +113,7 @@ def main() -> int:
     print("models:")
     build_gate(out / "gate.onnx")
 
-    # Turbine: corrosion, crack, and a third box that overlaps the first and must be
+    # Turbine: two classes plus a third box overlapping the first, which must be
     # suppressed by NMS. Values chosen so the expected result is calculable by hand.
     build_detector(
         out / "turbine.onnx",
@@ -121,7 +121,7 @@ def main() -> int:
         size=960,
         anchors=8,
         detections=[
-            (480, 480, 200, 100, 0, 0.90),  # corrosion -> (380,430,580,530)
+            (480, 480, 200, 100, 0, 0.90),  # class 0 -> (380,430,580,530)
             (200, 300, 60, 40, 1, 0.80),    # crack     -> (170,280,230,320)
             (485, 482, 200, 100, 0, 0.70),  # near-duplicate of the first, NMS should drop it
         ],

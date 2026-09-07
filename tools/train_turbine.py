@@ -14,7 +14,7 @@ EVERY NON-DEFAULT SETTING BELOW HAS A REASON, RECORDED INLINE. Read them before 
 one - most encode a failure that has already happened once.
 
 Usage:
-    python3 tools/train_turbine.py --data /kaggle/working/turbine_v2/data.yaml
+    python3 tools/train_turbine.py --data /kaggle/working/turbine/data.yaml
 """
 
 from __future__ import annotations
@@ -28,8 +28,9 @@ from pathlib import Path
 
 CONFIG = {
     "epochs": 100,
-    "imgsz": 960,          # 21.6% of surface_peeling boxes are under 1% of frame area;
-                           # resolution is the dominant lever for small objects.
+    "imgsz": 960,          # Blade defects are small in frame; resolution is the dominant
+                           # lever for small objects. Lower it only if the new dataset's
+                           # box areas say the defects are large.
     "batch": 8,            # 960px on a 16GB T4. Drop to 4 on OOM.
 
     # patience MUST outlast warmup by a wide margin. A run with warmup=5/patience=10 peaked
@@ -82,7 +83,7 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", type=Path, required=True, help="path to data.yaml")
     parser.add_argument("--project", default="/kaggle/working/runs")
-    parser.add_argument("--name", default="turbine_v2")
+    parser.add_argument("--name", default="turbine")
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--epochs", type=int, help="override epochs (for a smoke test)")
     parser.add_argument("--resume", action="store_true",
