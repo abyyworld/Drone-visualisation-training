@@ -115,3 +115,94 @@ apart. `training/hard_negatives.md` has the mining workflow;
 
 Budget for labelling a few hundred frames of your own. It will do more for
 real-world performance than another 50,000 public images.
+
+---
+
+# Getting data for the other domains
+
+The pattern below repeats per domain, and the honest summary is that **public
+data gets you a demo and your own data gets you a product**. That is not a
+licensing point first — it is a distribution one. Public sets carry someone
+else's cameras, altitudes and terrain.
+
+## The licensing question you need a real answer to
+
+Almost every public aerial dataset is research-use-only. Whether training on
+research-licensed images restricts weights you then ship commercially is
+**contested and jurisdiction-dependent**, and it is not a question this document
+can settle — it is one for whoever handles your legal exposure. Two practical
+consequences meanwhile:
+
+* `prepare_datasets.py --licence-gate strict` refuses to build from anything not
+  marked `commercial_use: "yes"`. Use it for any model destined for a product,
+  and find out before the GPU hours rather than after.
+* Get terms **in writing** for the two or three sources you actually intend to
+  ship with, then mark only those. Thirteen of fifteen are currently
+  `unverified`, which is their true state, not pessimism.
+
+## Per domain, fastest path to something shippable
+
+### Cars / traffic
+Public aerial vehicle data is plentiful and mostly research-licensed — VisDrone
+says so explicitly, and UAVDT and DOTA need checking. So for production this is
+the domain where you are most likely to need either a negotiated licence or your
+own footage. The saving grace is that cars are easy to collect: one flight over
+a car park at your target altitude yields thousands of instances, and unlike
+fire you can stage it whenever you like.
+
+### Solar panels
+`InfraredSolarModules` (Raptor Maps) is the one substantial public set —
+thermal images of module anomalies across roughly a dozen defect classes. It is
+module-level thermal rather than whole-array aerial, so it will not teach
+localisation from altitude, but it is a real head start on the defect
+vocabulary. Everything else is effectively proprietary.
+
+### Wind turbines
+Essentially nothing usable is public. Blade-defect imagery is commercially
+valuable and stays inside the companies that collect it.
+
+**This is not the bad news it looks like.** You already fly these assets, which
+means solar and turbine are the two domains where you can build a dataset a
+competitor cannot buy. Public data is not the moat here; your flight log is.
+Start labelling from the footage you already have, and treat these two profiles
+as own-data-first from day one rather than discovering it after a public-data
+detour.
+
+### Crowds
+ShanghaiTech A/B, UCF-QNRF, JHU-CROWD++, NWPU-Crowd — the standard density
+benchmarks. Mostly research-licensed, and mostly ground-level or elevated rather
+than nadir aerial, which matters: a density model trained on ground-level crowd
+photographs does not transfer cleanly to a drone looking straight down. Expect
+to need your own aerial crowd footage, and expect the data-protection work to be
+the long pole rather than the labelling.
+
+## The loop that actually produces production data
+
+Public pre-training is the start, not the strategy. The system already
+generates its own training material:
+
+1. Fly. `station/incidentlog` records **every** frame with its detections,
+   including the empty ones — which is the part that matters, because the empty
+   frames are where the misses are.
+2. Pull the frames where the model was wrong: the misses from
+   `tools/evaluate.py --miss-list`, and the false positives from review.
+3. Label those, not random frames. A few hundred well-chosen hard cases move
+   real-world performance further than fifty thousand easy public images.
+4. Retrain, re-score against the **frozen** test set, ship if it improved.
+5. Repeat. `training/hard_negatives.md` has the mining workflow.
+
+Three splits, not two. Train and val can rotate; the **test set is frozen,
+drawn from real deployments, and never trained or tuned against** — otherwise
+your version-over-version numbers mean nothing, which you will discover at the
+worst possible moment.
+
+## Budget the labelling honestly
+
+For each new domain, a first usable own-dataset is on the order of a few
+thousand labelled frames, which is days of work, not hours. Two things make it
+much cheaper:
+
+* **Pre-label with the current model and correct it** rather than drawing boxes
+  from scratch — three to five times faster once the model is even mediocre.
+* **Label only what the miss list surfaces.** Labelling frames the model already
+  gets right teaches it nothing and costs the same per frame.
