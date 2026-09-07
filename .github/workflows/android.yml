@@ -144,6 +144,11 @@ jobs:
               "assets/www/js/app.js",
               "assets/www/js/vlm.js",
               "assets/www/js/video.js",
+              # Imported by app.js, so a missing one is a blank screen rather than a
+              # degraded feature. The Gradle copy is wholesale, which is exactly why a
+              # missing file here would mean the copy silently did not happen.
+              "assets/www/js/formats.js",
+              "assets/www/js/zip.js",
               "assets/www/css/app.css",
               "assets/www/prompts/inspection.json",
               "assets/www/models/manifest.json",
