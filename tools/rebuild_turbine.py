@@ -48,8 +48,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from training.common.labels import iter_split, source_name, split_family_id  # noqa: E402
 
 # v1 class ids -> v2. `healthy` (2) is deliberately absent: those images become backgrounds.
-CLASS_REMAP = {0: 0, 1: 1, 3: 2}
-V2_NAMES = ["corrosion", "crack", "surface_peeling"]
+# Source class index -> output class index, and the output names. These described the
+# previous dataset (Roboflow indices, with 2 = healthy dropped) and were cleared with
+# it. Set both from the new data.yaml before running: silently reusing the old indices
+# on different data relabels every box in the set.
+CLASS_REMAP: dict[int, int] = {}
+V2_NAMES: list[str] = []
 # v1 class 2. Not referenced directly any more — an image is a negative when it has no
 # boxes left after CLASS_REMAP, which covers both `healthy`-only and unannotated images.
 HEALTHY_CLASS = 2
@@ -134,6 +138,12 @@ def main() -> int:
 
     if not (args.src / "train" / "images").is_dir():
         raise SystemExit(SOURCE_MISSING)
+    if not CLASS_REMAP or not V2_NAMES:
+        raise SystemExit(
+            "CLASS_REMAP and V2_NAMES are empty. Set them at the top of this file to\n"
+            "match the new dataset's data.yaml - they encoded the previous dataset's\n"
+            "class indices and were cleared with it."
+        )
 
     src, out = args.src.resolve(), args.out.resolve()
     random.seed(args.seed)

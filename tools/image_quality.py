@@ -57,7 +57,7 @@ Almost certainly not in bulk. Three reasons, in order of how much they matter:
 
 2. IT WOULD GUT THE DEFECT DATA. In this dataset the defect close-ups are markedly softer
    than the healthy aerials. A blanket sharpness cut removes most of the only images that
-   carry corrosion, crack and surface_peeling labels.
+   carry defect labels.
 
 3. THE METRIC IS NOT A QUALITY SCORE. Laplacian variance cannot tell "out of focus" from
    "smooth surface". A blade against sky is legitimately low-texture.
