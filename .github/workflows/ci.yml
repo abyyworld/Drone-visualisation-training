@@ -50,19 +50,80 @@ jobs:
         with:
           python-version: '3.11'
 
+      # No dataset is committed any more: the original turbine export was removed, and its
+      # replacement will be built by tools/vlm_to_yolo.py from field inspections rather than
+      # checked in. Running the rebuild anyway would fail every push forever, and a job that
+      # is always red tells nobody anything. Detect the state instead, and still run the
+      # parts that need no images.
+      - name: Is there a dataset to audit
+        id: dataset
+        run: |
+          if [ -d train/images ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No source dataset in the repository. Skipping the rebuild."
+          fi
+
       - name: Rebuild the turbine dataset
+        if: steps.dataset.outputs.present == 'true'
         run: python3 tools/rebuild_turbine.py
 
       # The rebuild exists to make these checks pass. If a change to the split logic or the
       # class mapping reintroduces leakage or a source-family shortcut, this fails.
       - name: Audit the rebuilt dataset
+        if: steps.dataset.outputs.present == 'true'
         run: python3 tools/audit_dataset.py datasets/turbine_v2
 
       - name: Confirm the audit still flags the original export
         # Guards against the audit silently degrading into something that passes everything.
+        if: steps.dataset.outputs.present == 'true'
         run: |
           if python3 tools/audit_dataset.py . > /dev/null 2>&1; then
             echo "::error::The audit passed the v1 export. It is meant to fail it."
             exit 1
           fi
           echo "v1 still correctly reported as defective."
+
+      # These need no images and are the checks that matter while there is no dataset: the
+      # class table that maps a vision model's free-form labels onto trainable classes, and
+      # the conversion that will build the replacement set.
+      - name: Dataset tooling
+        run: |
+          python3 -m pip install --quiet pytest Pillow
+          python3 -m pytest tests/test_vlm_tools.py -q
+
+      - name: Refuse to build a set from labels with no home
+        # The failure mode this guards against is a silent one: a label the class table has
+        # never seen being assigned to whatever class sorts first. The tool must stop.
+        run: |
+          mkdir -p /tmp/probe/site-a/labels /tmp/probe/site-a/images
+          python3 - <<'FIXTURE'
+          import json, pathlib, struct, zlib
+
+          root = pathlib.Path("/tmp/probe/site-a")
+          raw = b"".join(b"\x00" + bytes([80, 120, 160] * 32) for _ in range(32))
+
+          def chunk(tag, payload):
+              body = tag + payload
+              return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body))
+
+          (root / "images" / "a.png").write_bytes(
+              b"\x89PNG\r\n\x1a\n"
+              + chunk(b"IHDR", struct.pack(">IIBBBBB", 32, 32, 8, 2, 0, 0, 0))
+              + chunk(b"IDAT", zlib.compress(raw))
+              + chunk(b"IEND", b"")
+          )
+          (root / "labels" / "a.json").write_text(json.dumps({
+              "image": "a.png", "domain": "turbine", "reviewed": True,
+              "width": 32, "height": 32,
+              "detections": [{"label": "iridescent_shimmer", "certainty": "high",
+                              "confidence": 0.9, "note": "", "box": [2, 2, 30, 30]}],
+              "unlocated": [],
+          }))
+          FIXTURE
+          if python3 tools/vlm_to_yolo.py /tmp/probe --out /tmp/probe-out > /dev/null 2>&1; then
+            echo "::error::vlm_to_yolo.py accepted a label with no place in the class table."
+            exit 1
+          fi
+          echo "Unknown labels correctly stop the build."
