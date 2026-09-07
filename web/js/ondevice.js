@@ -40,7 +40,10 @@ let base = CDN_BASE;
 let delegate = 'CPU';
 let model = 'models/detector.tflite';
 let spec = {};
-let detectorPromise = null;
+// Two maps on purpose. `loading` de-duplicates concurrent loads; `ready` holds the resolved
+// detector so a render loop can reach it without awaiting a promise sixty times a second.
+const loading = new Map();
+const ready = new Map();
 
 export function configureOnDevice(runtime = {}, modelSpec = {}) {
   if (typeof runtime.mediapipeBase === 'string' && runtime.mediapipeBase.length) {
@@ -84,10 +87,17 @@ export const SUBJECTS = {
   wildfire: 'people and vehicles',
 };
 
-async function loadDetector(onProgress) {
-  if (detectorPromise) return detectorPromise;
+/**
+ * @param {'IMAGE'|'VIDEO'} runningMode
+ *
+ * VIDEO is not a cosmetic difference. MediaPipe keeps state between calls in that mode and
+ * expects monotonically increasing timestamps, which is what lets it run a stream smoothly
+ * rather than treating every frame as an unrelated photograph.
+ */
+async function loadDetector(runningMode, onProgress) {
+  if (loading.has(runningMode)) return loading.get(runningMode);
 
-  detectorPromise = (async () => {
+  const promise = (async () => {
     onProgress?.('Loading the on-device detector');
     const { FilesetResolver, ObjectDetector } = await import(
       /* @vite-ignore */ `${base}/vision_bundle.mjs`
@@ -115,18 +125,25 @@ async function loadDetector(onProgress) {
       },
       scoreThreshold: spec.scoreThreshold ?? 0.35,
       maxResults: 60,
-      runningMode: 'IMAGE',
+      runningMode,
     });
   })().catch((error) => {
     // Never leave a rejected promise cached, or one bad load poisons every later attempt.
-    detectorPromise = null;
+    loading.delete(runningMode);
     throw new Error(
       `The on-device detector could not be loaded: ${error.message}. `
       + 'It needs one connection to fetch its runtime, after which it works offline.',
     );
   });
 
-  return detectorPromise;
+  loading.set(runningMode, promise);
+  promise.then((detector) => ready.set(runningMode, detector)).catch(() => {});
+  return promise;
+}
+
+/** Warm the model up before it is needed, so the first frame is not the slow one. */
+export async function warmUp(runningMode = 'VIDEO', onProgress) {
+  await loadDetector(runningMode, onProgress);
 }
 
 /** Is it worth offering this engine for a given subject? */
@@ -142,13 +159,33 @@ export function handles(domain) {
  *   renderer, the severity scoring and the exports all work unchanged.
  */
 export async function detectOnDevice(image, onProgress) {
-  const detector = await loadDetector(onProgress);
+  const detector = await loadDetector('IMAGE', onProgress);
   const started = performance.now();
   const result = detector.detect(image);
   lastInferenceMs = performance.now() - started;
+  return collect(result);
+}
+
+/**
+ * Detect in one frame of a stream.
+ *
+ * Synchronous once warmed, so a render loop can call it without a promise per frame. The
+ * timestamp must increase on every call - MediaPipe rejects a repeat, and a frame arriving
+ * with the same millisecond as the last is normal at high frame rates.
+ */
+export function detectFrame(video, timestampMs) {
+  const detector = ready.get('VIDEO');
+  if (!detector) return null;   // still warming up; the caller draws the previous tracks
+  const started = performance.now();
+  const result = detector.detectForVideo(video, timestampMs);
+  lastInferenceMs = performance.now() - started;
+  return collect(result);
+}
+
+function collect(result) {
 
   const findings = [];
-  for (const detection of result.detections ?? []) {
+  for (const detection of result?.detections ?? []) {
     const category = detection.categories?.[0];
     if (!category) continue;
 

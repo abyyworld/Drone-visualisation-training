@@ -18,6 +18,7 @@ import { classify as classifyFile, ACCEPT_ATTRIBUTE } from './formats.js';
 import { zip } from './zip.js';
 import { detectOnDevice, configureOnDevice, handles as onDeviceHandles } from './ondevice.js';
 import { Tracker } from './track.js';
+import { LiveView } from './live.js';
 
 const MODELS_BASE = 'models/';
 const MAX_FILES = 100;
@@ -60,6 +61,8 @@ async function init() {
     'domain-override', 'override-row', 'export-json', 'export-images', 'print-report',
     'empty-state', 'progress', 'progress-bar', 'progress-label', 'clear', 'export-training',
     'drop-blocked', 'engine-key-link',
+    'live-start', 'live-stop', 'live-record', 'live-camera', 'live-stage', 'live-video',
+    'live-overlay', 'live-status',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -78,6 +81,7 @@ async function init() {
   await loadManifest();
   wireEngine();
   wireEvents();
+  wireLive();
   registerServiceWorker();
 }
 
@@ -167,6 +171,114 @@ function reportModelStatus() {
   if (detectors.length === 1) el['domain-override'].value = detectors[0];
 }
 
+
+
+// ---------------------------------------------------------------------------------------
+// Live tracking
+// ---------------------------------------------------------------------------------------
+
+function wireLive() {
+  const view = new LiveView(el['live-video'], el['live-overlay'], {
+    onStatus: (message, stats) => renderLiveStatus(message, stats),
+  });
+  state.live = view;
+
+  el['live-start'].addEventListener('click', async () => {
+    el['live-start'].disabled = true;
+    try {
+      await view.start(el['live-camera'].value || undefined);
+      el['live-stage'].hidden = false;
+      el['live-stop'].hidden = false;
+      el['live-record'].hidden = false;
+      el['live-start'].hidden = true;
+
+      // Labels only exist once permission has been granted, so the picker is filled after
+      // the camera opens rather than before, when every entry would read "Camera 2".
+      const cameras = await LiveView.cameras();
+      if (cameras.length > 1) {
+        el['live-camera'].innerHTML = '';
+        for (const camera of cameras) {
+          const option = document.createElement('option');
+          option.value = camera.id;
+          option.textContent = camera.label;
+          el['live-camera'].appendChild(option);
+        }
+        el['live-camera'].hidden = false;
+      }
+    } catch (error) {
+      renderLiveStatus(error.message);
+    } finally {
+      el['live-start'].disabled = false;
+    }
+  });
+
+  el['live-stop'].addEventListener('click', () => {
+    const recording = view.stopRecording();
+    view.stop();
+    if (recording?.size) saveLiveRecording(recording);
+    el['live-stage'].hidden = true;
+    el['live-stop'].hidden = true;
+    el['live-record'].hidden = true;
+    el['live-camera'].hidden = true;
+    el['live-start'].hidden = false;
+    el['live-record'].classList.remove('button--recording');
+    el['live-record'].textContent = 'Record';
+    renderLiveStatus('Camera stopped.');
+  });
+
+  el['live-record'].addEventListener('click', () => {
+    if (el['live-record'].classList.contains('button--recording')) {
+      const recording = view.stopRecording();
+      el['live-record'].classList.remove('button--recording');
+      el['live-record'].textContent = 'Record';
+      if (recording?.size) saveLiveRecording(recording);
+      return;
+    }
+    try {
+      view.startRecording();
+      el['live-record'].classList.add('button--recording');
+      el['live-record'].textContent = 'Stop recording';
+    } catch (error) {
+      renderLiveStatus(error.message);
+    }
+  });
+
+  // A camera left running in a hidden tab keeps the light on and drains a tablet to draw
+  // boxes nobody can see.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !el['live-stop'].hidden && !view.recorder) {
+      el['live-stop'].click();
+    }
+  });
+
+  el['live-camera'].addEventListener('change', async () => {
+    if (el['live-stop'].hidden) return;
+    view.stop();
+    await view.start(el['live-camera'].value);
+  });
+}
+
+function saveLiveRecording(blob) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  download(blob, `live-${stamp}.webm`);
+}
+
+function renderLiveStatus(message, stats) {
+  if (message) {
+    el['live-status'].textContent = message;
+    return;
+  }
+  if (!stats) return;
+
+  const parts = [`${stats.fps.toFixed(1)} detections per second`];
+  if (stats.inferenceMs) parts.push(`${Math.round(stats.inferenceMs)} ms each`);
+  parts.push(stats.onScreen.length ? `on screen: ${stats.onScreen.join(', ')}` : 'nothing on screen');
+  // Distinct things since the camera opened. Not the same number as what is on screen, and
+  // the more useful one after a pass over a site.
+  parts.push(`${stats.seenTotal} seen in total`);
+  if (stats.recording) parts.push('RECORDING');
+  el['live-status'].textContent = parts.join('  ·  ');
+}
 
 // ---------------------------------------------------------------------------------------
 // Engine selection

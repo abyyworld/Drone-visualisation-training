@@ -26,15 +26,25 @@ dataset. It is a COCO-trained EfficientDet-Lite2 shipped with the app - see
 [`web/models/DETECTOR.md`](web/models/DETECTOR.md) for what it covers, its limits at
 altitude, and why it is that model rather than a YOLO one (the licence).
 
-## Tracking
+## Live tracking
 
-Video through the on-device engine is tracked, not just detected. Each person keeps a number
-across frames, survives a frame the model missed, and is counted once rather than once per
-frame. `web/js/track.js` - greedy IoU association with a short memory.
+**Start camera** on the site. Real time, on the device, no key: each person or vehicle keeps
+a number that follows it, trails behind it, survives a frame the detector missed, and is
+counted once rather than once per frame. Record and it saves the video with the boxes on it.
 
-An API cannot do this at any price: one round trip takes seconds, so there is nothing to
-associate between frames. That is the difference between watching something and describing a
-photograph of it.
+Detection and drawing are decoupled - drawing runs every animation frame so boxes move with
+the video, detection runs as fast as the device manages, and the tracker coasts between.
+Nothing queues behind itself, so a slow device degrades instead of spiralling.
+
+`web/js/track.js` is greedy IoU association with a short memory. Not SORT, which is GPL-3.0
+and not something to inherit by accident.
+
+An API cannot do any of this at any price: one round trip takes seconds, so there is nothing
+to associate between frames. That is the difference between watching something and
+describing a photograph of it.
+
+The browser cannot open RTSP, so this is the tablet's or laptop's own camera. The drone's
+own feed is RTSP and is handled natively by the Android app's camera screen.
 
 Pick one in the app. The header badge stops claiming local processing the moment an API engine
 is selected, because that claim would then be false. The key is held in the tab, never written

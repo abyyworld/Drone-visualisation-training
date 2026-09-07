@@ -41,6 +41,35 @@
 
   <div id="status-banner" class="banner hidden" role="status"></div>
 
+  <section class="panel live">
+    <div class="live__head">
+      <h2 class="engine__title">Live tracking</h2>
+      <p class="engine__blurb">
+        A camera on this device, tracked in real time. Each person or vehicle keeps a number
+        that follows it, survives a frame the detector missed, and is counted once rather
+        than once per frame. Runs entirely here: nothing is uploaded and no key is needed.
+      </p>
+    </div>
+
+    <div class="live__controls">
+      <button id="live-start" class="button">Start camera</button>
+      <button id="live-stop" class="button button--ghost" hidden>Stop</button>
+      <button id="live-record" class="button" hidden>Record</button>
+      <select id="live-camera" class="live__camera" hidden aria-label="Camera"></select>
+    </div>
+
+    <div id="live-stage" class="live__stage" hidden>
+      <video id="live-video" class="live__video" playsinline muted></video>
+      <canvas id="live-overlay" class="live__overlay"></canvas>
+    </div>
+
+    <p id="live-status" class="live__status" role="status"></p>
+    <p class="field__hint">
+      The drone's own feed arrives over RTSP, which no browser can open. That is what the
+      Android app's camera screen is for; this is the tablet's or laptop's own camera.
+    </p>
+  </section>
+
   <section class="panel engine">
     <div class="engine__head">
       <h2 class="engine__title">Analysis engine</h2>

@@ -150,8 +150,16 @@ async function main() {
 
   await buildSite();
   const { server, port } = await serve();
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const browser = await chromium.launch({
+    args: [
+      // A synthetic camera, so the live loop can be exercised without hardware, and
+      // permission granted up front so getUserMedia does not sit on a prompt.
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ],
+  });
+  const context = await browser.newContext({ permissions: ['camera'] });
+  const page = await context.newPage();
 
   const consoleErrors = [];
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
@@ -380,6 +388,42 @@ async function main() {
     check('the detector is not silently finding nothing', labels.length > 0);
 
     await page.locator('#engine-provider').selectOption('local');
+
+    // Live tracking, against Chromium's synthetic camera. What is under test is the loop
+    // and the tracker, not whether the model finds a person in a test pattern - the model
+    // is proven on a real photograph above.
+    console.log('\nLive tracking');
+    await page.locator('#live-start').click();
+    await page.locator('#live-stage').waitFor({ state: 'visible', timeout: 120000 });
+    check('the camera opens and the stage appears',
+      await page.locator('#live-stage').isVisible());
+
+    // Wait for the loop to have run enough frames to report a rate.
+    await page.waitForFunction(
+      () => /detections per second/.test(document.getElementById('live-status').textContent),
+      null, { timeout: 60000 },
+    );
+    const liveStatus = await page.locator('#live-status').textContent();
+    check('it reports a detection rate', /detections per second/.test(liveStatus), liveStatus);
+    check('and how long a frame takes', /ms each/.test(liveStatus), liveStatus);
+    check('and a running total of distinct things seen',
+      /seen in total/.test(liveStatus), liveStatus);
+
+    const rate = Number(/([\d.]+) detections per second/.exec(liveStatus)?.[1] ?? 0);
+    // A loop that has stalled or is queueing behind itself reports near zero. This is the
+    // check that the decoupled draw and detect actually run.
+    check('the loop is genuinely running, not stalled', rate > 0.5, `${rate}/s`);
+
+    const overlay = await page.locator('#live-overlay').evaluate(
+      (c) => ({ w: c.width, h: c.height }),
+    );
+    check('the overlay is sized to the video, not to the page',
+      overlay.w > 0 && overlay.h > 0, JSON.stringify(overlay));
+
+    await page.locator('#live-stop').click();
+    check('stopping hides the stage', await page.locator('#live-stage').isHidden());
+    check('and releases the camera',
+      await page.evaluate(() => !document.getElementById('live-video').srcObject));
 
     console.log('\nInstallable app');
     const manifestResponse = await page.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`);

@@ -397,3 +397,68 @@ body {
   border-style: dashed;
   opacity: 0.85;
 }
+
+/* --------------------------------------------------------------------------------------
+   Live tracking
+   -------------------------------------------------------------------------------------- */
+
+.live__head { margin-bottom: 12px; }
+
+.live__controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.live__camera {
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--border, #ccd3da);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: inherit;
+  max-width: 260px;
+}
+
+/* The video and its boxes are one stacked unit, sized by the video's own aspect ratio so
+   the overlay cannot drift out of register with what it is drawn over. */
+.live__stage {
+  position: relative;
+  margin-top: 14px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.live__video,
+.live__overlay {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.live__overlay {
+  position: absolute;
+  inset: 0;
+  /* Clicks belong to the page, not to an overlay that only draws. */
+  pointer-events: none;
+}
+
+.live__status {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted, #5b6470);
+  min-height: 1.4em;
+}
+
+.live__status strong { color: inherit; }
+
+.button--recording {
+  background: #C0392B;
+  border-color: #C0392B;
+  color: #fff;
+}
