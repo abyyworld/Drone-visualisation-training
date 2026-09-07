@@ -214,8 +214,44 @@ def main() -> int:
     (out / "not_an_image.txt").write_text("this is not an image\n")
     print(f"  {'not_an_image.txt':16s} plain text")
 
+    fetch_person_photo(out)
+
     print(f"\nFixtures written to {out}")
     return 0
+
+
+# The on-device detector is a real COCO model, so proving it works needs a real photograph:
+# a generated shape would show only that the plumbing returns a list. This is one of
+# Google's own MediaPipe sample assets, fetched rather than committed because its licence is
+# theirs to state and not mine to assume.
+PERSON_PHOTO = "https://storage.googleapis.com/mediapipe-assets/pose.jpg"
+
+
+def fetch_person_photo(out: Path) -> None:
+    """Download the photograph the on-device detector test needs.
+
+    Loud on failure rather than quiet. A missing fixture would make that test skip, and a
+    skipped test for a detector whose known failure mode is silently finding nothing is
+    worth less than no test at all.
+    """
+    import urllib.error
+    import urllib.request
+
+    target = out / "person.jpg"
+    if target.is_file() and target.stat().st_size > 1000:
+        print(f"\n  {'person.jpg':16s} already present")
+        return
+
+    try:
+        with urllib.request.urlopen(PERSON_PHOTO, timeout=60) as response:
+            target.write_bytes(response.read())
+        print(f"\n  {'person.jpg':16s} {target.stat().st_size} bytes, fetched")
+    except (urllib.error.URLError, OSError) as problem:
+        raise SystemExit(
+            f"Could not fetch {PERSON_PHOTO}: {problem}\n"
+            "The on-device detector test needs it. Put a photograph containing a person at "
+            f"{target} by hand if this machine has no network."
+        )
 
 
 if __name__ == "__main__":

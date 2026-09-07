@@ -5,14 +5,16 @@
   "description": "Turbine blade and solar panel defect detection with browser-based inference",
   "type": "module",
   "scripts": {
-    "test": "node tests/test_formats.mjs && node tests/test_vlm.mjs && node tests/test_web.mjs",
+    "test": "node tests/test_formats.mjs && node tests/test_track.mjs && node tests/test_vlm.mjs && node tests/test_web.mjs",
     "fixtures": "python3 tests/make_fixtures.py",
     "serve": "node -e \"import('node:http').then(async h=>{const{readFile}=await import('node:fs/promises');const{extname,join}=await import('node:path');const m={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.onnx':'application/octet-stream','.png':'image/png'};h.createServer(async(q,s)=>{const p=join('web',decodeURIComponent(q.url.split('?')[0]));const f=p.endsWith('/')?join(p,'index.html'):p;try{const b=await readFile(f);s.writeHead(200,{'content-type':m[extname(f)]||'application/octet-stream','content-length':b.length});s.end(q.method==='HEAD'?undefined:b)}catch{s.writeHead(404).end('not found')}}).listen(8080,()=>console.log('http://localhost:8080'))})\"",
     "test:vlm": "node tests/test_vlm.mjs",
-    "test:formats": "node tests/test_formats.mjs"
+    "test:formats": "node tests/test_formats.mjs",
+    "test:track": "node tests/test_track.mjs"
   },
   "devDependencies": {
-    "onnxruntime-web": "1.23.0"
+    "onnxruntime-web": "1.23.0",
+    "@mediapipe/tasks-vision": "1.0.1"
   },
   "comment": [
     "onnxruntime-web is a devDependency, not a runtime one: the deployed site loads it from",
@@ -21,6 +23,10 @@
     "production too.",
     "",
     "playwright is not listed here \u2014 it is large and only the test needs it. Install it with",
-    "`npm install --no-save playwright@1.56.1 && npx playwright install chromium`, as CI does."
+    "`npm install --no-save playwright@1.56.1 && npx playwright install chromium`, as CI does.",
+    "",
+    "@mediapipe/tasks-vision is a devDependency for the same reason onnxruntime-web is: the",
+    "deployed site loads it from a CDN, and the local copy exists so the tests and the APK",
+    "build can serve it. Set `runtime.mediapipeBase` in the manifest to self-host it."
   ]
 }

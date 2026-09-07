@@ -45,10 +45,12 @@
     <div class="engine__head">
       <h2 class="engine__title">Analysis engine</h2>
       <p class="engine__blurb">
-        The on-device model is free, private and instant, but only finds the defect classes it
-        was trained on. A vision model called through an API has no fixed class list and will
-        describe damage the detector was never taught, at the cost of sending each image to
-        that provider and paying per image. Its boxes are approximate rather than pixel-tight.
+        <strong>People &amp; vehicles</strong> runs on this device: free, offline, fast enough
+        to follow a video and give each person a number that stays with them. It finds people,
+        cars and trucks, and cannot find fire, smoke or blade damage - those are not classes it
+        was trained on. A <strong>provider API</strong> has no fixed class list and will describe
+        damage no detector was taught, but it costs money per image, sends each one to that
+        provider, and takes seconds - so it cannot track anything.
       </p>
     </div>
 
@@ -56,7 +58,8 @@
       <div class="field">
         <label for="engine-provider">Engine</label>
         <select id="engine-provider">
-          <option value="local">On-device model (private, free)</option>
+          <option value="ondevice">On-device: people &amp; vehicles (free, offline)</option>
+          <option value="local">On-device: trained defect models</option>
           <option value="anthropic">Anthropic Claude</option>
           <option value="gemini">Google Gemini</option>
           <option value="openai">OpenAI</option>

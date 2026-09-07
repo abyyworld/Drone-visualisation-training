@@ -53,6 +53,14 @@ weights/
 # 10 MB, it is never loaded by anything, and archive/README.md says what it is. Nothing
 # new should land there without an entry in that file.
 !archive/**/*.onnx
+# web/models/ is the deploy directory, not a training output, and git cannot re-include a
+# file whose parent directory is excluded - so the directory itself has to come back first
+# before the negations below mean anything.
+!web/models/
+!web/models/*.tflite
+!web/models/*.md
+!web/models/*.onnx
+!web/models/manifest.json
 # Datasets. Tens of gigabytes, licensed separately, and rebuilt by
 # training/prepare_datasets.py from the sources listed in docs/VALIDATION.md.
 data/

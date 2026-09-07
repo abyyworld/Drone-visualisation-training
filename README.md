@@ -7,17 +7,34 @@ icon.
 
 **Live:** https://abyyworld.github.io/Drone-visualisation-training/
 
-## Two engines
+## Three engines
 
-| | On-device model | Provider API |
-|---|---|---|
-| Where it runs | This browser, via ONNX Runtime Web | Anthropic, Google or OpenAI |
-| Cost | Nothing | Per image |
-| Offline | Yes, once cached | No |
-| Images leave the device | Never | Yes, to the provider you pick |
-| What it can find | Only its trained classes | Anything it can see and describe |
-| Box precision | Tight | Approximate |
-| Needs a dataset first | Yes | No |
+| | People & vehicles | Trained defect models | Provider API |
+|---|---|---|---|
+| Where it runs | This device, MediaPipe | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
+| Ready now | **Yes** | No, needs a dataset | With a key |
+| Cost | Nothing | Nothing | Per image |
+| Offline | Yes | Yes | No |
+| Images leave the device | Never | Never | Yes |
+| Speed | 5-15 per second | Similar | One every few seconds |
+| **Tracks across frames** | **Yes** | Possible | No, and never will |
+| Finds | person, car, truck, bus, bicycle | its trained classes | anything it can describe |
+| Cannot find | fire, smoke, cracks, corrosion | anything outside its classes | - |
+
+**People & vehicles** is the default because it is the only one ready without a key or a
+dataset. It is a COCO-trained EfficientDet-Lite2 shipped with the app - see
+[`web/models/DETECTOR.md`](web/models/DETECTOR.md) for what it covers, its limits at
+altitude, and why it is that model rather than a YOLO one (the licence).
+
+## Tracking
+
+Video through the on-device engine is tracked, not just detected. Each person keeps a number
+across frames, survives a frame the model missed, and is counted once rather than once per
+frame. `web/js/track.js` - greedy IoU association with a short memory.
+
+An API cannot do this at any price: one round trip takes seconds, so there is nothing to
+associate between frames. That is the difference between watching something and describing a
+photograph of it.
 
 Pick one in the app. The header badge stops claiming local processing the moment an API engine
 is selected, because that claim would then be false. The key is held in the tab, never written

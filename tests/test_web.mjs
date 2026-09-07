@@ -31,6 +31,7 @@ const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.onnx': 'application/octet-stream',
   '.wasm': 'application/wasm', '.png': 'image/png', '.map': 'application/json',
+  '.jpg': 'image/jpeg', '.tflite': 'application/octet-stream',
 };
 
 // --- expectations, derived from the fixtures -------------------------------------------
@@ -83,8 +84,16 @@ async function buildSite() {
   await mkdir(join(SITE, 'ort'), { recursive: true });
   await cp(ortSource, join(SITE, 'ort'), { recursive: true });
 
+  // MediaPipe too, for the on-device detector, and for the same reason: the suite must run
+  // without reaching a CDN.
+  const mediapipe = join(ROOT, 'node_modules', '@mediapipe', 'tasks-vision');
+  if (!existsSync(mediapipe)) {
+    throw new Error('@mediapipe/tasks-vision not found. Run `npm install @mediapipe/tasks-vision@1.0.1`.');
+  }
+  await cp(mediapipe, join(SITE, 'vendor', 'tasks-vision'), { recursive: true });
+
   const manifest = JSON.parse(await readFile(join(ROOT, 'web', 'models', 'manifest.json'), 'utf8'));
-  manifest.runtime = { ortBase: '/ort/' };
+  manifest.runtime = { ortBase: '/ort/', mediapipeBase: '/vendor/tasks-vision' };
 
   // The turbine entry in the shipped manifest is deliberately empty: it is waiting on a
   // model, and its labels and weights described a dataset that has since been removed. The
@@ -153,6 +162,13 @@ async function main() {
     console.log('\nPage load');
     equal('title', await page.title(), 'Drone Inspection - Turbine, Solar, Crowd & Wildfire');
     check('backend reported', /WebGPU|WASM/.test(await page.locator('#backend').textContent()));
+    equal('the engine that needs no key is the default',
+      await page.locator('#engine-provider').inputValue(), 'ondevice');
+
+    // The rest of this section exercises the trained-detector pipeline - the gate, the YOLO
+    // decode, NMS - so it selects that engine explicitly. The on-device detector is a
+    // different model with a different runtime and is covered on its own below.
+    await page.locator('#engine-provider').selectOption('local');
     check('no model-missing banner', await page.locator('#status-banner').isHidden());
     check('domain override stays hidden when gate is present',
       await page.locator('#override-row').isHidden());
@@ -340,6 +356,31 @@ async function main() {
     check('returning to local restores the privacy claim',
       (await page.locator('#privacy-pill').textContent()).includes('Runs in your browser'));
 
+    // The engine that ships with the app: a real COCO model, a real photograph, and a
+    // person that must actually be found. A synthetic fixture would prove only that the
+    // plumbing returns an array.
+    console.log('\nOn-device detector');
+    await page.locator('#engine-provider').selectOption('ondevice');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'person.jpg'));
+    const found = await cardFor(page, 'person.jpg');
+    await found.locator('.badge').waitFor({ timeout: 120000 });
+
+    const labels = (await found.locator('.detections li').allTextContents())
+      .map((t) => t.trim());
+    check('finds the person, with no key and no provider',
+      labels.some((t) => t.startsWith('person')), labels.join(' | '));
+    check('routed to the on-device engine',
+      (await found.locator('.card__meta').first().textContent()).includes('detector.tflite'));
+    check('the card says what it cannot see',
+      (await found.locator('.card__note').textContent()).includes('COCO'));
+
+    // The delegate matters more than it looks. On GPU this detector returns an empty list
+    // on that same photograph - no error, just nothing - which is indistinguishable from a
+    // frame with nobody in it. This check is what would catch a well-meaning switch back.
+    check('the detector is not silently finding nothing', labels.length > 0);
+
+    await page.locator('#engine-provider').selectOption('local');
+
     console.log('\nInstallable app');
     const manifestResponse = await page.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`);
     check('manifest is served', manifestResponse.ok());
@@ -362,50 +403,48 @@ async function main() {
       await rm(join(SITE, 'models', model), { force: true });
     }
     await page.goto(`http://127.0.0.1:${port}/?nomodels`, { waitUntil: 'networkidle' });
-    const banner = (await page.locator('#status-banner').textContent()).trim();
-    check('explains that no on-device model is deployed',
-      banner.includes('No on-device model is deployed yet'), banner);
-    check('points at the engine picker rather than at a build script',
-      banner.includes('Analysis engine') && !banner.includes('export_onnx.py'), banner);
+
+    // The engine that ships with the app needs no trained model, so a deploy with none is
+    // still usable. That is the whole reason it is the default.
+    equal('still defaults to the engine that needs nothing deployed',
+      await page.locator('#engine-provider').inputValue(), 'ondevice');
+    check('nothing is blocking an upload', await page.locator('#drop-blocked').isHidden());
     check('page still renders rather than erroring', await page.locator('.empty').isVisible());
 
-    // The state a fresh deploy is actually in, and the one that used to fail silently: no
-    // local model, so the page pre-selects a provider and asks for a key instead of
-    // accepting files and doing nothing with them.
-    check('an API engine is pre-selected so the page is usable at all',
-      (await page.locator('#engine-provider').inputValue()) !== 'local');
-    check('the key field is showing', await page.locator('#engine-key-field').isVisible());
+    // Switching to the trained-detector engine, which has nothing to run, must say so.
+    await page.locator('#engine-provider').selectOption('local');
+    const banner = (await page.locator('#status-banner').textContent()).trim();
+    check('explains that no trained model is deployed',
+      banner.includes('No trained defect model is deployed yet'), banner);
+    check('points at the engine picker rather than at a build script',
+      banner.includes('Analysis engine') && !banner.includes('export_onnx.py'), banner);
 
     // The drop zone must say what is missing on the very first paint, not only after
     // someone has dropped files into it and got nothing. A banner above the fold is easy
     // to scroll past, and the drop zone looked like a working uploader - which is how
     // "it does not upload" gets reported about an app behaving exactly as written.
-    check('the drop zone says what is missing before anything is dropped on it',
+    check('the drop zone says what is missing',
       await page.locator('#drop-blocked').isVisible());
-    check('and names the key it wants',
-      (await page.locator('#drop-blocked').textContent()).includes('API key'));
-    check('with a link to where that key comes from',
-      (await page.locator('#engine-key-link').getAttribute('href') ?? '').startsWith('https://'));
+    check('and points at the engine picker',
+      (await page.locator('#drop-blocked').textContent()).includes('Analysis engine'));
 
-    // Typing a key clears it, without a reload.
-    await page.locator('#engine-key').fill('sk-ant-placeholder');
-    check('the blocker clears the moment a key is entered',
-      await page.locator('#drop-blocked').isHidden());
-    await page.locator('#engine-key').fill('');
-    check('and comes back when it is removed',
-      await page.locator('#drop-blocked').isVisible());
-
-    // Now force it back to the on-device engine, which has nothing to run, and upload.
     // The bug this replaces: the picker opened, files were chosen, and nothing happened.
-    await page.locator('#engine-provider').selectOption('local');
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
     const refusal = (await page.locator('#status-banner').textContent()).trim();
     check('uploading with no engine to run it says so rather than doing nothing silently',
       refusal.includes('no model to run yet'), refusal);
-    check('and says what to do about it',
-      refusal.includes('API key'), refusal);
     equal('no card is created for a file it cannot analyse',
       await page.locator('.card').count(), 0);
+
+    // And a provider engine asks for its key by name, with somewhere to get one.
+    await page.locator('#engine-provider').selectOption('anthropic');
+    check('a provider engine asks for a key',
+      (await page.locator('#drop-blocked').textContent()).includes('Anthropic API key'));
+    check('with a link to where that key comes from',
+      (await page.locator('#engine-key-link').getAttribute('href') ?? '').startsWith('https://'));
+    await page.locator('#engine-key').fill('sk-ant-placeholder');
+    check('the blocker clears the moment a key is entered',
+      await page.locator('#drop-blocked').isHidden());
 
     // Gate absent but a detector present: fall back to a manual choice instead of guessing.
     console.log('\nDegraded mode - detector without gate');

@@ -7,7 +7,11 @@
     "A model whose `file` is missing or fails to load is reported in the UI as unavailable;",
     "the app stays usable for whatever else did load. Keep every file well under ~15 MB \u2014 it",
     "downloads to the visitor's browser. Export with `python3 tools/export_onnx.py`, which",
-    "int8-quantises by default."
+    "int8-quantises by default.",
+    "",
+    "`ondevice` is not one of the trained detectors. It is a COCO model that ships with the",
+    "app and finds people and vehicles with no key and no connection; see DETECTOR.md for",
+    "what that does and does not cover, and why it is this model rather than a YOLO one."
   ],
   "gate": {
     "file": "gate.onnx",
@@ -110,5 +114,36 @@
     "displayName": "Wildfire",
     "notes": "One frame from one angle. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
     "zeroDetectionNote": "Nothing in the list above was found in this frame. That describes this frame and nothing else - not the ground under the smoke, not what is inside the treeline, and not whether anyone is there."
+  },
+  "ondevice": {
+    "file": "detector.tflite",
+    "task": "detect",
+    "imgsz": 448,
+    "labels": [
+      "person",
+      "bicycle",
+      "car",
+      "motorcycle",
+      "bus",
+      "truck",
+      "boat",
+      "train",
+      "airplane"
+    ],
+    "scoreThreshold": 0.35,
+    "severityWeights": {
+      "person": 5.0,
+      "bicycle": 1.5,
+      "car": 3.0,
+      "motorcycle": 2.0,
+      "bus": 3.0,
+      "truck": 3.0,
+      "boat": 2.0,
+      "train": 3.0,
+      "airplane": 3.0
+    },
+    "displayName": "People and vehicles",
+    "notes": "COCO classes only. It finds people and vehicles; it cannot find fire, smoke, cracks, corrosion or soiling, because those are not classes it was trained on.",
+    "zeroDetectionNote": "Nothing was marked in this frame. This detector looks only for people and vehicles - fire, smoke and damage are outside what it knows - and a person a few pixels across, which is what a person is from altitude, is the case it misses first. An empty result describes what it looked for in one frame, and nothing beyond that."
   }
 }

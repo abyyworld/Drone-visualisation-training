@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --quiet onnx numpy Pillow onnxruntime
-          npm install --no-audit --no-fund onnxruntime-web@1.23.0
+          npm install --no-audit --no-fund onnxruntime-web@1.23.0 @mediapipe/tasks-vision@1.0.1
           npm install --no-audit --no-fund --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
 
@@ -35,6 +35,9 @@ jobs:
       # photograph be dropped for not being a photograph.
       - name: Format classification
         run: node tests/test_formats.mjs
+
+      - name: Tracking
+        run: node tests/test_track.mjs
 
       - name: Run browser tests
         run: node tests/test_web.mjs

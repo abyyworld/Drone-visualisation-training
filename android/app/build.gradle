@@ -22,6 +22,7 @@ def kotlinVersion = '1.9.25'
 // The web app is the source of truth; this module never edits it in place.
 def webRoot = rootProject.file('../web')
 def ortDist = rootProject.file('../node_modules/onnxruntime-web/dist')
+def mediapipeDist = rootProject.file('../node_modules/@mediapipe/tasks-vision')
 def stagedAssets = layout.buildDirectory.dir('generated/webassets')
 
 android {
@@ -162,10 +163,28 @@ tasks.register('stageOnnxRuntime', Copy) {
     into stagedAssets.map { it.dir('www/ort') }
 }
 
+/*
+ * Bundle MediaPipe, for the same reason as the ONNX runtime and with more at stake.
+ *
+ * The on-device detector is the only engine that needs no key, so it is the one a tablet
+ * with no signal depends on. Loading its runtime from a CDN would make the offline case
+ * work everywhere except the place it is for.
+ */
+tasks.register('stageMediaPipe', Copy) {
+    description = 'Bundle MediaPipe so the on-device detector works with no connection'
+    onlyIf { mediapipeDist.isDirectory() }
+    from(mediapipeDist) {
+        include 'vision_bundle.mjs'
+        include 'wasm/**'
+        exclude '**/*.map'
+    }
+    into stagedAssets.map { it.dir('www/vendor/tasks-vision') }
+}
+
 tasks.register('pointManifestAtBundledRuntime') {
     description = 'Rewrite the staged model manifest to load the runtime from the APK'
-    dependsOn 'stageWebApp', 'stageOnnxRuntime'
-    onlyIf { ortDist.isDirectory() }
+    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe'
+    onlyIf { ortDist.isDirectory() || mediapipeDist.isDirectory() }
 
     def manifest = stagedAssets.map { it.file('www/models/manifest.json') }
     inputs.dir(webRoot)
@@ -174,9 +193,12 @@ tasks.register('pointManifestAtBundledRuntime') {
     doLast {
         def file = manifest.get().asFile
         def json = new groovy.json.JsonSlurper().parse(file)
-        json.runtime = (json.runtime ?: [:]) + [ortBase: 'ort/']
+        def runtime = (json.runtime ?: [:])
+        if (ortDist.isDirectory()) runtime += [ortBase: 'ort/']
+        if (mediapipeDist.isDirectory()) runtime += [mediapipeBase: 'vendor/tasks-vision']
+        json.runtime = runtime
         file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
-        logger.lifecycle('Bundled onnxruntime-web; manifest points at ort/')
+        logger.lifecycle("Bundled runtimes; manifest runtime = ${runtime}")
     }
 }
 
@@ -197,5 +219,5 @@ tasks.register('reportBundledModels') {
 }
 
 tasks.named('preBuild') {
-    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'pointManifestAtBundledRuntime', 'reportBundledModels'
+    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe', 'pointManifestAtBundledRuntime', 'reportBundledModels'
 }

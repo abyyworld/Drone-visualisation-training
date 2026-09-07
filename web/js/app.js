@@ -16,6 +16,8 @@ import { PROVIDERS, ENGINE_LOCAL, inspect, listModels } from './vlm.js';
 import { extractFrames, VIDEO_DEFAULTS } from './video.js';
 import { classify as classifyFile, ACCEPT_ATTRIBUTE } from './formats.js';
 import { zip } from './zip.js';
+import { detectOnDevice, configureOnDevice, handles as onDeviceHandles } from './ondevice.js';
+import { Tracker } from './track.js';
 
 const MODELS_BASE = 'models/';
 const MAX_FILES = 100;
@@ -36,11 +38,14 @@ const state = {
   busy: false,
   // The engine the next batch will run on. `apiKey` lives here and nowhere else - not in
   // localStorage, not in the URL, not in an exported file - so closing the tab discards it.
-  engine: { provider: ENGINE_LOCAL, model: null, apiKey: '' },
+  engine: { provider: 'ondevice', model: null, apiKey: '' },
   // Set once, the first time we find there is no on-device model. Without it, choosing
   // "On-device model" from the picker would bounce straight back to a provider, which is
   // the page overruling a deliberate choice rather than helping with an unmade one.
   steeredToApi: false,
+  // One tracker per batch of video frames. Photographs are unrelated to each other, so it
+  // is reset before every batch and only consulted for frames.
+  tracker: new Tracker(),
 };
 
 const el = {};
@@ -95,6 +100,7 @@ async function loadManifest() {
     if (!response.ok) throw new Error(`${response.status}`);
     state.manifest = await response.json();
     configureRuntime(state.manifest.runtime ?? {});
+    configureOnDevice(state.manifest.runtime ?? {}, state.manifest.ondevice ?? {});
   } catch (error) {
     showBanner(
       'error',
@@ -130,18 +136,11 @@ function reportModelStatus() {
     // No local model, but the API engines need none, so this is a setup step rather than a
     // dead end. Select one for them: the alternative is a page that looks ready, accepts a
     // file and does nothing, which is what it used to do.
-    if (!state.steeredToApi) {
-      state.steeredToApi = true;
-      const firstProvider = Object.keys(PROVIDERS)[0];
-      el['engine-provider'].value = firstProvider;
-      state.engine.provider = firstProvider;
-      renderEngine();
-    }
-
     showBanner(
       'warning',
-      'No on-device model is deployed yet, so analysis runs through a provider API. '
-      + 'Choose one under Analysis engine and enter your key. Nothing is uploaded until you do.',
+      'No trained defect model is deployed yet. People and vehicles are found on this '
+      + 'device with no key; for damage, fire or smoke choose a provider under Analysis '
+      + 'engine and enter a key.',
     );
     return;
   }
@@ -173,8 +172,14 @@ function reportModelStatus() {
 // Engine selection
 // ---------------------------------------------------------------------------------------
 
+const ENGINE_ONDEVICE = 'ondevice';
+
 function usingApi() {
-  return state.engine.provider !== ENGINE_LOCAL;
+  return state.engine.provider !== ENGINE_LOCAL && state.engine.provider !== ENGINE_ONDEVICE;
+}
+
+function usingOnDevice() {
+  return state.engine.provider === ENGINE_ONDEVICE;
 }
 
 /**
@@ -186,6 +191,10 @@ function usingApi() {
  * looked like a working uploader and silently produced nothing.
  */
 function blockedReason() {
+  // The on-device detector needs no key and no deployed .onnx. It is the only engine that
+  // is ready the moment the page loads, which is why it is the default.
+  if (usingOnDevice()) return null;
+
   if (usingApi()) {
     if (!state.engine.apiKey) {
       const provider = PROVIDERS[state.engine.provider];
@@ -244,6 +253,13 @@ function wireEngine() {
 /** Redraw the engine controls for the currently selected provider. */
 function renderEngine() {
   const provider = PROVIDERS[state.engine.provider];
+  const onDevice = usingOnDevice();
+
+  // Reset it here rather than in each branch. Every engine has its own answer to whether
+  // the operator picks the subject, and the row was previously only ever shown - so once
+  // any engine had revealed it, switching to one that decides for itself still left it on
+  // screen offering a choice that no longer did anything.
+  el['override-row'].classList.add('hidden');
 
   el['engine-model-field'].hidden = !provider;
   el['engine-key-field'].hidden = !provider;
@@ -264,7 +280,17 @@ function renderEngine() {
 
   if (!provider) {
     state.engine.model = null;
-    reportModelStatus();
+    if (onDevice) {
+      // The detector ships with the app, so there is never a missing model to report. It
+      // has no gate either - it finds people, not defects, and cannot mistake a cat for a
+      // turbine - so the subject is the operator's to choose.
+      el['status-banner'].classList.add('hidden');
+      el.drop.removeAttribute('aria-disabled');
+      el['override-row'].classList.remove('hidden');
+    } else {
+      // The trained-detector engine decides both of those from what is deployed.
+      reportModelStatus();
+    }
     renderDropState();
     return;
   }
@@ -336,6 +362,56 @@ async function refreshModels() {
   } finally {
     el['engine-refresh'].disabled = false;
   }
+}
+
+
+/**
+ * Analyse one image with the detector that ships with the app.
+ *
+ * No gate is consulted. The gate exists to stop a defect detector emitting confident boxes
+ * on an image it has no business seeing, and this detector has no such failure mode: shown
+ * a cat it finds a cat, which is not a person and is therefore reported as nothing. The
+ * subject is whatever the operator selected, because a person is a person at a fire and in
+ * a crowd alike.
+ */
+async function analyseOnDevice(image, base) {
+  let detections = await detectOnDevice(image, (label) => setProgress(50, label));
+
+  if (base.track) {
+    // Boxes become tracks: each keeps a number across frames, survives a frame the model
+    // missed, and carries how many frames it has been seen for. The label shown is the
+    // identity, because "person 4" through a clip says something "person" cannot.
+    detections = state.tracker.update(detections).map((t) => ({
+      label: t.label,
+      classId: t.classId,
+      confidence: t.confidence,
+      box: t.box.map((v) => Math.round(v)),
+      trackId: t.id,
+      seenFrames: t.seen,
+      coasted: t.missed > 0,
+      note: t.missed > 0
+        ? `#${t.id}, predicted - not seen for ${t.missed} frame${t.missed === 1 ? '' : 's'}`
+        : `#${t.id}, seen in ${t.seen} frame${t.seen === 1 ? '' : 's'}`,
+    }));
+  }
+
+  const requested = el['domain-override'].value;
+  const domain = onDeviceHandles(requested) && requested !== 'auto' ? requested : 'crowd';
+  const spec = state.manifest?.ondevice ?? {};
+  const { score, severity } = assess(detections, spec.severityWeights ?? {});
+
+  return {
+    ...base, image, status: 'analysed',
+    domain,
+    displayName: spec.displayName ?? 'People and vehicles',
+    notes: spec.notes,
+    zeroDetectionNote: spec.zeroDetectionNote,
+    gate: null,
+    engine: { provider: ENGINE_ONDEVICE, model: spec.file ?? 'detector.tflite' },
+    detections,
+    unlocated: [],
+    score, severity,
+  };
 }
 
 /**
@@ -509,6 +585,11 @@ async function handleFiles(files) {
     ...frames.map((frame) => ({ kind: 'frame', frame, name: frame.name })),
   ];
 
+  // Frames from one clip are one sequence, so they get a tracker rather than being graded
+  // as unrelated photographs. That is what turns a box per frame into a thing with an
+  // identity that can be counted once and followed.
+  state.tracker.reset();
+
   for (const [index, item] of work.entries()) {
     setProgress(
       (index / work.length) * 100,
@@ -517,6 +598,7 @@ async function handleFiles(files) {
     const result = item.kind === 'file'
       ? await analyse(item.file)
       : await analyseImage(item.frame.bitmap, {
+        track: true,
         file: item.frame.name,
         size: null,
         source: { video: item.frame.from, time: Number(item.frame.time.toFixed(2)) },
@@ -557,6 +639,14 @@ async function analyse(file) {
  * uploaded photograph rather than by a parallel implementation that can drift.
  */
 async function analyseImage(image, base) {
+  if (usingOnDevice()) {
+    try {
+      return await analyseOnDevice(image, base);
+    } catch (error) {
+      return { ...base, image, status: 'error', message: error.message };
+    }
+  }
+
   if (usingApi()) {
     try {
       return await analyseWithApi(image, base);
@@ -686,9 +776,13 @@ function appendResultCard(result) {
         // A vision model reports a certainty band, not a calibrated probability. Printing
         // "65.0%" next to it would dress a guess up as a measurement, so the band is shown
         // verbatim and only the trained detector gets a percentage.
-        const strength = detection.certainty
-          ? `${detection.certainty} certainty`
-          : `${(detection.confidence * 100).toFixed(1)}%`;
+        const strength = detection.trackId
+          // A tracked thing is identified by which thing it is, not by how sure the model
+          // was about one frame of it.
+          ? `#${detection.trackId}${detection.coasted ? ', predicted' : ''}`
+          : detection.certainty
+            ? `${detection.certainty} certainty`
+            : `${(detection.confidence * 100).toFixed(1)}%`;
         item.appendChild(document.createTextNode(`${detection.label} - ${strength}`));
         if (detection.note) {
           const note = document.createElement('span');
