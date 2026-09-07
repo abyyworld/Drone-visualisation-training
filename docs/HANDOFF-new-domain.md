@@ -116,8 +116,36 @@ takes the weights with it. That cost two more.
 `platform/import-wildfire-station`; merge it before starting. Datasets: FLAME, Boreal.
 Nothing public has fire and people in the same frame.
 
-**crowd** - people at events, aerial. VisDrone is the obvious source and is research-licensed
-only, so it cannot ship in a product. Check the licence before building on anything here.
+**crowd** - people at events, aerial. Read the note below before choosing a model; this is
+not person detection with a bigger number. VisDrone is the obvious source and is
+research-licensed only, so it cannot ship in a product. Check the licence before building on
+anything here.
+
+**traffic** - car, truck, person. Detection, sparse, fits the platform unchanged.
+
+### Crowd is not person detection
+
+PLATFORM.md puts `person` inside wildfire and traffic rather than making it a profile,
+because a crew works at the flame front and a pedestrian stands beside a car, and the
+spatial relationship is what is worth detecting. That reasoning holds wherever people are
+sparse and separable.
+
+It stops holding at concert density. Detection draws one box per individual and depends on
+individuals being distinguishable; when a person occupies twenty pixels and overlaps three
+others, there are no features to detect and non-maximum suppression merges neighbours into
+one box. The failure is not gradual, and adding training data does not fix it, because the
+information is not in the image at that scale.
+
+Dense crowds are a counting problem, answered by density estimation: the model predicts a
+per-pixel density map that integrates to a count, and never commits to who is where. That
+is a different architecture and, more awkwardly, a different output type. `docs/CONTRACT.md`
+carries boxes on the wire. A density map is a heatmap.
+
+So before building: decide whether the deployment is sparse or dense. Sparse means `person`
+as a class in an existing profile and nothing new is needed. Dense means a `crowd` profile
+with its own model and a second payload type in the contract. Building the first and hoping
+it covers the second repeats this project's central mistake, which was assuming a model
+trained on one distribution would hold on another.
 
 **solar** - RGB only. Cannot show hotspots, cell defects, bypass-diode failure or offline
 modules; those are electrical faults needing thermal infrared. Say so in the interface.
