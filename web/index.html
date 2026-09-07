@@ -113,8 +113,10 @@
               stroke-width="1.75" stroke-linecap="round"/>
       </svg>
       <p class="drop__title">Drop inspection images or video here</p>
-      <p class="drop__hint">or click to browse - JPEG, PNG, WebP, or an MP4/WebM clip the frames are pulled from</p>
+      <p class="drop__hint">or click to browse - photographs or video, straight off a phone or a drone</p>
       <input id="file-input" type="file" accept="image/*,video/*" multiple hidden>
+      <!-- Widened at boot from web/js/formats.js, so the picker offers the formats a phone
+           actually produces rather than only the ones this machine has a MIME type for. -->
     </div>
 
     <div id="override-row" class="override hidden">

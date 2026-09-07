@@ -49,6 +49,7 @@ const SHELL = [
   'js/render.js',
   'js/vlm.js',
   'js/video.js',
+  'js/formats.js',
   'prompts/inspection.json',
   'models/manifest.json',
   'manifest.webmanifest',

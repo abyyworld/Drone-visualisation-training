@@ -29,6 +29,8 @@
  *     clip is a screening input, and a still photograph of anything suspicious is better.
  */
 
+import { classify, decodeAdvice } from './formats.js';
+
 const SAMPLE_WIDTH = 64;         // greyscale working size; enough for both measures
 const SAMPLE_HEIGHT = 64;
 const HASH_DISTANCE = 8;         // bits; below this two frames are the same view
@@ -38,7 +40,7 @@ export const VIDEO_DEFAULTS = { maxFrames: 24, minGapSeconds: 0.5, candidatesPer
 
 /** Is this something we should try to decode as video? */
 export function isVideo(file) {
-  return file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name);
+  return classify(file) === 'video';
 }
 
 function loadVideoElement(file) {
@@ -53,12 +55,8 @@ function loadVideoElement(file) {
       URL.revokeObjectURL(video.src);
       // A browser refuses a codec it cannot decode with an empty error rather than an
       // exception, and the pipeline would otherwise report "0 frames" as though the clip
-      // were empty. Name the actual cause.
-      reject(new Error(
-        `The browser cannot decode ${file.name}. Chrome and Edge handle MP4/H.264 and WebM; `
-        + 'a MOV with a codec the browser lacks has to be converted first, or run '
-        + 'tools/video_frames.py, which uses ffmpeg.',
-      ));
+      // were empty. Name the actual cause, and the fix.
+      reject(new Error(decodeAdvice(file)));
     };
 
     video.addEventListener('error', fail, { once: true });

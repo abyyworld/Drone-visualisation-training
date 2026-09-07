@@ -5,10 +5,11 @@
   "description": "Turbine blade and solar panel defect detection with browser-based inference",
   "type": "module",
   "scripts": {
-    "test": "node tests/test_vlm.mjs && node tests/test_web.mjs",
+    "test": "node tests/test_formats.mjs && node tests/test_vlm.mjs && node tests/test_web.mjs",
     "fixtures": "python3 tests/make_fixtures.py",
     "serve": "node -e \"import('node:http').then(async h=>{const{readFile}=await import('node:fs/promises');const{extname,join}=await import('node:path');const m={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.onnx':'application/octet-stream','.png':'image/png'};h.createServer(async(q,s)=>{const p=join('web',decodeURIComponent(q.url.split('?')[0]));const f=p.endsWith('/')?join(p,'index.html'):p;try{const b=await readFile(f);s.writeHead(200,{'content-type':m[extname(f)]||'application/octet-stream','content-length':b.length});s.end(q.method==='HEAD'?undefined:b)}catch{s.writeHead(404).end('not found')}}).listen(8080,()=>console.log('http://localhost:8080'))})\"",
-    "test:vlm": "node tests/test_vlm.mjs"
+    "test:vlm": "node tests/test_vlm.mjs",
+    "test:formats": "node tests/test_formats.mjs"
   },
   "devDependencies": {
     "onnxruntime-web": "1.23.0"

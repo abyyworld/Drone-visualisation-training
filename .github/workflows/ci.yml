@@ -30,6 +30,12 @@ jobs:
       - name: Build ONNX fixtures
         run: python3 tests/make_fixtures.py
 
+      # No browser needed and no fixtures: pure classification and the advice text. Runs
+      # first because it is the fastest way to catch the class of bug that let an iPhone
+      # photograph be dropped for not being a photograph.
+      - name: Format classification
+        run: node tests/test_formats.mjs
+
       - name: Run browser tests
         run: node tests/test_web.mjs
 

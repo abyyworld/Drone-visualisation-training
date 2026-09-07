@@ -13,7 +13,8 @@ import { detect } from './detect.js';
 import { assess, summarise } from './severity.js';
 import { drawDetections, toBlob, colorFor } from './render.js';
 import { PROVIDERS, ENGINE_LOCAL, inspect, listModels } from './vlm.js';
-import { isVideo, extractFrames, VIDEO_DEFAULTS } from './video.js';
+import { extractFrames, VIDEO_DEFAULTS } from './video.js';
+import { classify as classifyFile, ACCEPT_ATTRIBUTE } from './formats.js';
 
 const MODELS_BASE = 'models/';
 const MAX_FILES = 100;
@@ -52,6 +53,11 @@ async function init() {
   }
 
   el.backend.textContent = (await probeBackend()) === 'webgpu' ? 'WebGPU' : 'WASM (CPU)';
+
+  // Set from the format table rather than written into the HTML, so the picker and the
+  // classifier can never disagree about what is offered. A picker that greys out a HEIC
+  // is the same bug one step earlier.
+  el['file-input'].setAttribute('accept', ACCEPT_ATTRIBUTE);
 
   await loadManifest();
   wireEngine();
@@ -387,8 +393,11 @@ function wireEvents() {
 // ---------------------------------------------------------------------------------------
 
 async function handleFiles(files) {
-  const images = files.filter((f) => f.type.startsWith('image/'));
-  const videos = files.filter((f) => !f.type.startsWith('image/') && isVideo(f));
+  // Classified by extension when the operating system supplied no MIME type, which is the
+  // normal case for a file copied off a phone. Judging on file.type alone dropped iPhone
+  // stills and clips before anything tried to open them.
+  const images = files.filter((f) => classifyFile(f) === 'image');
+  const videos = files.filter((f) => classifyFile(f) === 'video');
   const skipped = files.length - images.length - videos.length;
 
   if (skipped) {

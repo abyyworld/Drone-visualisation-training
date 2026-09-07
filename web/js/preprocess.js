@@ -11,6 +11,8 @@
  *   centerCrop() - for the gate classifier, matching standard ImageNet-style eval.
  */
 
+import { classify, decodeAdvice } from './formats.js';
+
 // ImageNet statistics, used by the torchvision-pretrained gate backbone. The YOLO detectors
 // take plain 0..1 input and must NOT be normalised this way.
 const IMAGENET_MEAN = [0.485, 0.456, 0.406];
@@ -103,12 +105,14 @@ function toCHW(rgba, width, height, mean, std) {
 
 /** Decode a File into an ImageBitmap-like drawable, with a clear error on unsupported input. */
 export async function loadImage(file) {
-  if (!file.type.startsWith('image/')) {
+  if (classify(file) !== 'image') {
     throw new Error(`${file.name} is not an image file.`);
   }
   try {
+    // Never gated on a list of formats this file happens to know about. What a browser can
+    // decode changes with every release, and the only way to find out is to ask it.
     return await createImageBitmap(file);
   } catch {
-    throw new Error(`${file.name} could not be decoded - it may be corrupt or an unsupported format.`);
+    throw new Error(decodeAdvice(file));
   }
 }
