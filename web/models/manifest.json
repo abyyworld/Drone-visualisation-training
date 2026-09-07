@@ -16,10 +16,11 @@
     "labels": [
       "turbine",
       "solar",
+      "crowd",
       "invalid"
     ],
     "minConfidence": 0.6,
-    "description": "Routes an upload to the right detector, or rejects it."
+    "description": "Routes an upload to the right analysis, or rejects it."
   },
   "turbine": {
     "file": "turbine.onnx",
@@ -58,5 +59,29 @@
     "displayName": "Solar panel",
     "notes": "RGB only. Cannot detect hotspots, cell defects, bypass-diode failure or offline modules - those are electrical faults visible only in thermal infrared.",
     "zeroDetectionNote": "Found none of the visible-light defect classes. RGB cannot show hotspots, cell defects, bypass-diode failure or offline modules; those need thermal infrared."
+  },
+  "crowd": {
+    "file": "crowd.onnx",
+    "task": "detect",
+    "imgsz": 960,
+    "labels": [],
+    "confThreshold": 0.25,
+    "iouThreshold": 0.45,
+    "severityWeights": {
+      "person_down": 5.0,
+      "blocked_exit": 4.0,
+      "crush_risk": 4.0,
+      "surge": 4.0,
+      "pressure_against_barrier": 3.5,
+      "critical_density": 3.5,
+      "choke_point": 3.0,
+      "counterflow": 2.5,
+      "climbing": 2.5,
+      "dense_packing": 2.0,
+      "moderate_density": 1.0
+    },
+    "displayName": "Crowd",
+    "notes": "Regions under pressure, not individual people. At event density a person is a few pixels wide and overlaps their neighbours, so no model can box them one by one, and a number would read as a count this image cannot support.",
+    "zeroDetectionNote": "None of the pressure patterns above were found in this frame. That is a null result about this frame only: it is not a finding that the crowd is safe, and conditions change faster than any single image."
   }
 }

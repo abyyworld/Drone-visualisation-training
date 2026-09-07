@@ -139,6 +139,7 @@ def test_to_pixels_rejects_what_it_cannot_use(box):
 # ---------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("raw,expected", [
+    ("Pressure Against Barrier", "pressure_against_barrier"),
     ("Leading Edge Erosion", "leading_edge_erosion"),
     ("crack -- severe!!", "crack_severe"),
     ("", "defect"),
@@ -167,6 +168,14 @@ def test_score_bands_match_the_web_app_and_the_report(score, label):
     assert vlm_inspect.score_to_label(score) == label
 
 
+def test_a_person_on_the_ground_outranks_dense_packing():
+    # Ordering the crowd weights is the whole point of having them: an operator scanning a
+    # list of regions has to see the one that needs someone to walk over there.
+    weights = vlm_inspect.severity_weights("crowd")
+    assert vlm_inspect.weight_for("person_down", weights) > vlm_inspect.weight_for("dense_packing", weights)
+    assert vlm_inspect.weight_for("blocked_exit", weights) > vlm_inspect.weight_for("counterflow", weights)
+
+
 def test_structural_words_outweigh_surface_words():
     weights = vlm_inspect.severity_weights("turbine")
     assert vlm_inspect.weight_for("blade_severed", weights) > vlm_inspect.weight_for("soiling", weights)
@@ -186,11 +195,38 @@ def test_an_unknown_label_still_counts_for_something():
 def test_the_prompt_file_is_the_one_the_browser_loads():
     doc = json.loads(vlm_inspect.PROMPT_FILE.read_text())
     assert vlm_inspect.PROMPT_FILE == ROOT / "web" / "prompts" / "inspection.json"
-    assert set(doc["domains"]) == {"turbine", "solar", "auto"}
+    assert set(doc["domains"]) == {"turbine", "solar", "crowd", "auto"}
     assert set(doc["certainty"]) == {"high", "medium", "low"}
     assert doc["certainty"]["high"] > doc["certainty"]["medium"] > doc["certainty"]["low"]
-    for key in ("asset", "defects", "certainty", "box", "overall"):
+    for key in ("asset", "findings", "certainty", "box", "overall"):
         assert key in doc["schema"]
+
+
+def test_the_crowd_brief_refuses_to_put_a_number_on_people():
+    """The one claim a crowd tool is most tempted to make, and least able to support.
+
+    A figure reads as a measurement. From one aerial frame it would be a guess with a
+    decimal point on it, and station/core/safety.py bans the phrasing across the repo for
+    exactly that reason.
+    """
+    crowd = json.loads(vlm_inspect.PROMPT_FILE.read_text())["domains"]["crowd"]
+    assert "never as a number of\npeople" in crowd
+    assert "Box the region, never the individual" in crowd
+
+
+def test_an_empty_result_is_never_described_as_reassurance():
+    schema = json.loads(vlm_inspect.PROMPT_FILE.read_text())["schema"]
+    assert "not a statement that the asset is sound or that the scene is without risk" in schema
+
+
+def test_the_prompt_and_the_manifest_carry_no_forbidden_phrasing():
+    """The repo-wide safety scan, applied to the two files a new domain adds text to."""
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    from station.core.safety import find_forbidden_phrases
+
+    for path in (vlm_inspect.PROMPT_FILE, ROOT / "web" / "models" / "manifest.json"):
+        assert not list(find_forbidden_phrases(path.read_text())), path
 
 
 def test_the_solar_brief_refuses_to_guess_at_thermal_faults():

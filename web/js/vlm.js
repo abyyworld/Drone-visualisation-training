@@ -358,9 +358,9 @@ export function tidyLabel(raw) {
  *
  * @returns {{asset: string, assetReason: string, overall: string, detections: Array,
  *            unlocated: Array, model: string, provider: string}}
- *   `unlocated` holds defects the model described but could not place a usable box on.
+ *   `unlocated` holds findings the model described but could not place a usable box on.
  *   They are kept and shown rather than dropped: "there is a crack here somewhere" is
- *   still worth an engineer's time, and silently discarding it would hide a real finding.
+ *   still worth an engineer's time, and silently discarding it would hide a real one.
  */
 export async function inspect({ provider, model, apiKey, image, domain = 'auto' }) {
   const adapter = ADAPTERS[provider];
@@ -375,7 +375,7 @@ export async function inspect({ provider, model, apiKey, image, domain = 'auto' 
 
   const detections = [];
   const unlocated = [];
-  for (const item of parsed.defects ?? []) {
+  for (const item of parsed.findings ?? []) {
     const label = tidyLabel(item.label);
     const entry = {
       label,
@@ -390,7 +390,7 @@ export async function inspect({ provider, model, apiKey, image, domain = 'auto' 
   }
 
   return {
-    asset: ['turbine', 'solar', 'neither'].includes(parsed.asset) ? parsed.asset : 'neither',
+    asset: ['turbine', 'solar', 'crowd', 'neither'].includes(parsed.asset) ? parsed.asset : 'neither',
     assetReason: typeof parsed.asset_reason === 'string' ? parsed.asset_reason : '',
     overall: typeof parsed.overall === 'string' ? parsed.overall : '',
     detections,

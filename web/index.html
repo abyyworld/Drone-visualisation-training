@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Drone Inspection - Turbine &amp; Solar Defect Analysis</title>
-<meta name="description" content="Upload drone imagery of wind turbine blades or solar panels and get defect detection and severity scoring. Runs entirely in your browser - images are never uploaded.">
+<title>Drone Inspection - Turbine, Solar &amp; Crowd Analysis</title>
+<meta name="description" content="Upload drone photographs or video of wind turbine blades, solar panels or a crowd, and get findings, severity scoring and a printable report.">
 <link rel="stylesheet" href="css/app.css">
 
 <!-- Installable on a tablet: "Add to home screen" gives it an icon and its own window,
@@ -25,7 +25,7 @@
   <div class="wrap masthead__inner">
     <div>
       <h1 class="masthead__title">Drone Inspection</h1>
-      <p class="masthead__sub">Wind turbine blade &amp; solar panel defect analysis</p>
+      <p class="masthead__sub">Wind turbine, solar panel &amp; crowd analysis</p>
       <p id="report-stamp" class="masthead__stamp" hidden></p>
     </div>
     <div class="masthead__badges">
@@ -123,6 +123,7 @@
         <option value="auto">Detect automatically</option>
         <option value="turbine">Wind turbine blade</option>
         <option value="solar">Solar panel</option>
+        <option value="crowd">Crowd</option>
       </select>
     </div>
 
@@ -146,8 +147,8 @@
     <p>
       Upload photographs or a video clip. A clip is sampled and reduced to the distinct,
       in-focus frames worth looking at, then every image is checked for what it shows.
-      Turbine blades and solar panels are analysed; anything else is refused rather than
-      guessed at. Findings are scored into a severity band and rolled up into an inspection
+      Turbine blades, solar panels and crowds are analysed; anything else is refused rather
+      than guessed at. Findings are scored into a severity band and rolled up into an inspection
       verdict you can export as JSON or print as a PDF report.
     </p>
     <p>
@@ -174,6 +175,20 @@
           Cannot detect hotspots, cell defects, bypass-diode failure or offline modules.
           Those are electrical faults visible only in thermal infrared, and no visible-light
           model can find them - including this one.
+        </p>
+      </article>
+      <article>
+        <h3>Crowds <span class="tag">regions, not people</span></h3>
+        <p>Marks <strong>dense packing</strong>, <strong>choke points</strong>,
+        <strong>counterflow</strong>, <strong>pressure against barriers</strong>,
+        <strong>blocked exits</strong>, <strong>climbing</strong> and
+        <strong>a person on the ground</strong>.</p>
+        <p class="caution">
+          It marks regions, never individuals, and it never puts a number on how many people
+          are present. At event density a person is a few pixels across and overlaps their
+          neighbours, so boxing them one by one is not possible and a figure would be read as
+          a measurement this image cannot support. An empty result describes one frame at one
+          moment, and a crowd changes faster than that.
         </p>
       </article>
     </div>

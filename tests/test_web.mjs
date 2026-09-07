@@ -36,10 +36,12 @@ const MIME = {
 // --- expectations, derived from the fixtures -------------------------------------------
 // turbine: corrosion 0.90 (weight 2.0) + crack 0.80 (weight 3.0) = 1.80 + 2.40 = 4.20
 // solar:   soiling 0.85 (weight 1.0) + missing_module 0.75 (weight 4.0) = 0.85 + 3.00 = 3.85
-// Both land in [2, 5) -> "Moderate damage".
+// crowd:   dense_packing 0.85 (weight 2.0) + choke_point 0.75 (weight 3.0) = 1.70 + 2.25 = 3.95
+// All three land in [2, 5) -> "Moderate damage".
 const EXPECT = {
   turbine: { score: '4.20', severity: 'Moderate damage', detections: ['corrosion - 90.0%', 'crack - 80.0%'] },
   solar: { score: '3.85', severity: 'Moderate damage', detections: ['soiling - 85.0%', 'missing_module - 75.0%'] },
+  crowd: { score: '3.95', severity: 'Moderate damage', detections: ['dense_packing - 85.0%', 'choke_point - 75.0%'] },
 };
 
 let failures = 0;
@@ -62,7 +64,7 @@ async function buildSite() {
   await cp(join(ROOT, 'web'), SITE, { recursive: true });
 
   // Fixture models stand in for trained ones.
-  for (const model of ['gate.onnx', 'turbine.onnx', 'solar.onnx']) {
+  for (const model of ['gate.onnx', 'turbine.onnx', 'solar.onnx', 'crowd.onnx']) {
     await cp(join(FIXTURES, model), join(SITE, 'models', model));
   }
 
@@ -90,6 +92,14 @@ async function buildSite() {
     ...manifest.turbine,
     labels: ['corrosion', 'crack', 'surface_peeling'],
     severityWeights: { corrosion: 2.0, crack: 3.0, surface_peeling: 1.5 },
+  };
+
+  // Same reasoning for crowd: its shipped labels are empty until a model exists, and the
+  // fixture has its own four. The manifest's crowd weights are real and are used as they
+  // are, because the arithmetic above depends on them.
+  manifest.crowd = {
+    ...manifest.crowd,
+    labels: ['dense_packing', 'counterflow', 'choke_point', 'person_down'],
   };
   await writeFile(join(SITE, 'models', 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
@@ -133,7 +143,7 @@ async function main() {
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 
     console.log('\nPage load');
-    equal('title', await page.title(), 'Drone Inspection - Turbine & Solar Defect Analysis');
+    equal('title', await page.title(), 'Drone Inspection - Turbine, Solar & Crowd Analysis');
     check('backend reported', /WebGPU|WASM/.test(await page.locator('#backend').textContent()));
     check('no model-missing banner', await page.locator('#status-banner').isHidden());
     check('domain override stays hidden when gate is present',
@@ -167,6 +177,21 @@ async function main() {
     check('RGB-only limitation is stated on the card',
       (await solar.locator('.card__note').textContent()).includes('thermal infrared'));
 
+    console.log('\nCrowd image (yellow)');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'crowd_yellow.png'));
+    const crowd = await cardFor(page, 'crowd_yellow.png');
+    await crowd.locator('.badge').waitFor({ timeout: 30000 });
+    equal('severity badge', await crowd.locator('.badge').textContent(),
+      `${EXPECT.crowd.severity} · score ${EXPECT.crowd.score}`);
+    equal('detections', (await crowd.locator('.detections li').allTextContents())
+      .map((t) => t.trim()).sort().join(' | '), EXPECT.crowd.detections.slice().sort().join(' | '));
+    // Yellow scores on red too, so this passing means the gate compared four classes and
+    // picked the right one, rather than falling through to the first that matched.
+    check('the four-class gate routed yellow to crowd, not turbine',
+      (await crowd.locator('.card__meta').first().textContent()).includes('Crowd'));
+    check('the card says it marks regions rather than individuals',
+      (await crowd.locator('.card__note').textContent()).includes('not individual people'));
+
     console.log('\nInvalid image (green) - the rejection path');
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'invalid_green.png'));
     const invalid = await cardFor(page, 'invalid_green.png');
@@ -182,11 +207,12 @@ async function main() {
     await page.waitForTimeout(300);
     equal('banner', (await page.locator('#status-banner').textContent()).trim(),
       'Skipped 1 file that is neither an image nor a video.');
-    equal('no card created for it', await page.locator('.card').count(), 3);
+    // Four cards by now: turbine, solar, crowd, and the rejected green image.
+    equal('no card created for it', await page.locator('.card').count(), 4);
 
     console.log('\nSummary and export');
     const tiles = await page.locator('.summary__tiles .tile').allTextContents();
-    check('two moderate results counted', /2Moderate/.test(tiles.join('')), tiles.join(' / '));
+    check('three moderate results counted', /3Moderate/.test(tiles.join('')), tiles.join(' / '));
     check('one rejection counted', /1Rejected/.test(tiles.join('')), tiles.join(' / '));
     equal('overall verdict', (await page.locator('.summary__overall').textContent()).trim(),
       'Moderate damage detected');
@@ -199,7 +225,7 @@ async function main() {
       page.locator('#export-json').click(),
     ]).then(([d]) => d);
     const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
-    equal('JSON export result count', exported.results.length, 3);
+    equal('JSON export result count', exported.results.length, 4);
     equal('JSON export overall', exported.summary.overall, 'Moderate damage detected');
     equal('JSON export bbox is in original pixels',
       JSON.stringify(exported.results[0].detections[0].bbox), '[380,430,580,530]');
@@ -267,7 +293,7 @@ async function main() {
     // Degraded mode: the site must stay honest when weights have not been deployed yet,
     // which is exactly the state a fresh clone is in.
     console.log('\nDegraded mode - no models deployed');
-    for (const model of ['gate.onnx', 'turbine.onnx', 'solar.onnx']) {
+    for (const model of ['gate.onnx', 'turbine.onnx', 'solar.onnx', 'crowd.onnx']) {
       await rm(join(SITE, 'models', model), { force: true });
     }
     await page.goto(`http://127.0.0.1:${port}/?nomodels`, { waitUntil: 'networkidle' });

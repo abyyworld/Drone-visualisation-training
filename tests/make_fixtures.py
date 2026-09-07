@@ -7,7 +7,10 @@ test can assert exact boxes, classes and severity scores. That catches the failu
 applied in the wrong direction, NMS that suppresses nothing, an off-by-one in the class map.
 
 The gate fixture is a real (if trivial) computation over the input: global-average-pool the
-three channels and route red -> turbine, blue -> solar, green -> invalid. That makes the
+three channels and match the result against a per-class colour template: red -> turbine,
+blue -> solar, yellow -> crowd, green -> invalid. The templates are derived from the same
+ImageNet constants the browser normalises with, so the fixture encodes the preprocessing
+contract rather than merely happening to work. That makes the
 ImageNet normalisation in preprocess.js part of what gets tested, rather than bypassed.
 
     python3 tests/make_fixtures.py [--out tests/fixtures]
@@ -26,18 +29,44 @@ from PIL import Image
 OPSET = 12  # what tools/export_onnx.py targets, and what WebGPU needs.
 
 
-def build_gate(path: Path) -> None:
-    """[1,3,224,224] -> [1,3] logits. Routes by dominant colour channel."""
-    # Column j of W selects which input channel drives logit j.
-    #   logit0 (turbine) <- red, logit1 (solar) <- blue, logit2 (invalid) <- green
-    weights = np.array(
-        [
-            [1.0, 0.0, 0.0],  # red   -> turbine
-            [0.0, 0.0, 1.0],  # green -> invalid
-            [0.0, 1.0, 0.0],  # blue  -> solar
-        ],
+# Matches IMAGENET_MEAN / IMAGENET_STD in web/js/preprocess.js. The gate is the one model
+# whose input is normalised this way, and the fixture weights below are derived from these
+# numbers rather than guessed - a first attempt at hand-picked weights sent a yellow image
+# to `invalid`, because after normalisation a green channel at 1.0 outweighs the average of
+# red and green that was supposed to mean crowd.
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+def _normalised(rgb: tuple[float, float, float]) -> np.ndarray:
+    """What global-average-pooling a solid colour actually hands the MatMul."""
+    return np.array(
+        [(c - m) / s for c, m, s in zip(rgb, IMAGENET_MEAN, IMAGENET_STD)],
         dtype=np.float32,
-    ) * 5.0  # scale so softmax is decisively confident
+    )
+
+
+def build_gate(path: Path) -> None:
+    """[1,3,224,224] -> [1,4] logits. A nearest-template classifier over solid colours.
+
+    Four classes and only three input channels, so they cannot each own one. Instead each
+    column of W is the normalised vector of the colour that class should win on, which
+    makes the logit a dot product with that template and the argmax a nearest-match. Red
+    goes to turbine, blue to solar, yellow to crowd and green to invalid, and the margins
+    come out at roughly 10 logits, so softmax is decisive and the gate's minConfidence of
+    0.6 is comfortably cleared.
+
+    Deriving the weights rather than choosing them is the point: it is the difference
+    between a fixture that encodes the preprocessing contract and one that happens to work.
+    """
+    templates = {
+        "turbine": (1.0, 0.0, 0.0),   # red
+        "solar": (0.0, 0.0, 1.0),     # blue
+        "crowd": (1.0, 1.0, 0.0),     # yellow
+        "invalid": (0.0, 1.0, 0.0),   # green
+    }
+    # Column j is the template for class j; rows are the R, G and B channels.
+    weights = np.stack([_normalised(rgb) for rgb in templates.values()], axis=1)
 
     graph = helper.make_graph(
         nodes=[
@@ -47,10 +76,22 @@ def build_gate(path: Path) -> None:
         ],
         name="gate_fixture",
         inputs=[helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, 224, 224])],
-        outputs=[helper.make_tensor_value_info("logits", TensorProto.FLOAT, [1, 3])],
+        outputs=[
+            helper.make_tensor_value_info("logits", TensorProto.FLOAT, [1, len(templates)])
+        ],
         initializer=[numpy_helper.from_array(weights, name="W")],
     )
     save(graph, path)
+
+    # Fail here rather than in a browser twenty minutes later: check every template routes
+    # to its own class before the file is written out as usable.
+    for index, (name, rgb) in enumerate(templates.items()):
+        logits = _normalised(rgb) @ weights
+        winner = int(np.argmax(logits))
+        if winner != index:
+            raise SystemExit(
+                f"gate fixture routes {name} to class {winner}, not {index}: {logits}"
+            )
 
 
 def build_detector(path: Path, num_classes: int, detections: list, size: int, anchors: int) -> None:
@@ -139,8 +180,21 @@ def main() -> int:
         ],
     )
 
+    # Crowd: a dense region and a choke point, weighted differently in the manifest.
+    build_detector(
+        out / "crowd.onnx",
+        num_classes=4,
+        size=960,
+        anchors=4,
+        detections=[
+            (400, 500, 500, 300, 0, 0.85),  # dense_packing
+            (800, 200, 120, 160, 2, 0.75),  # choke_point
+        ],
+    )
+
     print("\nimages:")
     solid(out / "turbine_red.png", (255, 0, 0))
+    solid(out / "crowd_yellow.png", (255, 255, 0))
     solid(out / "solar_blue.png", (0, 0, 255))
     solid(out / "invalid_green.png", (0, 255, 0))
     (out / "not_an_image.txt").write_text("this is not an image\n")

@@ -88,7 +88,7 @@ const REPLY = {
   asset: 'turbine',
   asset_reason: 'Three-blade horizontal-axis turbine against sky.',
   overall: 'One blade is severed at mid-span.',
-  defects: [
+  findings: [
     { label: 'Blade Severed', certainty: 'high', box: [0.1, 0.2, 0.4, 0.6], note: 'Ground the turbine.' },
     { label: 'leading edge erosion', certainty: 'low', box: [0.5, 0.5, 0.55, 0.52], note: '' },
     { label: 'corrosion', certainty: 'medium', box: null, note: 'Somewhere on the tower.' },
@@ -187,9 +187,21 @@ check('the same label gets the same colour every time',
   outcome.detections[0].classId
   === (await inspect({ provider: 'openai', model: 'gpt-5', apiKey: 'k', image })).detections[0].classId);
 
-stubFetch(200, { choices: [{ message: { content: '{"asset":"cat","defects":[]}' } }] });
+stubFetch(200, { choices: [{ message: { content: '{"asset":"cat","findings":[]}' } }] });
 outcome = await inspect({ provider: 'openai', model: 'gpt-5', apiKey: 'k', image });
 check('an unknown asset value falls back to neither', outcome.asset === 'neither');
+
+stubFetch(200, { choices: [{ message: { content: JSON.stringify({
+  asset: 'crowd', asset_reason: 'Aerial view of a packed standing area.',
+  overall: 'Dense packing against the stage-front barrier.',
+  findings: [{ label: 'pressure against barrier', certainty: 'high',
+    box: [0.2, 0.6, 0.8, 0.9], note: 'Relieve pressure at the front.' }],
+}) } }] });
+outcome = await inspect({ provider: 'openai', model: 'gpt-5', apiKey: 'k', image, domain: 'crowd' });
+check('crowd is accepted as an asset', outcome.asset === 'crowd');
+check('crowd findings become detections', outcome.detections.length === 1);
+check('crowd labels are normalised',
+  outcome.detections[0].label === 'pressure_against_barrier');
 
 // --- errors -------------------------------------------------------------------------------
 console.log('\nErrors');
@@ -252,14 +264,19 @@ await throws('an empty list is an error, not a silent empty dropdown',
 // --- the shared prompt ------------------------------------------------------------------
 console.log('\nShared prompt');
 const doc = JSON.parse(PROMPT_DOC);
-check('has all three domain briefs',
-  ['turbine', 'solar', 'auto'].every((k) => (doc.domains[k] ?? '').length > 100));
+check('has a brief for every domain',
+  ['turbine', 'solar', 'crowd', 'auto'].every((k) => (doc.domains[k] ?? '').length > 100));
 check('the schema names every key the parser reads',
-  ['asset', 'asset_reason', 'defects', 'label', 'certainty', 'box', 'note', 'overall']
+  ['asset', 'asset_reason', 'findings', 'label', 'certainty', 'box', 'note', 'overall']
     .every((k) => doc.schema.includes(k)));
 check('the schema states the box convention', /fractions of image width and height/.test(doc.schema));
-check('an empty defect list is described as the healthy answer',
-  /empty list is the healthy result/.test(doc.schema));
+check('an empty result is described as a null result, not as reassurance',
+  /It is not a statement that the asset is sound or that the scene is without risk/.test(doc.schema));
+check('the crowd brief refuses to put a number on people',
+  /never as a number of\npeople/.test(doc.domains.crowd));
+check('the crowd brief boxes regions rather than individuals',
+  /Box the region, never the individual/.test(doc.domains.crowd));
+check('crowd is a recognised asset', /"crowd"/.test(doc.schema));
 check('the solar brief refuses thermal-only faults', /thermal infrared/.test(doc.domains.solar));
 check('the turbine brief names structural failure', /severed/.test(doc.domains.turbine));
 check('certainty bands are ordered', doc.certainty.high > doc.certainty.medium

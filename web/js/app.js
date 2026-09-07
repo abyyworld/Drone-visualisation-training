@@ -84,7 +84,7 @@ async function loadManifest() {
 
   // A manifest entry is a promise, not a fact - check each file is actually there. A HEAD
   // request is enough and costs nothing next to downloading the weights.
-  const keys = ['gate', 'turbine', 'solar'];
+  const keys = ['gate', 'turbine', 'solar', 'crowd'];
   await Promise.all(
     keys.map(async (key) => {
       const spec = state.manifest[key];
@@ -102,8 +102,8 @@ async function loadManifest() {
 }
 
 function reportModelStatus() {
-  const detectors = ['turbine', 'solar'].filter((k) => state.available[k]);
-  const missing = ['gate', 'turbine', 'solar'].filter((k) => !state.available[k]);
+  const detectors = ['turbine', 'solar', 'crowd'].filter((k) => state.available[k]);
+  const missing = ['gate', 'turbine', 'solar', 'crowd'].filter((k) => !state.available[k]);
 
   if (!detectors.length) {
     showBanner(
@@ -389,7 +389,7 @@ async function handleFiles(files) {
       showBanner('warning', 'Choose a model for the selected engine before uploading.');
       return;
     }
-  } else if (!['turbine', 'solar'].some((k) => state.available[k])) {
+  } else if (!['turbine', 'solar', 'crowd'].some((k) => state.available[k])) {
     return;
   }
 
@@ -706,7 +706,7 @@ function stampReport() {
   const analysed = state.results.filter((r) => r.status === 'analysed').length;
   const models = usingApi()
     ? `${PROVIDERS[state.engine.provider].label} ${state.engine.model}`
-    : ['gate', 'turbine', 'solar']
+    : ['gate', 'turbine', 'solar', 'crowd']
       .filter((k) => state.available[k])
       .map((k) => `${k} ${state.manifest?.[k]?.file ?? '?'}`)
       .join(', ');

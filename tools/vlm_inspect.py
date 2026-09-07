@@ -447,7 +447,7 @@ def inspect_one(path: Path, *, provider, model, key, prompt, doc, retries=2):
     height = image["height"] or 1000
 
     detections, unlocated = [], []
-    for item in parsed.get("defects") or []:
+    for item in parsed.get("findings") or []:
         label = tidy_label(item.get("label"))
         certainty = str(item.get("certainty", "medium")).lower()
         entry = {
@@ -466,7 +466,7 @@ def inspect_one(path: Path, *, provider, model, key, prompt, doc, retries=2):
     asset = parsed.get("asset")
     return {
         "raw": raw,
-        "asset": asset if asset in ("turbine", "solar", "neither") else "neither",
+        "asset": asset if asset in ("turbine", "solar", "crowd", "neither") else "neither",
         "asset_reason": parsed.get("asset_reason", "") or "",
         "overall": parsed.get("overall", "") or "",
         "detections": detections,
@@ -536,7 +536,7 @@ def main(argv=None):
     parser.add_argument("--provider", choices=sorted(ADAPTERS), required=True)
     parser.add_argument("--model", help="defaults to this provider's most capable model")
     parser.add_argument("--api-key", help="prefer the environment variable")
-    parser.add_argument("--domain", choices=["auto", "turbine", "solar"], default="auto")
+    parser.add_argument("--domain", choices=["auto", "turbine", "solar", "crowd"], default="auto")
     parser.add_argument("--out", type=Path, help="output directory (default: inspections/<date>)")
     parser.add_argument("--limit", type=int, help="stop after N images, to price a run first")
     parser.add_argument("--list-models", action="store_true",
@@ -601,7 +601,8 @@ def main(argv=None):
         if outcome["asset"] == "neither":
             print(f"    rejected: {outcome['asset_reason']}")
             results.append({**record, "status": "rejected",
-                            "message": outcome["asset_reason"] or "Not a turbine or a solar array.",
+                            "message": outcome["asset_reason"]
+                            or "Not a turbine, a solar array or a crowd.",
                             "detections": [], "severity_label": None, "severity_score": None})
             continue
 
