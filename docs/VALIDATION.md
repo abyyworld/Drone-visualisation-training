@@ -330,3 +330,33 @@ State these limits in the report, so nobody else has to infer them:
 - It does not license reliance. Even a good result changes nothing about the
   invariants: the overlay still says *look here* and never the opposite, and
   the operator is still watching the video.
+
+## Rehearsing this before you have real footage
+
+The whole procedure runs today against the demo clip, so the mechanics are
+proven before real video and a real model exist:
+
+```bash
+python demo/validate_demo.py                 # build a split, score it, list the misses
+python demo/validate_demo.py --flicker 0.35  # model a detector that flickers
+```
+
+It scores the same frames twice — the detector's raw output, and that output
+after the N-of-M temporal filter — and prints the difference. That comparison is
+the one worth carrying over to real data, because the filter's cost and benefit
+are both invisible otherwise:
+
+```
+                                  raw     filtered      delta
+  overall recall                0.691        0.970     +0.280
+```
+
+On a model flickering at 35%, the 3-of-5 filter recovered 47 targets by coasting
+confirmed tracks through frames the model missed. On a perfectly steady detector
+it costs nothing and gains nothing. On a real model it will do some of both, and
+the point of running this is to find out which, at *your* n and m, before a
+firefighter is looking at the screen.
+
+Nothing here says anything about real fire: the clip is synthetic and the
+detector is a colour threshold. What it establishes is that the measurement
+works, so the first real run produces a number you can trust.

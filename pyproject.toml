@@ -55,6 +55,14 @@ stream = [
     "cryptography>=41.0",
 ]
 
+# Prints a scannable QR of the tablet URL in the run banner. Optional on
+# purpose: the alternative is typing an IP and port into a tablet keyboard
+# while people wait, but a missing convenience must never stop the station
+# serving, so the banner degrades to plain URLs without it.
+qr = [
+    "qrcode>=7.4",
+]
+
 # Capture-card ingest (HDMI out of the controller) and the fallback decoder.
 cv = [
     "opencv-python>=4.9",

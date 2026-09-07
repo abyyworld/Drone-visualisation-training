@@ -615,13 +615,64 @@ def _banner(cfg: Config, pipeline: Any, info: Any, *, mode: str, stub: bool,
         f"  record     {pipeline.incident_dir or 'disabled'}",
         "",
         f"  {info.describe()}",
-        "",
     ]
+    lines.extend(_tablet_entry(info))
+    lines.append("")
     lines.extend(f"  {line}" for line in SAFETY_LINE.splitlines())
     lines.append("")
     lines.append("  Ctrl-C to stop.")
     lines.append("")
     return "\n".join(lines)
+
+
+def _tablet_entry(info: Any) -> list[str]:
+    """The lines telling the operator exactly what to open on the tablet.
+
+    The self-test comes first, deliberately. On a LAN with a self-signed
+    certificate the first connection is the one that fails, and it fails in
+    ways that look like the app being broken rather than the certificate not
+    being trusted. selftest.html says which it is, in about thirty seconds.
+
+    A QR code is printed when the ``qrcode`` package is available, because the
+    alternative is typing an IP address and a port into a tablet keyboard while
+    people wait. It is optional on purpose: a missing convenience must never
+    stop the station serving.
+    """
+    urls = list(getattr(info, "urls", ()) or [])
+    # Prefer an address a tablet can actually reach: loopback is useless to
+    # anyone not sitting at this laptop.
+    lan = [u for u in urls if "localhost" not in u and "127.0.0.1" not in u and "[::1]" not in u]
+    best = (lan or urls or [None])[0]
+    if best is None:
+        return []
+
+    selftest = best.rstrip("/") + "/selftest.html"
+    lines = [
+        "",
+        "  ON THE TABLET, OPEN THIS FIRST:",
+        f"    {selftest}",
+        "      checks whether this device can run the overlay, and whether the",
+        "      certificate was actually trusted. Then open the app itself:",
+        f"    {best}",
+    ]
+
+    try:
+        import io  # noqa: PLC0415
+
+        import qrcode  # noqa: PLC0415
+
+        q = qrcode.QRCode(border=1, box_size=1)
+        q.add_data(selftest)
+        q.make(fit=True)
+        buf = io.StringIO()
+        q.print_ascii(out=buf, invert=True)
+        lines.append("")
+        lines.extend("    " + row for row in buf.getvalue().rstrip("\n").splitlines())
+        lines.append("    scan for the self-test  (pip install qrcode to change this code)")
+    except Exception:  # noqa: BLE001 - a convenience, never a reason to fail
+        lines.append("")
+        lines.append("    (pip install qrcode to print a scannable code here)")
+    return lines
 
 
 def _closing_summary(pipeline: Any) -> str:
