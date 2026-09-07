@@ -21,17 +21,66 @@ LIGHT_GREY = colors.HexColor('#F5F5F5')
 MID_GREY   = colors.HexColor('#CCCCCC')
 W, H = A4
 
-def severity_colour(label):
-    if 'Severe'   in label: return SEVERE
-    if 'Moderate' in label: return MODERATE
-    if 'Minor'    in label: return MINOR
-    return HEALTHY
+# Band names per subject, mirroring LABELS in web/js/severity.js. "Moderate damage" is the
+# right words for a blade and the wrong ones for a crowd, which is not damaged, or a fire,
+# where the finding is what is burning and who is near it.
+BAND_LABELS = {
+    'turbine': {'none': 'No defects found', 'minor': 'Minor wear',
+                'moderate': 'Moderate damage', 'severe': 'Severe damage'},
+    'solar': {'none': 'No defects found', 'minor': 'Minor wear',
+              'moderate': 'Moderate damage', 'severe': 'Severe damage'},
+    'crowd': {'none': 'No pressure patterns in this frame', 'minor': 'Worth watching',
+              'moderate': 'Under pressure', 'severe': 'Needs someone now'},
+    'wildfire': {'none': 'Nothing visible in this frame', 'minor': 'Minor activity',
+                 'moderate': 'Active', 'severe': 'Active, with people or property'},
+}
 
-def score_to_label(score):
-    if score == 0:  return 'No defects detected'
-    if score < 2:   return 'Minor wear'
-    if score < 5:   return 'Moderate damage'
-    return 'Severe damage'
+DEFAULT_BANDS = {'none': 'No findings in this image', 'minor': 'Minor',
+                 'moderate': 'Moderate', 'severe': 'Severe'}
+
+# The one-line verdict across a whole set. Mirrors summarise() in web/js/severity.js.
+OVERALL_LABELS = {
+    'turbine': {'severe': 'Severe damage detected', 'moderate': 'Moderate damage detected',
+                'minor': 'Minor wear detected', 'none': 'Majority healthy - minor issues noted'},
+    'solar': {'severe': 'Severe damage detected', 'moderate': 'Moderate damage detected',
+              'minor': 'Minor wear detected', 'none': 'Majority healthy - minor issues noted'},
+    'crowd': {'severe': 'Crowd pressure needing someone now',
+              'moderate': 'Crowd under pressure in places',
+              'minor': 'Some areas worth watching',
+              'none': 'No pressure patterns in the frames reviewed'},
+    'wildfire': {'severe': 'Active fire with people or property in the frames',
+                 'moderate': 'Active fire in the frames reviewed',
+                 'minor': 'Minor activity in the frames reviewed',
+                 'none': 'Nothing visible in the frames reviewed'},
+    None: {'severe': 'Severe findings', 'moderate': 'Moderate findings',
+           'minor': 'Minor findings', 'none': 'No findings in the images reviewed'},
+}
+
+def score_to_band(score):
+    """Score -> band key. Thresholds mirror web/js/severity.js; change both together."""
+    if score <= 0:  return 'none'
+    if score < 2:   return 'minor'
+    if score < 5:   return 'moderate'
+    return 'severe'
+
+def band_of(result):
+    """The band a result sits in.
+
+    Read from `severity_band` when the exporting app recorded it, derived from the score
+    otherwise. Deriving is the fallback rather than the rule because the label text now
+    varies by subject, so matching on the words would break the moment one is added --
+    which is exactly what happened to the gate's rejection message.
+    """
+    band = result.get('severity_band')
+    if band in DEFAULT_BANDS:
+        return band
+    return score_to_band(result.get('severity_score') or 0)
+
+def severity_colour(band):
+    return {'severe': SEVERE, 'moderate': MODERATE, 'minor': MINOR}.get(band, HEALTHY)
+
+def score_to_label(score, domain=None):
+    return BAND_LABELS.get(domain, DEFAULT_BANDS)[score_to_band(score)]
 
 def make_styles():
     base = getSampleStyleSheet()
@@ -116,7 +165,9 @@ def build_cover(styles, meta):
 
     # overall status badge
     overall = meta.get('overall_label', 'N/A')
-    clr = severity_colour(overall)
+    # The band, not the sentence. Matching on the words broke the moment the wording became
+    # subject-specific, which is the same trap the gate's rejection message fell into.
+    clr = severity_colour(meta.get('overall_band', 'none'))
     badge = Table([[Paragraph(f'Overall Status: {overall}',
         ParagraphStyle('badge', fontSize=14, fontName='Helvetica-Bold',
                        textColor=colors.white, alignment=TA_CENTER))]],
@@ -200,7 +251,7 @@ def build_summary_table(styles, results):
         ('ALIGN',         (3,0),(4,-1),  'CENTER'),
     ]
     for i, r in enumerate(results, 1):
-        c = severity_colour(r['severity_label'])
+        c = severity_colour(band_of(r))
         sty.append(('TEXTCOLOR', (4,i),(4,i), c))
         sty.append(('FONTNAME',  (4,i),(4,i), 'Helvetica-Bold'))
     tbl.setStyle(TableStyle(sty))
@@ -232,7 +283,7 @@ def build_detail_pages(styles, results, annotated_dir):
 
         story.append(Spacer(1, 4*mm))
 
-        clr = severity_colour(r['severity_label'])
+        clr = severity_colour(band_of(r))
         info_tbl = Table([[
             Paragraph(r['image'], ParagraphStyle('fn', fontSize=9,
                 fontName='Helvetica-Bold', textColor=DARK_BLUE)),
@@ -311,11 +362,8 @@ def generate_report(
 
     stats = {'severe': 0, 'moderate': 0, 'minor': 0, 'healthy': 0}
     for r in results:
-        lbl = r['severity_label']
-        if 'Severe'   in lbl: stats['severe']   += 1
-        elif 'Moderate' in lbl: stats['moderate'] += 1
-        elif 'Minor'  in lbl: stats['minor']    += 1
-        else:                   stats['healthy']  += 1
+        band = band_of(r)
+        stats['healthy' if band == 'none' else band] += 1
 
     total = len(results)
     if not total:
@@ -331,10 +379,16 @@ def generate_report(
 
     # Thresholds mirror summarise() in web/js/severity.js. Change both together, or the
     # web verdict and the PDF verdict will disagree about the same inspection.
-    if severe_pct >= 10:                        overall = 'Severe damage detected'
-    elif severe_pct > 0 or moderate_pct >= 20:  overall = 'Moderate damage detected'
-    elif defect_pct >= 10:                      overall = 'Minor wear detected'
-    else:                                       overall = 'Majority healthy - minor issues noted'
+    if severe_pct >= 10:                        overall_band = 'severe'
+    elif severe_pct > 0 or moderate_pct >= 20:  overall_band = 'moderate'
+    elif defect_pct >= 10:                      overall_band = 'minor'
+    else:                                       overall_band = 'none'
+
+    # One subject per report, taken from the results rather than assumed. A mixed set falls
+    # back to neutral wording rather than describing a fire as damage.
+    domains = {r.get('domain') for r in results if r.get('domain')}
+    domain = domains.pop() if len(domains) == 1 else None
+    overall = OVERALL_LABELS.get(domain, OVERALL_LABELS[None])[overall_band]
 
     meta = {
         'turbine_id':    asset_id,
@@ -342,6 +396,7 @@ def generate_report(
         'operator':      operator,
         'total_images':  total,
         'overall_label': overall,
+        'overall_band':  overall_band,
         'stats':         stats,
         'model_name':    model_name or data.get('model', 'Unspecified'),
         'title':         title,

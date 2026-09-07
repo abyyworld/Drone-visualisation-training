@@ -11,10 +11,78 @@
  */
 
 export const SEVERITY = {
-  NONE: { key: 'none', label: 'No defects found', rank: 0 },
-  MINOR: { key: 'minor', label: 'Minor wear', rank: 1 },
-  MODERATE: { key: 'moderate', label: 'Moderate damage', rank: 2 },
-  SEVERE: { key: 'severe', label: 'Severe damage', rank: 3 },
+  NONE: { key: 'none', label: 'No findings in this image', rank: 0 },
+  MINOR: { key: 'minor', label: 'Minor', rank: 1 },
+  MODERATE: { key: 'moderate', label: 'Moderate', rank: 2 },
+  SEVERE: { key: 'severe', label: 'Severe', rank: 3 },
+};
+
+/**
+ * What each band is called, per subject.
+ *
+ * "Moderate damage" is the right words for a blade and the wrong ones for a crowd, which is
+ * not damaged, or a fire, where the finding is what is burning and who is near it. The
+ * bands and the arithmetic are shared; only the nouns change.
+ *
+ * The zero band is the one that matters most. It has to describe a null result about one
+ * image and never the state of the thing photographed - a rule station/core/safety.py
+ * enforces across this repository, and the reason the phrasing here is so careful.
+ */
+const LABELS = {
+  turbine: { none: 'No defects found', minor: 'Minor wear', moderate: 'Moderate damage', severe: 'Severe damage' },
+  solar: { none: 'No defects found', minor: 'Minor wear', moderate: 'Moderate damage', severe: 'Severe damage' },
+  crowd: {
+    none: 'No pressure patterns in this frame',
+    minor: 'Worth watching',
+    moderate: 'Under pressure',
+    severe: 'Needs someone now',
+  },
+  wildfire: {
+    none: 'Nothing visible in this frame',
+    minor: 'Minor activity',
+    moderate: 'Active',
+    severe: 'Active, with people or property',
+  },
+};
+
+/** The band's name for a given subject, falling back to the neutral one. */
+export function severityLabel(severity, domain) {
+  return LABELS[domain]?.[severity.key] ?? severity.label;
+}
+
+/**
+ * The one-line verdict across a set. Mirrors OVERALL_LABELS in report_generator.py.
+ *
+ * Keyed by band rather than matched on words. The PDF used to pick the badge colour by
+ * searching the sentence for "Severe", which stopped working the moment the wording became
+ * subject-specific - the same trap that left the gate telling people to upload a turbine
+ * long after it had learned two more subjects.
+ */
+const OVERALL = {
+  turbine: {
+    severe: 'Severe damage detected', moderate: 'Moderate damage detected',
+    minor: 'Minor wear detected', none: 'Majority healthy - minor issues noted',
+  },
+  solar: {
+    severe: 'Severe damage detected', moderate: 'Moderate damage detected',
+    minor: 'Minor wear detected', none: 'Majority healthy - minor issues noted',
+  },
+  crowd: {
+    severe: 'Crowd pressure needing someone now',
+    moderate: 'Crowd under pressure in places',
+    minor: 'Some areas worth watching',
+    none: 'No pressure patterns in the frames reviewed',
+  },
+  wildfire: {
+    severe: 'Active fire with people or property in the frames',
+    moderate: 'Active fire in the frames reviewed',
+    minor: 'Minor activity in the frames reviewed',
+    none: 'Nothing visible in the frames reviewed',
+  },
+  default: {
+    severe: 'Severe findings', moderate: 'Moderate findings',
+    minor: 'Minor findings', none: 'No findings in the images reviewed',
+  },
 };
 
 const MINOR_BELOW = 2;
@@ -60,11 +128,17 @@ export function summarise(results) {
   const moderatePct = (counts.moderate / total) * 100;
   const defectPct = ((counts.severe + counts.moderate + counts.minor) / total) * 100;
 
-  let overall;
-  if (severePct >= 10) overall = 'Severe damage detected';
-  else if (severePct > 0 || moderatePct >= 20) overall = 'Moderate damage detected';
-  else if (defectPct >= 10) overall = 'Minor wear detected';
-  else overall = 'Majority healthy - minor issues noted';
+  let band;
+  if (severePct >= 10) band = 'severe';
+  else if (severePct > 0 || moderatePct >= 20) band = 'moderate';
+  else if (defectPct >= 10) band = 'minor';
+  else band = 'none';
 
-  return { counts, total, overall, defectRate: defectPct };
+  // One subject per set, taken from the results rather than assumed. A mixed batch falls
+  // back to neutral wording rather than describing a fire as damage.
+  const subjects = new Set(analysed.map((r) => r.domain).filter(Boolean));
+  const domain = subjects.size === 1 ? [...subjects][0] : 'default';
+  const overall = (OVERALL[domain] ?? OVERALL.default)[band];
+
+  return { counts, total, overall, band, defectRate: defectPct };
 }

@@ -32,7 +32,7 @@
  *     deleted on activate, so a stale shell cannot outlive a release.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `inspection-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `inspection-assets-${CACHE_VERSION}`;
 
@@ -50,6 +50,7 @@ const SHELL = [
   'js/vlm.js',
   'js/video.js',
   'js/formats.js',
+  'js/zip.js',
   'prompts/inspection.json',
   'models/manifest.json',
   'manifest.webmanifest',

@@ -1,6 +1,7 @@
 # Drone Inspection
 
-Defect analysis for wind turbine blades and solar panels, from drone photographs or video.
+Analysis of wind turbines, solar panels, crowds and wildfires, from drone photographs or
+video.
 Static site, no server, hosted on GitHub Pages, and installable on a tablet as an app with an
 icon.
 
@@ -80,9 +81,19 @@ That dataset is made of the operator's own photographs, at the operator's own fr
 the operator's own drone. It is the one thing the failed model never had. When it reaches the
 size below, train on it and the API becomes optional.
 
+From the app: analyse a batch, then **Save as training data**. That downloads a zip laid
+out exactly as an inspection, so it drops straight into `inspections/`.
+
+From the command line, for a folder of photographs:
+
 ```bash
 python3 tools/vlm_inspect.py photos/ --provider anthropic --domain turbine
-# review the annotated copies, correct the sidecars, set "reviewed": true
+```
+
+Either way, the rest is the same:
+
+```bash
+# review the annotated copies, correct the sidecars, set "reviewed": true in each
 python3 tools/vlm_to_yolo.py inspections/ --dry-run          # how much is there
 python3 tools/vlm_to_yolo.py inspections/ --out datasets/turbine_field
 python3 tools/audit_dataset.py datasets/turbine_field

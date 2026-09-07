@@ -38,12 +38,13 @@ const MIME = {
 // solar:   soiling 0.85 (weight 1.0) + missing_module 0.75 (weight 4.0) = 0.85 + 3.00 = 3.85
 // crowd:   dense_packing 0.85 (weight 2.0) + choke_point 0.75 (weight 3.0) = 1.70 + 2.25 = 3.95
 // wildfire: smoke 0.80 (weight 1.5) + person 0.60 (weight 5.0) = 1.20 + 3.00 = 4.20
-// All four land in [2, 5) -> "Moderate damage".
+// All four land in the middle band. Its name is per subject: a blade takes moderate damage,
+// a crowd comes under pressure, a fire is simply active. See LABELS in web/js/severity.js.
 const EXPECT = {
   turbine: { score: '4.20', severity: 'Moderate damage', detections: ['corrosion - 90.0%', 'crack - 80.0%'] },
   solar: { score: '3.85', severity: 'Moderate damage', detections: ['soiling - 85.0%', 'missing_module - 75.0%'] },
-  crowd: { score: '3.95', severity: 'Moderate damage', detections: ['dense_packing - 85.0%', 'choke_point - 75.0%'] },
-  wildfire: { score: '4.20', severity: 'Moderate damage', detections: ['smoke - 80.0%', 'person - 60.0%'] },
+  crowd: { score: '3.95', severity: 'Under pressure', detections: ['dense_packing - 85.0%', 'choke_point - 75.0%'] },
+  wildfire: { score: '4.20', severity: 'Active', detections: ['smoke - 80.0%', 'person - 60.0%'] },
 };
 
 let failures = 0;
@@ -219,7 +220,7 @@ async function main() {
     const invalid = await cardFor(page, 'invalid_green.png');
     await invalid.locator('.card__message').waitFor({ timeout: 30000 });
     equal('rejection message', (await invalid.locator('.card__message').textContent()).trim(),
-      'Please upload a valid turbine blade or solar panel image.');
+      'This does not look like wind turbine blade, solar panel, crowd or wildfire.');
     check('card marked rejected', (await invalid.getAttribute('class')).includes('card--rejected'));
     check('no detections drawn on a rejected image',
       await invalid.locator('.detections').count() === 0);
@@ -236,8 +237,10 @@ async function main() {
     const tiles = await page.locator('.summary__tiles .tile').allTextContents();
     check('four moderate results counted', /4Moderate/.test(tiles.join('')), tiles.join(' / '));
     check('one rejection counted', /1Rejected/.test(tiles.join('')), tiles.join(' / '));
+    // Four subjects in one batch, so the verdict falls back to neutral wording rather than
+    // describing a fire as damage.
     equal('overall verdict', (await page.locator('.summary__overall').textContent()).trim(),
-      'Moderate damage detected');
+      'Moderate findings');
     for (const id of ['export-json', 'export-images', 'print-report', 'clear']) {
       check(`${id} enabled`, await page.locator(`#${id}`).isEnabled());
     }
@@ -248,9 +251,49 @@ async function main() {
     ]).then(([d]) => d);
     const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
     equal('JSON export result count', exported.results.length, 5);
-    equal('JSON export overall', exported.summary.overall, 'Moderate damage detected');
+    equal('JSON export overall', exported.summary.overall, 'Moderate findings');
     equal('JSON export bbox is in original pixels',
       JSON.stringify(exported.results[0].detections[0].bbox), '[380,430,580,530]');
+
+    // The training-data export, checked by unzipping it rather than by trusting the button.
+    // It is written by hand (web/js/zip.js) because everything going in is already
+    // compressed, so a real archiver would be a megabyte to save nothing - which means the
+    // archive being readable at all is worth asserting.
+    console.log('\nTraining-data export');
+    const trainingDownload = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('#export-training').click(),
+    ]).then(([d]) => d);
+    const zipPath = await trainingDownload.path();
+    const { execFileSync } = await import('node:child_process');
+    const listing = execFileSync('python3', ['-c',
+      'import sys, zipfile; print("\\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))',
+      zipPath]).toString().trim().split('\n');
+
+    check('the archive opens', listing.length > 0, listing.join(' '));
+    check('it holds an image for every analysed upload',
+      listing.filter((n) => n.includes('/images/')).length === 4, listing.join(' '));
+    check('and a label sidecar for each',
+      listing.filter((n) => n.includes('/labels/')).length === 4, listing.join(' '));
+    check('and the summary report_generator.py consumes',
+      listing.some((n) => n.endsWith('inspection_summary.json')), listing.join(' '));
+
+    const sidecar = JSON.parse(execFileSync('python3', ['-c',
+      'import sys, zipfile\n'
+      + 'z = zipfile.ZipFile(sys.argv[1])\n'
+      + 'name = [n for n in z.namelist() if "/labels/" in n][0]\n'
+      + 'sys.stdout.write(z.read(name).decode())',
+      zipPath]).toString());
+
+    // vlm_to_yolo.py needs the dimensions the boxes are relative to, and skips anything
+    // nobody has checked. Both are the difference between a usable training set and a
+    // detector taught to repeat a vision model's guesses.
+    check('the sidecar carries the image dimensions', sidecar.width > 0 && sidecar.height > 0);
+    check('it is marked unreviewed', sidecar.reviewed === false);
+    check('it names the subject', typeof sidecar.domain === 'string' && sidecar.domain.length > 0);
+    check('its boxes are in pixels of that image',
+      sidecar.detections.every((d) => d.box[2] <= sidecar.width && d.box[3] <= sidecar.height),
+      JSON.stringify(sidecar.detections));
 
     await page.locator('.card').first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: join(ROOT, 'docs', 'web-app.png') });

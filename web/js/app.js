@@ -10,14 +10,24 @@ import { probeBackend, activeBackend, configureRuntime } from './runtime.js';
 import { loadImage } from './preprocess.js';
 import { classify, rejectionMessage, VERDICT } from './gate.js';
 import { detect } from './detect.js';
-import { assess, summarise } from './severity.js';
+import { assess, summarise, severityLabel } from './severity.js';
 import { drawDetections, toBlob, colorFor } from './render.js';
 import { PROVIDERS, ENGINE_LOCAL, inspect, listModels } from './vlm.js';
 import { extractFrames, VIDEO_DEFAULTS } from './video.js';
 import { classify as classifyFile, ACCEPT_ATTRIBUTE } from './formats.js';
+import { zip } from './zip.js';
 
 const MODELS_BASE = 'models/';
 const MAX_FILES = 100;
+
+/**
+ * The subjects, in the order they are offered.
+ *
+ * Written once. Adding wildfire meant editing this same list in six places, and the gate's
+ * rejection message was missed - so it told people to upload a turbine or a solar panel
+ * for a while after it had learned two more subjects.
+ */
+const DOMAINS = ['turbine', 'solar', 'crowd', 'wildfire'];
 
 const state = {
   manifest: null,
@@ -43,7 +53,7 @@ async function init() {
   for (const id of [
     'drop', 'file-input', 'results', 'summary', 'status-banner', 'backend',
     'domain-override', 'override-row', 'export-json', 'export-images', 'print-report',
-    'empty-state', 'progress', 'progress-bar', 'progress-label', 'clear',
+    'empty-state', 'progress', 'progress-bar', 'progress-label', 'clear', 'export-training',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -94,7 +104,7 @@ async function loadManifest() {
 
   // A manifest entry is a promise, not a fact - check each file is actually there. A HEAD
   // request is enough and costs nothing next to downloading the weights.
-  const keys = ['gate', 'turbine', 'solar', 'crowd', 'wildfire'];
+  const keys = ['gate', ...DOMAINS];
   await Promise.all(
     keys.map(async (key) => {
       const spec = state.manifest[key];
@@ -112,8 +122,8 @@ async function loadManifest() {
 }
 
 function reportModelStatus() {
-  const detectors = ['turbine', 'solar', 'crowd', 'wildfire'].filter((k) => state.available[k]);
-  const missing = ['gate', 'turbine', 'solar', 'crowd', 'wildfire'].filter((k) => !state.available[k]);
+  const detectors = DOMAINS.filter((k) => state.available[k]);
+  const missing = ['gate', ...DOMAINS].filter((k) => !state.available[k]);
 
   if (!detectors.length) {
     // No local model, but the API engines need none, so this is a setup step rather than a
@@ -381,6 +391,7 @@ function wireEvents() {
   el.clear.addEventListener('click', reset);
   el['export-json'].addEventListener('click', exportJson);
   el['export-images'].addEventListener('click', exportImages);
+  el['export-training'].addEventListener('click', exportTrainingData);
   el['print-report'].addEventListener('click', () => window.print());
 
   // Stamp the report as it goes to paper rather than at page load, so a tab left open
@@ -416,7 +427,7 @@ async function handleFiles(files) {
       showBanner('warning', 'Choose a model for the selected engine before uploading.');
       return;
     }
-  } else if (!['turbine', 'solar', 'crowd', 'wildfire'].some((k) => state.available[k])) {
+  } else if (!DOMAINS.some((k) => state.available[k])) {
     // This used to `return` with nothing said, which meant the file picker opened, files
     // were chosen, and the page did nothing at all. A silent refusal is indistinguishable
     // from a broken app, and it is the only outcome here that leaves someone with no idea
@@ -506,7 +517,9 @@ async function analyse(file) {
   } catch (error) {
     return { ...base, status: 'error', message: error.message };
   }
-  return analyseImage(image, base);
+  // The original file is kept so the training-data export can carry the pixels the
+  // findings describe. A label without its image trains nothing.
+  return analyseImage(image, { ...base, sourceFile: file });
 }
 
 /**
@@ -573,7 +586,14 @@ async function resolveDomain(image) {
   const gate = await classify(gateSpec, `${MODELS_BASE}${gateSpec.file}`, image);
 
   if (gate.verdict === VERDICT.INVALID || gate.verdict === VERDICT.UNCERTAIN) {
-    return { rejected: true, message: rejectionMessage(gate.verdict, gate.confidence), gate };
+    const deployed = DOMAINS
+      .filter((key) => state.available[key])
+      .map((key) => (state.manifest?.[key]?.displayName ?? key).toLowerCase());
+    return {
+      rejected: true,
+      message: rejectionMessage(gate.verdict, gate.confidence, deployed),
+      gate,
+    };
   }
   if (!state.available[gate.verdict]) {
     return {
@@ -616,7 +636,7 @@ function appendResultCard(result) {
   if (result.status === 'analysed') {
     const badge = document.createElement('span');
     badge.className = `badge badge--${result.severity.key}`;
-    badge.textContent = `${result.severity.label} · score ${result.score.toFixed(2)}`;
+    badge.textContent = `${severityLabel(result.severity, result.domain)} · score ${result.score.toFixed(2)}`;
     body.appendChild(badge);
 
     const meta = document.createElement('p');
@@ -744,7 +764,7 @@ function stampReport() {
   const analysed = state.results.filter((r) => r.status === 'analysed').length;
   const models = usingApi()
     ? `${PROVIDERS[state.engine.provider].label} ${state.engine.model}`
-    : ['gate', 'turbine', 'solar', 'crowd', 'wildfire']
+    : ['gate', ...DOMAINS]
       .filter((k) => state.available[k])
       .map((k) => `${k} ${state.manifest?.[k]?.file ?? '?'}`)
       .join(', ');
@@ -769,7 +789,7 @@ function showBanner(kind, message) {
 
 function updateExportButtons() {
   const hasResults = state.results.length > 0;
-  for (const id of ['export-json', 'export-images', 'print-report', 'clear']) {
+  for (const id of ['export-json', 'export-images', 'print-report', 'clear', 'export-training']) {
     el[id].disabled = !hasResults;
   }
 }
@@ -795,9 +815,104 @@ function download(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function exportJson() {
+
+/**
+ * Download everything needed to turn this session into training data.
+ *
+ * WHY THIS BUTTON EXISTS
+ *     The plan for getting off the API and back to a model on the device is that every
+ *     inspection leaves a labelled photograph behind, and those accumulate into a dataset
+ *     made of the operator's own imagery rather than one bought from a website. That is
+ *     what tools/vlm_to_yolo.py builds from.
+ *
+ *     Until now only tools/vlm_inspect.py wrote those files. Anyone working in the app -
+ *     which is everyone on a tablet - produced no training data at all, so the plan quietly
+ *     did not apply to the way the thing is actually used.
+ *
+ * WHAT COMES OUT
+ *     A zip laid out exactly as tools/vlm_inspect.py writes an inspection, so it drops
+ *     straight into inspections/ and needs no conversion:
+ *
+ *         <name>/images/<file>          the original, untouched
+ *         <name>/labels/<file>.json     the findings, with the image's dimensions
+ *         <name>/inspection_summary.json
+ *
+ *     "reviewed" is false in every sidecar, and vlm_to_yolo.py ignores unreviewed labels by
+ *     default. That is the point: a vision model's output is a first draft, and training on
+ *     it unchecked teaches a detector to repeat its mistakes with more confidence.
+ */
+async function exportTrainingData() {
+  const analysed = state.results.filter((r) => r.status === 'analysed' && r.sourceFile);
+  if (!analysed.length) {
+    showBanner('warning', state.results.some((r) => r.status === 'analysed')
+      ? 'Only uploaded photographs can go into training data. Frames pulled out of a video '
+        + 'have no original file behind them - save the frame first, then analyse it.'
+      : 'Nothing analysed yet.');
+    return;
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const folder = `inspection-${stamp}`;
+  const encoder = new TextEncoder();
+  const entries = [];
+
+  for (const result of analysed) {
+    const bytes = new Uint8Array(await result.sourceFile.arrayBuffer());
+    entries.push({ name: `${folder}/images/${result.file}`, data: bytes });
+
+    const stem = result.file.replace(/\.[^.]+$/, '');
+    entries.push({
+      name: `${folder}/labels/${stem}.json`,
+      data: encoder.encode(JSON.stringify({
+        image: result.file,
+        source: result.file,
+        // Boxes are in pixels of this image, so the dimensions have to travel with them.
+        width: result.image?.width ?? null,
+        height: result.image?.height ?? null,
+        domain: result.domain,
+        provider: result.engine?.provider ?? 'local',
+        model: result.engine?.model ?? null,
+        generated: new Date().toISOString(),
+        reviewed: false,
+        overall: result.notes ?? '',
+        detections: (result.detections ?? []).map((d) => ({
+          label: d.label,
+          class_id: d.classId ?? 0,
+          certainty: d.certainty ?? 'medium',
+          confidence: d.confidence,
+          note: d.note ?? '',
+          box: d.box.map((v) => Number(v.toFixed(1))),
+        })),
+        unlocated: (result.unlocated ?? []).map((d) => ({
+          label: d.label, certainty: d.certainty, note: d.note ?? '',
+        })),
+      }, null, 2)),
+    });
+  }
+
+  entries.push({
+    name: `${folder}/inspection_summary.json`,
+    data: encoder.encode(JSON.stringify(buildSummary(), null, 2)),
+  });
+
+  download(zip(entries), `${folder}.zip`);
+  showBanner(
+    'info',
+    `${analysed.length} image${analysed.length === 1 ? '' : 's'} exported. Unzip into `
+    + 'inspections/, correct the boxes and labels, set "reviewed": true in each, then run '
+    + 'tools/vlm_to_yolo.py to build a training set from them.',
+  );
+}
+
+/**
+ * The inspection record, in the schema report_generator.py consumes.
+ *
+ * Shared by the JSON download and the training-data zip so the two cannot describe the
+ * same session differently.
+ */
+function buildSummary() {
   const summary = summarise(state.results);
-  const payload = {
+  return {
     generated: new Date().toISOString(),
     engine: usingApi()
       ? { provider: state.engine.provider, model: state.engine.model }
@@ -808,7 +923,8 @@ function exportJson() {
       status: r.status,
       source: r.source ?? null,
       domain: r.domain ?? null,
-      severity_label: r.severity?.label ?? null,
+      severity_label: r.severity ? severityLabel(r.severity, r.domain) : null,
+      severity_band: r.severity?.key ?? null,
       severity_score: r.score != null ? Number(r.score.toFixed(3)) : null,
       message: r.message ?? null,
       gate: r.gate ? { verdict: r.gate.verdict, scores: r.gate.scores } : null,
@@ -826,9 +942,11 @@ function exportJson() {
       })),
     })),
   };
+}
 
+function exportJson() {
   download(
-    new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+    new Blob([JSON.stringify(buildSummary(), null, 2)], { type: 'application/json' }),
     'inspection_summary.json',
   );
 }

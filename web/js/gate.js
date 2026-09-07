@@ -1,10 +1,14 @@
 /**
- * Domain gate - decides whether an upload is a turbine blade, a solar panel, or neither.
+ * Domain gate - decides which subject an upload is, or refuses it.
  *
  * This exists because a detector has no way to say "that's a cat". Shown an out-of-domain
- * image it will still emit boxes, often confident ones, and reporting those as inspection
- * findings would be worse than useless. A dedicated 3-class classifier in front of the
- * detectors is the cheap, honest way to refuse.
+ * image it will still emit boxes, often confident ones, and reporting those as findings
+ * would be worse than useless. A classifier in front of the detectors is the cheap, honest
+ * way to refuse.
+ *
+ * It is not hardcoded to a subject list. The classes come from the manifest and are checked
+ * against the model's own output width, so adding a subject is a manifest change and a
+ * retrained gate, not an edit here.
  *
  * Rejection is deliberately conservative: an image is only routed to a detector when the
  * gate is confident *and* the winning class is a real domain. Everything else is refused
@@ -15,8 +19,6 @@ import { getSession } from './runtime.js';
 import { centerCrop } from './preprocess.js';
 
 export const VERDICT = {
-  TURBINE: 'turbine',
-  SOLAR: 'solar',
   INVALID: 'invalid',
   UNCERTAIN: 'uncertain',
 };
@@ -77,10 +79,25 @@ function softmax(logits) {
   return exps.map((v) => v / sum);
 }
 
-/** Human-readable explanation for a refused image. */
-export function rejectionMessage(verdict, confidence) {
+/**
+ * Why an image was refused, naming the subjects that are actually available.
+ *
+ * Built from the deployed list rather than written into a sentence: this message told
+ * people to upload a turbine or a solar panel for a while after crowd and wildfire were
+ * added, which is the app describing a version of itself that no longer exists.
+ */
+export function rejectionMessage(verdict, confidence, subjects = []) {
+  const named = list(subjects);
   if (verdict === VERDICT.UNCERTAIN) {
-    return `Not confident this is a turbine blade or a solar panel (best guess ${(confidence * 100).toFixed(0)}%). Please upload a clearer inspection image.`;
+    return `Not confident this is ${named} (best guess ${(confidence * 100).toFixed(0)}%). `
+      + 'Upload a clearer image, or choose the subject yourself above.';
   }
-  return 'Please upload a valid turbine blade or solar panel image.';
+  return `This does not look like ${named}.`;
+}
+
+/** "a, b or c" - so the message reads as a sentence rather than a config dump. */
+function list(subjects) {
+  if (!subjects.length) return 'anything this can analyse';
+  if (subjects.length === 1) return subjects[0];
+  return `${subjects.slice(0, -1).join(', ')} or ${subjects[subjects.length - 1]}`;
 }

@@ -468,3 +468,66 @@ def test_gemini_accepts_either_environment_variable(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
     assert vlm_inspect.resolve_key("gemini", None) == "g-key"
+
+
+# ---------------------------------------------------------------------------------------
+# The round trip the whole "train it later" plan depends on
+# ---------------------------------------------------------------------------------------
+
+def test_the_web_app_export_feeds_the_dataset_builder(tmp_path):
+    """A session exported from the browser must build a training set with no conversion.
+
+    This is the join that makes the plan real. tools/vlm_inspect.py has always written
+    sidecars, but nobody runs a Python script on a controller at a wind farm - they use the
+    app. If what the app exports needs massaging before vlm_to_yolo.py will read it, the
+    data quietly never becomes a dataset.
+
+    The layout below is exactly what exportTrainingData() in web/js/app.js writes into its
+    zip. Keep the two in step; this test is what notices when they drift.
+    """
+    session = tmp_path / "inspections" / "inspection-2026-09-07T12-00-00"
+    (session / "images").mkdir(parents=True)
+    (session / "labels").mkdir(parents=True)
+
+    for index in range(4):
+        name = f"DJI_{index:04d}.png"
+        write_png(session / "images" / name, 1000, 500)
+        (session / "labels" / f"DJI_{index:04d}.json").write_text(json.dumps({
+            "image": name,
+            "source": name,          # a bare filename, as the browser has no paths
+            "width": 1000, "height": 500,
+            "domain": "turbine",
+            "provider": "anthropic", "model": "claude-opus-5",
+            "generated": "2026-09-07T12:00:00.000Z",
+            "reviewed": False,
+            "overall": "Leading edge erosion along the outboard third.",
+            "detections": [{
+                "label": "leading_edge_erosion", "class_id": 12, "certainty": "high",
+                "confidence": 0.9, "note": "", "box": [100.0, 100.0, 400.0, 300.0],
+            }],
+            "unlocated": [],
+        }, indent=2))
+
+    inspections = str(tmp_path / "inspections")
+
+    # Unreviewed by default, which is the point: a vision model's output is a first draft.
+    assert vlm_to_yolo.main([inspections, "--dry-run"]) == 1
+
+    # Reviewed, it builds.
+    for sidecar in (session / "labels").glob("*.json"):
+        record = json.loads(sidecar.read_text())
+        record["reviewed"] = True
+        sidecar.write_text(json.dumps(record))
+
+    out = tmp_path / "dataset"
+    assert vlm_to_yolo.main([inspections, "--out", str(out)]) == 0
+
+    labels = [p for split in ("train", "valid", "test")
+              for p in (out / split / "labels").glob("*.txt")]
+    assert len(labels) == 4
+    assert "surface_damage" in (out / "data.yaml").read_text()
+
+    for path in labels:
+        fields = path.read_text().strip().split()
+        assert len(fields) == 5
+        assert all(0.0 <= float(v) <= 1.0 for v in fields[1:])
