@@ -31,36 +31,7 @@ Download on your own machine, then upload each as a **Kaggle Dataset**
 Search Kaggle first — several of these are already mirrored there, which saves
 the upload entirely.
 
-## 2. Make the folder names match
-
-`training/dataset_config.yaml` expects paths like `{data_root}/FLAME/segmentation`.
-Kaggle mounts each dataset at `/kaggle/input/<slug>/`, and slugs are
-lowercase-hyphenated — so `/kaggle/input/flame-dataset/...` will **not** match
-`FLAME` and the merge will skip it silently.
-
-Fix it in the notebook, in **Cell 4**, before running. Either point `DATA_ROOT`
-at a directory you have symlinked into shape, or simplest — add a cell after
-Cell 3:
-
-```python
-# Bridge Kaggle's slugs to the names dataset_config.yaml expects.
-import os
-from pathlib import Path
-BRIDGE = WORK / "data-root"; BRIDGE.mkdir(exist_ok=True)
-for want, slug in {
-    "FLAME": "flame-dataset",            # <- replace with YOUR actual slugs,
-    "BorealForestFire": "boreal-forest-fire",   #    from `ls /kaggle/input`
-}.items():
-    src = Path("/kaggle/input") / slug
-    if src.exists() and not (BRIDGE / want).exists():
-        os.symlink(src, BRIDGE / want)
-DATA_ROOT = BRIDGE
-print(sorted(p.name for p in BRIDGE.iterdir()))
-```
-
-Run `ls /kaggle/input` in a cell first and use what it actually prints.
-
-## 3. Create the notebook
+## 2. Create the notebook
 
 1. *Code → New Notebook*, then **File → Import Notebook** and upload
    `training/train_kaggle.ipynb` from this repo.
@@ -68,39 +39,60 @@ Run `ls /kaggle/input` in a cell first and use what it actually prints.
 3. **Settings → Internet → On** — needed to `pip install ultralytics` and clone the repo.
 4. **Add Data** → attach the datasets from step 1.
 
-## 4. Point it at this repository
+## 3. Run All
 
-The notebook looks for a checkout, and clones one if you tell it where. Add a
-cell **before Cell 3**:
+That is the whole procedure. There is nothing to edit.
 
-```python
-import os
-os.environ["WILDFIRE_REPO_URL"] = "https://github.com/abyyworld/wildfire-analysis"
-os.environ["WILDFIRE_REPO_REF"] = "claude/wildfire-watch-setup-66paiq"
+The notebook clones this repository itself, finds whatever datasets you
+attached, and trains on those — so the same file works for run 0 and run 1 with
+no change beyond which datasets are attached.
+
+Two things it handles that used to need hand-editing, both of which are easy to
+get wrong and expensive to get wrong:
+
+* **Kaggle renames your datasets.** A folder uploaded as `FLAME` is mounted at
+  `/kaggle/input/flame-dataset`, which does not match the paths in
+  `dataset_config.yaml`. The notebook bridges the two by looking for the
+  content the config expects, not just a matching name — a dataset can sit at
+  the mount, one level below it, or under a completely unrelated slug. It also
+  refuses lookalikes: `norm("D-Fire")` is `"dfire"`, which is a substring of
+  `norm("wildfire-dataset")`, and merging that in as ground-level imagery
+  would quietly corrupt the mix.
+* **Sources you did not attach are excluded automatically**, so the merge runs
+  on what is present instead of failing on what is not.
+
+Both behaviours are covered by `tests/test_kaggle_discovery.py`, which runs the
+notebook's own code against simulated mounts.
+
+Read the cell's output before moving on. It prints:
+
+```
+attached: ['boreal-forest-fire', 'flame-dataset']
+  FLAME                <- /kaggle/input/flame-dataset/FLAME
+  BorealForestFire     <- /kaggle/input/boreal-forest-fire/BorealForestFire
+included: ['flame_seg', 'flame_negatives', 'boreal_uav']
+excluded (not attached): ['fasdd_uav', 'fasdd_cv', ...]
 ```
 
-It needs the repo rather than re-implementing anything, because three files own
-decisions that must not drift: `station/core/types.py` owns the class order,
-`tools/audit_dataset.py` owns the leakage gate, `training/prepare_datasets.py`
-owns the merge.
+If `included` is empty, or is missing something you attached, the names under
+`attached:` tell you what Kaggle actually mounted. Nothing aerial in the list
+earns a warning: ground-level data alone trains a model for the wrong
+viewpoint, because a drone looks down and D-Fire does not.
 
-## 5. Set the run scope
+## 4. Save Version → Save & Run All (Commit)
 
-In **Cell 4**, `EXCLUDE` lists sources that are *not* attached. Anything left in
-the list is skipped; anything not listed must exist on disk or the merge fails.
+Use **Save Version → Save & Run All (Commit)** rather than the interactive
+session. A committed run keeps executing after you close the tab, which matters
+when the thing takes four hours, and the output is versioned so a later run can
+be compared against it.
 
-For **run 0** (FLAME + Boreal only):
+The interactive session is the right choice only when you are still sorting out
+which datasets attached correctly — it is faster to iterate on, and cheaper to
+interrupt.
 
-```python
-EXCLUDE = ["fasdd_uav", "fasdd_cv", "fasdd_rs", "dfire", "corsican",
-           "mined_negatives", "mined_positives"]
-```
+## 5. Stop at the audit gate
 
-For **run 1**, drop `fasdd_uav` and `fasdd_cv` from that list once FASDD is attached.
-
-## 6. Run it — and stop at the gate
-
-*Run All*. Then **stop and read Cell 5, the audit gate.** It is the one cell
+When the run reaches **Cell 5, the audit gate**, stop and read it. It is the one cell
 whose output decides whether the rest is worth anything.
 
 If it reports **FAIL**, do not train. Fire datasets are cut from video, so a
@@ -118,7 +110,7 @@ Training then runs to `SESSION_BUDGET_H = 8.25` hours and checkpoints as it
 goes, so a session that dies is resumable — re-run the notebook and Cell 7
 picks the checkpoint back up.
 
-## 7. Read the validation output correctly
+## 6. Read the validation output correctly
 
 Cell 9 prints recall per class, **per box size**, and per condition tag. Read
 that table before anything else, and read the **tiny/small** columns first:
@@ -137,7 +129,7 @@ exists:
 python demo/validate_demo.py     # builds a split, scores it, writes the miss list
 ```
 
-## 8. Bring the weights back to the station
+## 7. Bring the weights back to the station
 
 Download `best.pt` from the notebook output, then:
 
@@ -165,7 +157,7 @@ python -m station check          # should now say the model can run
 python -m station -c config.yaml run
 ```
 
-## 9. Before anyone relies on it
+## 8. Before anyone relies on it
 
 `docs/VALIDATION.md`. The short version: measure **false negatives** on the
 department's own footage, broken out by the conditions that break RGB
