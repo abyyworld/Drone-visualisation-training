@@ -1,6 +1,6 @@
 # Handoff — Real-time drone fire detection for firefighters
 
-**This is the plan for a NEW repository.** Paste this whole file into a fresh Claude Code
+**This is the plan for a NEW repository.** Paste this whole file into a fresh coding
 session as the opening context. It is written to be read cold, with no prior conversation.
 
 Suggested repo name: `wildfire-watch`. Nothing is shared with the sibling inspection repo
