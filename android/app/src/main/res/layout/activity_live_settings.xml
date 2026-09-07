@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_stream" />
+        <EditText
+            android:id="@+id/stream"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textUri"
+            android:autofillHints="" />
+        <TextView style="@style/FieldHint" android:text="@string/hint_stream" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_subject" />
+        <Spinner
+            android:id="@+id/domain"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_provider" />
+        <Spinner
+            android:id="@+id/provider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_model" />
+        <EditText
+            android:id="@+id/model"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:autofillHints="" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_key" />
+        <EditText
+            android:id="@+id/api_key"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textPassword"
+            android:autofillHints="" />
+        <TextView style="@style/FieldHint" android:text="@string/hint_key" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/field_interval" />
+        <EditText
+            android:id="@+id/interval"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:autofillHints="" />
+        <TextView style="@style/FieldHint" android:text="@string/hint_interval" />
+
+        <Button
+            android:id="@+id/save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/save" />
+    </LinearLayout>
+</ScrollView>

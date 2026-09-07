@@ -1,0 +1,76 @@
+<!--
+  The analysis half of the live camera screen.
+
+  WHY A WEB PAGE IS INVOLVED IN A NATIVE SCREEN AT ALL
+      The live view has to be native: no browser can play RTSP, so the video, the overlay
+      and the recorder are Android code. The analysis does not have to be, and duplicating
+      it in Java would mean a second copy of the provider adapters, the prompt handling and
+      the box normalisation - and the whole point of web/prompts/inspection.json is that
+      there is one of each.
+
+      So this page is loaded, invisible and zero-sized, by LiveActivity. Android hands it a
+      frame, it calls the same vlm.js the uploads page uses, and hands the findings back.
+      One implementation, one prompt, one set of tests.
+
+  This page is never navigated to by a person. It is served from the site as well as the
+  APK only because that is where the APK copies its assets from.
+-->
+<title>Live analysis bridge</title>
+<script type="module">
+import { inspect } from './js/vlm.js';
+
+/**
+ * Analyse one frame and hand the result to Android.
+ *
+ * Called from Java by evaluateJavascript. Errors come back as a result object with an
+ * `error` field rather than as an exception, because a rejected promise crossing this
+ * boundary would surface in Java as silence - and silence on a live screen is the one
+ * outcome that must never happen.
+ *
+ * @param {number} token   echoed back so Android can match a reply to its request
+ * @param {string} dataUrl the frame, as a data: URL
+ */
+window.analyseFrame = async function analyseFrame(token, dataUrl, provider, model, apiKey, domain) {
+  const reply = (payload) => {
+    if (window.Android?.onAnalysis) window.Android.onAnalysis(token, JSON.stringify(payload));
+  };
+
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const bitmap = await createImageBitmap(blob);
+    try {
+      const outcome = await inspect({ provider, model, apiKey, image: bitmap, domain });
+      reply({
+        asset: outcome.asset,
+        overall: outcome.overall,
+        width: bitmap.width,
+        height: bitmap.height,
+        // Boxes go back as fractions of the frame. The native overlay is drawn over a video
+        // surface whose size has nothing to do with the size of the frame that was
+        // analysed, so pixels here would be pixels of the wrong thing.
+        findings: outcome.detections.map((d) => ({
+          label: d.label,
+          certainty: d.certainty,
+          confidence: d.confidence,
+          note: d.note,
+          box: [
+            d.box[0] / bitmap.width, d.box[1] / bitmap.height,
+            d.box[2] / bitmap.width, d.box[3] / bitmap.height,
+          ],
+        })),
+        unlocated: outcome.unlocated.map((d) => ({
+          label: d.label, certainty: d.certainty, note: d.note,
+        })),
+      });
+    } finally {
+      bitmap.close();
+    }
+  } catch (error) {
+    reply({ error: String(error?.message ?? error) });
+  }
+};
+
+// Tells Java the module graph finished loading. Sending a frame before this arrives would
+// hit an undefined function and be lost.
+if (window.Android?.onBridgeReady) window.Android.onBridgeReady();
+</script>

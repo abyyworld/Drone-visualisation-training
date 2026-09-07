@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@color/brand"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:text="@string/app_name"
+        android:textColor="#FFFFFF"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="40dp"
+        android:text="@string/menu_subtitle"
+        android:textColor="#CCEAF2F4"
+        android:textSize="15sp" />
+
+    <!--
+      Deliberately two large targets and nothing else. This is operated outdoors, in
+      gloves, on a controller being held with both hands, by someone who is also flying.
+    -->
+    <Button
+        android:id="@+id/open_camera"
+        android:layout_width="match_parent"
+        android:layout_height="96dp"
+        android:text="@string/menu_camera"
+        android:textSize="19sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp"
+        android:text="@string/menu_camera_hint"
+        android:textColor="#CCEAF2F4"
+        android:textSize="13sp" />
+
+    <Button
+        android:id="@+id/open_analyse"
+        android:layout_width="match_parent"
+        android:layout_height="96dp"
+        android:text="@string/menu_analyse"
+        android:textSize="19sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/menu_analyse_hint"
+        android:textColor="#CCEAF2F4"
+        android:textSize="13sp" />
+</LinearLayout>

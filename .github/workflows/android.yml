@@ -147,6 +147,10 @@ jobs:
               "assets/www/css/app.css",
               "assets/www/prompts/inspection.json",
               "assets/www/models/manifest.json",
+              # The live screen's analyser is this page in an invisible WebView. Without it
+              # the camera view still shows video and still records, and silently never
+              # draws a box - which looks exactly like a scene with nothing in it.
+              "assets/www/live-bridge.html",
           ]
           missing = [name for name in required if name not in names]
           if missing:

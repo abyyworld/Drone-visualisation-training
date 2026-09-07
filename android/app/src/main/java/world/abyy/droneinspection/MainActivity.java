@@ -11,7 +11,12 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.Toast;
+
+import android.view.Gravity;
+import android.view.ViewGroup;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
@@ -26,6 +31,10 @@ import androidx.webkit.WebViewFeature;
 
 /**
  * The whole application: a WebView showing the bundled copy of the web app.
+ *
+ * This is the Analyse half of the app: photographs and video that already exist, in, and a
+ * report out. The Camera half is LiveActivity, and it is native for the reason set out
+ * there. MenuActivity chooses between them.
  *
  * WHY AN APK AT ALL
  *     The same page installs from the browser as a home-screen app, and on a tablet with a
@@ -86,8 +95,26 @@ public class MainActivity extends AppCompatActivity {
                 .build();
 
         webView = new WebView(this);
-        setContentView(webView);
         configure(webView.getSettings());
+
+        // The web app draws its own full-width header, so a native toolbar above it would
+        // cost a strip of a tablet screen that is showing photographs. A small button in the
+        // corner is enough to get back to the menu, and it is the only native chrome here.
+        FrameLayout root = new FrameLayout(this);
+        root.addView(webView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        Button menu = new Button(this);
+        menu.setText(R.string.back_to_menu);
+        menu.setOnClickListener(v -> finish());
+        FrameLayout.LayoutParams menuLayout = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        menuLayout.gravity = Gravity.BOTTOM | Gravity.END;
+        int margin = Math.round(getResources().getDisplayMetrics().density * 12);
+        menuLayout.setMargins(margin, margin, margin, margin);
+        root.addView(menu, menuLayout);
+
+        setContentView(root);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

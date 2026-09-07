@@ -14,6 +14,11 @@ plugins {
     id 'com.android.application'
 }
 
+// Versions used further down. Declared here because a Groovy build script runs top to
+// bottom: a def below the dependencies block that uses it is simply not in scope yet.
+def media3Version = '1.5.1'
+def kotlinVersion = '1.9.25'
+
 // The web app is the source of truth; this module never edits it in place.
 def webRoot = rootProject.file('../web')
 def ortDist = rootProject.file('../node_modules/onnxruntime-web/dist')
@@ -89,6 +94,11 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.webkit:webkit:1.12.1'
+
+    // The live screen. No browser can play RTSP, which is what the MK15 hands its video
+    // out as, so the video path is native and Media3 is what speaks it.
+    implementation "androidx.media3:media3-exoplayer:$media3Version"
+    implementation "androidx.media3:media3-exoplayer-rtsp:$media3Version"
 }
 
 /*
@@ -105,7 +115,6 @@ dependencies {
  * rather than excluding, because an exclude would silently drop a real dependency if the
  * upstream layout ever changes again.
  */
-def kotlinVersion = '1.9.25'
 configurations.configureEach {
     resolutionStrategy {
         force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"

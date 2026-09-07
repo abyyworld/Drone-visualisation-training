@@ -1,0 +1,153 @@
+package world.abyy.droneinspection;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.util.AttributeSet;
+import android.view.View;
+
+import androidx.annotation.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Draws the findings over the video, and says how old they are.
+ *
+ * THE AGE IS NOT DECORATION
+ *     These boxes come from a provider round trip that takes seconds, on a frame sampled
+ *     seconds before that. On a moving drone over a moving crowd, a box a few seconds old
+ *     is describing somewhere the camera is no longer pointed. Drawing it without saying so
+ *     would present stale analysis as a live overlay, which is the most dangerous thing
+ *     this screen could do, so the age of the boxes is rendered as prominently as the boxes.
+ *
+ *     When they get older than STALE_AFTER_MS they are dimmed and then dropped, because an
+ *     old box on a new scene is worse than no box.
+ */
+public class OverlayView extends View {
+
+    /** Matches PALETTE in web/js/render.js, so a label is the same colour in both. */
+    private static final int[] PALETTE = {
+            0xFFE5484D, 0xFFF76B15, 0xFFFFB224, 0xFF30A46C,
+            0xFF0091FF, 0xFF8E4EC6, 0xFFE93D82, 0xFF00A2C7,
+    };
+
+    private static final long DIM_AFTER_MS = 4_000;
+    private static final long STALE_AFTER_MS = 15_000;
+
+    private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint labelBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint statusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint statusBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect textBounds = new Rect();
+
+    private List<Finding> findings = new ArrayList<>();
+    private long findingsAt;
+    private String status = "";
+
+    public OverlayView(Context context, @Nullable AttributeSet attrs) {
+        super(context, attrs);
+        boxPaint.setStyle(Paint.Style.STROKE);
+        labelPaint.setColor(Color.WHITE);
+        labelBackground.setStyle(Paint.Style.FILL);
+        statusPaint.setColor(Color.WHITE);
+        statusBackground.setColor(0xCC000000);
+        statusBackground.setStyle(Paint.Style.FILL);
+        setWillNotDraw(false);
+    }
+
+    /** Replace what is drawn. An empty list clears the overlay. */
+    public void setFindings(List<Finding> next) {
+        findings = next == null ? new ArrayList<>() : next;
+        findingsAt = System.currentTimeMillis();
+        invalidate();
+    }
+
+    /** One line above the boxes: what the analyser is doing, or why it is not. */
+    public void setStatus(String text) {
+        status = text == null ? "" : text;
+        invalidate();
+    }
+
+    public void clear() {
+        findings = new ArrayList<>();
+        findingsAt = 0;
+        invalidate();
+    }
+
+    /**
+     * Draw onto an arbitrary canvas, for the recorder.
+     *
+     * The recorder composes each frame at the video's own resolution rather than the
+     * screen's, so this takes explicit dimensions instead of using getWidth().
+     */
+    public void drawInto(Canvas canvas, int width, int height) {
+        render(canvas, width, height);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        render(canvas, getWidth(), getHeight());
+    }
+
+    private void render(Canvas canvas, int width, int height) {
+        long age = findingsAt == 0 ? 0 : System.currentTimeMillis() - findingsAt;
+        boolean stale = findingsAt != 0 && age > STALE_AFTER_MS;
+
+        float longEdge = Math.max(width, height);
+        float stroke = Math.max(2f, longEdge / 260f);
+        float textSize = Math.max(16f, longEdge / 38f);
+        boxPaint.setStrokeWidth(stroke);
+        labelPaint.setTextSize(textSize);
+        statusPaint.setTextSize(textSize * 0.85f);
+
+        if (!stale) {
+            int alpha = findingsAt != 0 && age > DIM_AFTER_MS ? 130 : 255;
+            for (Finding finding : findings) {
+                int colour = PALETTE[finding.colourIndex() % PALETTE.length];
+                boxPaint.setColor(colour);
+                boxPaint.setAlpha(alpha);
+
+                RectF box = new RectF(
+                        finding.x0 * width, finding.y0 * height,
+                        finding.x1 * width, finding.y1 * height);
+                canvas.drawRect(box, boxPaint);
+
+                String text = finding.label + "  " + finding.certainty;
+                labelPaint.getTextBounds(text, 0, text.length(), textBounds);
+                float pad = stroke * 2;
+                float top = Math.max(0, box.top - textBounds.height() - pad * 2);
+
+                labelBackground.setColor(colour);
+                labelBackground.setAlpha(alpha);
+                canvas.drawRect(box.left, top,
+                        box.left + textBounds.width() + pad * 2, top + textBounds.height() + pad * 2,
+                        labelBackground);
+                labelPaint.setAlpha(alpha);
+                canvas.drawText(text, box.left + pad, top + textBounds.height() + pad, labelPaint);
+            }
+        }
+
+        String line = status;
+        if (findingsAt != 0) {
+            String ageText = stale
+                    ? "boxes cleared, older than " + (STALE_AFTER_MS / 1000) + "s"
+                    : "boxes " + (age / 1000) + "s old";
+            line = line.isEmpty() ? ageText : line + "  ·  " + ageText;
+        }
+        if (line.isEmpty()) {
+            return;
+        }
+
+        statusPaint.getTextBounds(line, 0, line.length(), textBounds);
+        float pad = textSize * 0.4f;
+        canvas.drawRect(0, 0, textBounds.width() + pad * 2, textBounds.height() + pad * 2,
+                statusBackground);
+        canvas.drawText(line, pad, textBounds.height() + pad, statusPaint);
+    }
+}

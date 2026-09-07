@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- A TextureView rather than a SurfaceView: the frames have to be readable back for
+         the recorder and the analyser, and a SurfaceView's contents cannot be read. -->
+    <TextureView
+        android:id="@+id/video"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <world.abyy.droneinspection.OverlayView
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#B3000000"
+        android:padding="10dp"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp" />
+
+    <!-- Down the right edge, where a thumb reaches on a handheld held in both hands. -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/record"
+            android:layout_width="120dp"
+            android:layout_height="76dp"
+            android:layout_marginBottom="14dp"
+            android:text="@string/start_recording" />
+
+        <Button
+            android:id="@+id/snapshot"
+            android:layout_width="120dp"
+            android:layout_height="76dp"
+            android:text="@string/take_photo" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <!-- Hidden while recording, so a half-written file cannot be walked away from. -->
+        <Button
+            android:id="@+id/back"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@string/back_to_menu" />
+
+        <Button
+            android:id="@+id/settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings" />
+    </LinearLayout>
+</FrameLayout>

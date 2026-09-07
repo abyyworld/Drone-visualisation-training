@@ -2,12 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      The only permission. It is needed by the provider engines and by nothing else: with
-      the on-device engine and no connection the app never opens a socket. There is no
-      storage permission because the file picker returns a content:// URI the system has
-      already granted, and no camera permission because the app does not open one.
+      INTERNET covers two things: the provider engines, and the RTSP video from the
+      controller, which is an IP stream on the local link rather than anything remote. With
+      the on-device engine and no analysis, nothing leaves the tablet.
+
+      No storage permission: the file picker returns a content:// URI the system has already
+      granted, and recordings go to the app's own directory. No camera permission: the
+      camera is on the drone, and this app never opens the tablet's own.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="false"
@@ -19,16 +23,37 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.DroneInspection">
 
+        <!-- The launcher is the menu; Camera and Analyse are both reached from it. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".MenuActivity"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Landscape only, and configChanges handles rotation itself: letting the system
+          recreate this activity would tear down the RTSP session and the encoder, so a
+          tablet turned over mid-flight would drop the video and end the recording.
+        -->
+        <activity
+            android:name=".LiveActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density" />
+
+        <activity
+            android:name=".LiveSettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density" />
     </application>
 </manifest>
