@@ -66,7 +66,7 @@ def build_cover(styles, meta):
 
     # header
     header_data = [
-        [Paragraph('WIND TURBINE INSPECTION REPORT',
+        [Paragraph(meta.get('title', 'INSPECTION REPORT'),
             ParagraphStyle('ct1', fontSize=22, textColor=colors.white,
                 fontName='Helvetica-Bold', alignment=TA_CENTER, leading=30))],
         [Paragraph('Autonomous Drone Inspection System',
@@ -92,10 +92,10 @@ def build_cover(styles, meta):
     date_str = datetime.now().strftime('%d %B %Y')
     meta_rows = [
         ['Inspection Date', date_str],
-        ['Turbine ID',      meta.get('turbine_id', 'TRB-001')],
+        ['Asset ID',        meta.get('turbine_id', 'TRB-001')],
         ['Site',            meta.get('site', 'Wind Farm — Location TBC')],
         ['Operator',        meta.get('operator', 'DRONE EDUTRAIN LLC')],
-        ['Model Used',      'YOLOv8m — Defect Detection v1'],
+        ['Model Used',      meta.get('model_name', 'Unspecified')],
         ['Total Images',    str(meta.get('total_images', '—'))],
     ]
     meta_tbl = Table(meta_rows, colWidths=[50*mm, 100*mm])
@@ -286,13 +286,28 @@ def build_detail_pages(styles, results, annotated_dir):
 
 def generate_report(
     json_path, annotated_dir, output_pdf,
-    turbine_id='TRB-001',
+    asset_id='TRB-001',
     site='Wind Farm — Location TBC',
-    operator='DRONE EDUTRAIN LLC'
+    operator='DRONE EDUTRAIN LLC',
+    model_name=None,
+    title='WIND TURBINE INSPECTION REPORT',
 ):
+    """Render an inspection PDF from an analysis JSON.
+
+    Consumes the JSON the web app exports, so the browser tool and this generator agree on
+    one schema. Results that were rejected by the domain gate or errored carry no severity
+    and are excluded from the statistics — counting a refused upload as "healthy" would
+    quietly inflate the pass rate, which is the one number a report must not overstate.
+    """
     with open(json_path) as f:
         data = json.load(f)
-    results = data['results']
+
+    all_results = data['results']
+    results = [
+        r for r in all_results
+        if r.get('status', 'analysed') == 'analysed' and r.get('severity_label')
+    ]
+    excluded = len(all_results) - len(results)
 
     stats = {'severe': 0, 'moderate': 0, 'minor': 0, 'healthy': 0}
     for r in results:
@@ -302,23 +317,33 @@ def generate_report(
         elif 'Minor'  in lbl: stats['minor']    += 1
         else:                   stats['healthy']  += 1
 
-    total        = len(results)
+    total = len(results)
+    if not total:
+        raise SystemExit(
+            f'{json_path} contains no analysed results '
+            f'({excluded} rejected or errored). Nothing to report.'
+        )
+
     severe_pct   = stats['severe']   / total * 100
     moderate_pct = stats['moderate'] / total * 100
     defect_pct   = (stats['severe'] + stats['moderate'] + stats['minor']) / total * 100
 
+    # Thresholds mirror summarise() in web/js/severity.js. Change both together, or the
+    # web verdict and the PDF verdict will disagree about the same inspection.
     if severe_pct >= 10:                        overall = 'Severe damage detected'
     elif severe_pct > 0 or moderate_pct >= 20:  overall = 'Moderate damage detected'
     elif defect_pct >= 10:                      overall = 'Minor wear detected'
     else:                                       overall = 'Majority healthy — minor issues noted'
 
     meta = {
-        'turbine_id':    turbine_id,
+        'turbine_id':    asset_id,
         'site':          site,
         'operator':      operator,
         'total_images':  total,
         'overall_label': overall,
         'stats':         stats,
+        'model_name':    model_name or data.get('model', 'Unspecified'),
+        'title':         title,
     }
 
     styles = make_styles()
@@ -332,14 +357,41 @@ def generate_report(
     story += build_summary_table(styles, results)
     story += build_detail_pages(styles, results, annotated_dir)
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+
     print(f'Report saved to: {output_pdf}')
+    print(f'  {total} images reported, {excluded} excluded (rejected or errored)')
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Render an inspection PDF from an analysis JSON '
+                    '(the format exported by the web app).'
+    )
+    parser.add_argument('json_path', help='inspection_summary.json')
+    parser.add_argument('output_pdf', help='where to write the PDF')
+    parser.add_argument('--annotated-dir', default='',
+                        help='directory of annotated images, named to match the JSON entries')
+    parser.add_argument('--asset-id', default='TRB-001')
+    parser.add_argument('--site', default='Site — Location TBC')
+    parser.add_argument('--operator', default='DRONE EDUTRAIN LLC')
+    parser.add_argument('--model', dest='model_name', default=None,
+                        help='model name to print on the cover')
+    parser.add_argument('--title', default='WIND TURBINE INSPECTION REPORT')
+    args = parser.parse_args()
+
+    generate_report(
+        json_path=args.json_path,
+        annotated_dir=args.annotated_dir,
+        output_pdf=args.output_pdf,
+        asset_id=args.asset_id,
+        site=args.site,
+        operator=args.operator,
+        model_name=args.model_name,
+        title=args.title,
+    )
+
 
 if __name__ == '__main__':
-    generate_report(
-        json_path     = '/Users/abyyworld/Desktop/DroneInspection/inspection_results/inspection_summary.json',
-        annotated_dir = '/Users/abyyworld/Desktop/DroneInspection/inspection_results/annotated',
-        output_pdf    = '/Users/abyyworld/Desktop/DroneInspection/inspection_report.pdf',
-        turbine_id    = 'TRB-001',
-        site          = 'Wind Farm — Location TBC',
-        operator      = 'DRONE EDUTRAIN LLC',
-    )
+    main()

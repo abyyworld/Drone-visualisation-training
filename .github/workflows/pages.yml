@@ -1,0 +1,47 @@
+name: Deploy web app to GitHub Pages
+
+# Only the static site is published. Training code, datasets and notebooks stay in the repo
+# but are never served.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the model manifest is valid JSON
+        # A malformed manifest breaks the site at runtime with no build-time signal,
+        # so fail here instead of shipping it.
+        run: python3 -c "import json; json.load(open('web/models/manifest.json'))"
+
+      - name: Report which models are being published
+        run: |
+          echo "Models in web/models/:"
+          ls -lh web/models/*.onnx 2>/dev/null || echo "  none yet — the site will show its 'not deployed' banner"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4

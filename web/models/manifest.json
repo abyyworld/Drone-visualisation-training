@@ -1,0 +1,68 @@
+{
+  "$comment": [
+    "Source of truth for the models the web app loads. Editing this file is how you deploy a",
+    "retrained model \u2014 no JavaScript changes needed. Drop the .onnx next to this file, update",
+    "`file`, `labels` and `imgsz` to match what you exported, and the app picks it up.",
+    "",
+    "A model whose `file` is missing or fails to load is reported in the UI as unavailable;",
+    "the app stays usable for whatever else did load. Keep every file well under ~15 MB \u2014 it",
+    "downloads to the visitor's browser. Export with `python3 tools/export_onnx.py`, which",
+    "int8-quantises by default."
+  ],
+  "gate": {
+    "file": "gate.onnx",
+    "task": "classify",
+    "imgsz": 224,
+    "labels": [
+      "turbine",
+      "solar",
+      "invalid"
+    ],
+    "minConfidence": 0.6,
+    "description": "Routes an upload to the right detector, or rejects it."
+  },
+  "turbine": {
+    "file": "turbine.onnx",
+    "task": "detect",
+    "imgsz": 960,
+    "labels": [
+      "corrosion",
+      "crack",
+      "surface_peeling"
+    ],
+    "confThreshold": 0.25,
+    "iouThreshold": 0.45,
+    "severityWeights": {
+      "crack": 3.0,
+      "corrosion": 2.0,
+      "surface_peeling": 1.0
+    },
+    "displayName": "Wind turbine blade",
+    "notes": "No 'healthy' class by design: an image with no detections is the healthy result."
+  },
+  "solar": {
+    "file": "solar.onnx",
+    "task": "detect",
+    "imgsz": 960,
+    "labels": [
+      "soiling",
+      "bird_droppings",
+      "crack",
+      "discoloration",
+      "vegetation",
+      "missing_module"
+    ],
+    "confThreshold": 0.25,
+    "iouThreshold": 0.45,
+    "severityWeights": {
+      "missing_module": 4.0,
+      "crack": 3.0,
+      "discoloration": 2.0,
+      "bird_droppings": 1.5,
+      "vegetation": 1.0,
+      "soiling": 1.0
+    },
+    "displayName": "Solar panel",
+    "notes": "RGB only. Cannot detect hotspots, cell defects, bypass-diode failure or offline modules - those are electrical faults visible only in thermal infrared."
+  }
+}
