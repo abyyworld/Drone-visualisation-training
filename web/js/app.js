@@ -230,7 +230,8 @@ async function analyse(file) {
     return {
       ...base, image, status: 'analysed',
       domain: domain.key, displayName: spec.displayName ?? domain.key,
-      notes: spec.notes, gate: domain.gate, detections, score, severity,
+      notes: spec.notes, zeroDetectionNote: spec.zeroDetectionNote,
+      gate: domain.gate, detections, score, severity,
     };
   } catch (error) {
     return { ...base, image, status: 'error', message: error.message };
@@ -324,11 +325,15 @@ function appendResultCard(result) {
       body.appendChild(list);
     }
 
-    if (result.notes) {
-      const note = document.createElement('p');
-      note.className = 'card__note';
-      note.textContent = result.notes;
-      body.appendChild(note);
+    // A zero-detection result is the one most likely to be read as "this is fine", and it
+    // is the one the model is least entitled to assert. Say what it looked for and what it
+    // cannot see, rather than letting a green badge stand alone.
+    const note = result.detections.length ? result.notes : (result.zeroDetectionNote ?? result.notes);
+    if (note) {
+      const element = document.createElement('p');
+      element.className = 'card__note';
+      element.textContent = note;
+      body.appendChild(element);
     }
   } else {
     const message = document.createElement('p');
