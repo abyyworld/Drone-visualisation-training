@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>wildfire-watch - device self-test</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d10; color:#e9edf2; font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { padding:1rem 1rem 0.5rem; border-bottom:1px solid #253040; }
+  h1 { font-size:1.15rem; margin:0 0 0.25rem; }
+  .sub { color:#9fb0c3; font-size:0.85rem; }
+  main { padding:0.5rem 1rem 6rem; }
+  .row { display:flex; gap:0.75rem; align-items:flex-start; padding:0.7rem 0; border-bottom:1px solid #1b2430; }
+  .badge { flex:0 0 auto; min-width:4.2rem; text-align:center; font-weight:700; font-size:0.72rem;
+           letter-spacing:0.06em; padding:0.3rem 0.35rem; border-radius:0.3rem; border:2px solid; }
+  .pass { color:#8ce99a; border-color:#8ce99a; background:#0d2c16; }
+  .fail { color:#ffc9c9; border-color:#ff8787; background:#3a1216; }
+  .warn { color:#ffd8a8; border-color:#ffa94d; background:#3a2510; }
+  .pend { color:#c5cbd3; border-color:#5a6572; background:#171c24; }
+  .name { font-weight:600; }
+  .why  { color:#9fb0c3; font-size:0.85rem; margin-top:0.15rem; }
+  .detail { color:#7e8fa3; font-size:0.78rem; margin-top:0.2rem; word-break:break-word; font-family:ui-monospace,monospace; }
+  button { font:inherit; font-weight:700; padding:0.9rem 1.1rem; border-radius:0.6rem;
+           border:2px solid #4dabf7; background:#12243a; color:#dbeafe; min-height:3rem; width:100%; }
+  button:active { background:#1b3a5c; }
+  .bar { position:fixed; left:0; right:0; bottom:0; padding:0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+         background:#0b0d10; border-top:1px solid #253040; }
+  .verdict { padding:0.75rem 1rem; margin:0.75rem 0; border-radius:0.5rem; border:2px solid #5a6572; font-weight:600; }
+  code { background:#151b24; padding:0.1rem 0.3rem; border-radius:0.2rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Device self-test</h1>
+  <div class="sub">Checks whether this device can run the wildfire-watch overlay. Answers
+    the one question the build could not: does iOS cooperate behind a self-signed LAN
+    certificate. Run it on the actual tablet, on the actual network.</div>
+</header>
+<main>
+  <div id="verdict" class="verdict">Tap <strong>Run the checks</strong> below.</div>
+  <div id="rows"></div>
+  <div class="sub" style="margin-top:1rem">
+    Core function is video plus overlay. Those need a secure context and WebRTC only.
+    A service worker and home-screen install are conveniences - if they fail, a plain
+    browser tab still works, and that is the documented fallback.
+  </div>
+</main>
+<div class="bar"><button id="run">Run the checks</button></div>
+
+<script type="module">
+const CHECKS = [
+  {
+    id: 'secure', name: 'Secure context', critical: true,
+    why: 'WebRTC and service workers are refused outside one. If this fails behind your self-signed certificate, nothing else can work and the certificate has not actually been trusted.',
+    run: async () => ({ ok: window.isSecureContext, detail: `isSecureContext=${window.isSecureContext} · ${location.protocol}//${location.host}` }),
+  },
+  {
+    id: 'webrtc', name: 'WebRTC available', critical: true,
+    why: 'The video and the detections both arrive over one peer connection. No WebRTC, no overlay.',
+    run: async () => {
+      const ok = typeof RTCPeerConnection === 'function';
+      if (!ok) return { ok: false, detail: 'RTCPeerConnection is undefined' };
+      const pc = new RTCPeerConnection();
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      const offer = await pc.createOffer();
+      const host = /a=candidate|c=IN/.test(offer.sdp);
+      pc.close();
+      return { ok: true, detail: `offer generated, ${offer.sdp.split('\n').length} SDP lines, media line present=${host}` };
+    },
+  },
+  {
+    id: 'connect', name: 'Connects to this station', critical: true,
+    why: 'The real test: negotiates a peer connection against the station serving this page, and waits for actual video and detection payloads. If this passes, the tablet story works.',
+    run: async () => {
+      const pc = new RTCPeerConnection();          // host candidates only, no STUN
+      let frames = 0, msgs = 0, status = 0;
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      const chan = pc.createDataChannel('detections');
+      chan.onmessage = (e) => {
+        try { (JSON.parse(e.data).type === 'status') ? status++ : msgs++; } catch { /* not ours */ }
+      };
+      pc.ontrack = () => { frames++; };
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const res = await fetch('/webrtc/offer', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+      });
+      if (!res.ok) { pc.close(); return { ok: false, detail: `signalling returned HTTP ${res.status}` }; }
+      const answer = await res.json();
+      await pc.setRemoteDescription(answer);
+      await new Promise(r => setTimeout(r, 6000));
+      const state = pc.connectionState;
+      pc.close();
+      const ok = state === 'connected' && frames > 0;
+      return { ok, detail: `state=${state} · track events=${frames} · detection msgs=${msgs} · status msgs=${status}` };
+    },
+  },
+  {
+    id: 'rvfc', name: 'requestVideoFrameCallback', critical: false,
+    why: 'Enables exact overlay alignment (sync tier 1), matching each box to the frame it was computed from. Without it the tablet estimates the offset instead - workable, slightly less precise.',
+    run: async () => {
+      const ok = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+      return { ok, detail: ok ? 'available - tier 1 sync possible' : 'absent - falls back to the offset estimator (tier 2)' };
+    },
+  },
+  {
+    id: 'sw', name: 'Service worker registers', critical: false,
+    why: 'Offline caching of the app shell. THE known unknown on iOS behind a self-signed certificate. If it fails, use a plain browser tab: video and overlay are unaffected.',
+    run: async () => {
+      if (!('serviceWorker' in navigator)) return { ok: false, detail: 'navigator.serviceWorker is undefined' };
+      try {
+        const reg = await navigator.serviceWorker.register('sw.js');
+        return { ok: true, detail: `registered, scope ${reg.scope}` };
+      } catch (err) {
+        return { ok: false, detail: `registration threw: ${err && err.message ? err.message : err}` };
+      }
+    },
+  },
+  {
+    id: 'wake', name: 'Screen Wake Lock', critical: false,
+    why: 'A tablet that sleeps mid-incident is useless. If unsupported, disable auto-lock in device settings before an incident.',
+    run: async () => {
+      if (!('wakeLock' in navigator)) return { ok: false, detail: 'navigator.wakeLock is undefined - set auto-lock to Never' };
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        await lock.release();
+        return { ok: true, detail: 'acquired and released' };
+      } catch (err) {
+        return { ok: false, detail: `request threw: ${err && err.message ? err.message : err} - set auto-lock to Never` };
+      }
+    },
+  },
+  {
+    id: 'installed', name: 'Running as an installed PWA', critical: false,
+    why: 'Reports how this page was opened. A browser tab is a supported way to run - this is information, not a requirement.',
+    run: async () => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+      return { ok: true, warn: !standalone,
+               detail: standalone ? 'standalone (installed to home screen)' : 'browser tab - supported, and the documented fallback' };
+    },
+  },
+  {
+    id: 'storage', name: 'Storage', critical: false,
+    why: 'Holds the cached app shell between incidents. Eviction only costs a reload from the station.',
+    run: async () => {
+      try {
+        localStorage.setItem('ww-selftest', '1'); localStorage.removeItem('ww-selftest');
+      } catch (err) {
+        return { ok: false, detail: `localStorage threw: ${err && err.message ? err.message : err}` };
+      }
+      let quota = '';
+      if (navigator.storage && navigator.storage.estimate) {
+        const e = await navigator.storage.estimate();
+        quota = ` · quota ~${Math.round((e.quota || 0) / 1048576)} MB`;
+      }
+      return { ok: true, detail: `localStorage works${quota}` };
+    },
+  },
+];
+
+const rows = document.getElementById('rows');
+const verdict = document.getElementById('verdict');
+const nodes = new Map();
+
+for (const c of CHECKS) {
+  const row = document.createElement('div'); row.className = 'row';
+  const badge = document.createElement('div'); badge.className = 'badge pend'; badge.textContent = '-';
+  const body = document.createElement('div');
+  body.innerHTML = `<div class="name"></div><div class="why"></div><div class="detail"></div>`;
+  body.querySelector('.name').textContent = c.name + (c.critical ? ' (required)' : ' (optional)');
+  body.querySelector('.why').textContent = c.why;
+  row.append(badge, body); rows.append(row);
+  nodes.set(c.id, { badge, detail: body.querySelector('.detail') });
+}
+
+document.getElementById('run').addEventListener('click', async (ev) => {
+  ev.target.disabled = true; ev.target.textContent = 'Running…';
+  let criticalFail = 0, optionalFail = 0;
+  for (const c of CHECKS) {
+    const n = nodes.get(c.id);
+    n.badge.className = 'badge pend'; n.badge.textContent = '…';
+    let r;
+    try { r = await c.run(); } catch (err) { r = { ok: false, detail: `threw: ${err && err.message ? err.message : err}` }; }
+    const cls = r.ok ? (r.warn ? 'warn' : 'pass') : (c.critical ? 'fail' : 'warn');
+    n.badge.className = `badge ${cls}`;
+    n.badge.textContent = r.ok ? (r.warn ? 'NOTE' : 'PASS') : (c.critical ? 'FAIL' : 'NO');
+    n.detail.textContent = r.detail || '';
+    if (!r.ok) { c.critical ? criticalFail++ : optionalFail++; }
+  }
+  ev.target.disabled = false; ev.target.textContent = 'Run the checks again';
+  if (criticalFail) {
+    verdict.style.borderColor = '#ff8787';
+    verdict.innerHTML = `<strong>${criticalFail} required check failed.</strong> This device cannot run the overlay as configured. Start with the secure-context row: on iOS the certificate must be installed <em>and</em> enabled under Settings → General → About → Certificate Trust Settings.`;
+  } else if (optionalFail) {
+    verdict.style.borderColor = '#ffa94d';
+    verdict.innerHTML = `<strong>Core function works.</strong> ${optionalFail} optional feature unavailable - run as a browser tab and, if Wake Lock failed, set auto-lock to Never. Video and overlay are unaffected.`;
+  } else {
+    verdict.style.borderColor = '#8ce99a';
+    verdict.innerHTML = '<strong>Everything passed.</strong> Home-screen install, offline caching and exact overlay sync are all available on this device.';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+# wildfire-watch -- source dataset table for training/prepare_datasets.py
+#
+# Read training/README.md first. The short version:
+#
+#   * Classes are exactly ("fire", "smoke") in that index order, taken from
+#     station/core/types.py. Nothing here may change that order.
+#   * Every source declares a `grouping`. That is the unit the merge splits by
+#     -- a video, a flight, a capture session -- and it is what stops
+#     consecutive frames landing on both sides of the train/val boundary.
+#   * Every source declares a `viewpoint` and a `weight`. This model flies on a
+#     drone. Ground-level datasets are the wrong camera angle and would
+#     otherwise dominate the merge by sheer count, so they are weighted down.
+#     Their *negatives* are viewpoint-agnostic and are kept at full strength
+#     via `negative_weight`.
+#   * `licence` is a REMINDER, not a clearance. Every one of these datasets has
+#     its own terms, several are research-use-only, and at least two aggregate
+#     images scraped from the web whose provenance nobody can now establish.
+#     Check the current licence at the source before you redistribute weights
+#     trained on it, and record what you checked.
+#
+# Counts below are as published by each dataset's authors. They are here for
+# planning, not for citation: they double-count across datasets that scraped
+# the same images, and the merge's own manifest.json is the only trustworthy
+# count of what you actually trained on.
+#
+# Paths: `{data_root}` expands to `data_root` below, or to --data-root.
+#   laptop:  --data-root datasets/raw
+#   Kaggle:  --data-root /kaggle/input
+
+version: 1
+
+# Where the raw, unpacked datasets live. Relative paths resolve against this
+# file's directory.
+data_root: ../datasets/raw
+
+output:
+  root: ../datasets/wildfire-merged
+  # 15% val is enough to measure recall per class without starving training.
+  # A held-out test split exists so the number you quote at the end was not
+  # also the number you tuned against.
+  splits:
+    train: 0.80
+    val: 0.15
+    test: 0.05
+  # Changing the seed reshuffles which whole videos land in which split. It
+  # does not change the split policy, and it must be recorded with any result.
+  seed: 1337
+  # symlink: the merged tree costs kilobytes and the raw data is never copied.
+  # Use hardlink or copy where symlinks do not survive (some Windows setups,
+  # some archive/upload pipelines, Kaggle dataset packaging).
+  copy_mode: symlink
+  # Left null deliberately. The expected field failure of this model is a false
+  # positive on a red roof, a high-vis jacket or a dust plume, and background
+  # imagery is the only thing that teaches the difference. See hard_negatives.md.
+  max_negative_fraction: null
+  # SHA-256 every image and keep the first copy. The public fire datasets
+  # overlap heavily; the same image in two splits is a real leak that filename
+  # grouping cannot see.
+  dedup: true
+
+sources:
+  # ---------------------------------------------------------------- FASDD ---
+  # Flame And Smoke Detection Dataset. 122,634 images across three subsets,
+  # shipped with YOLO, VOC and COCO copies of the same annotations, and -- the
+  # reason it matters most here -- roughly 52,000 NEGATIVE images: cloud, fog,
+  # sunset, industrial haze, red-lit scenes. Those negatives are the single
+  # best defence available against the false positives catalogued in
+  # hard_negatives.md, so they are kept at full weight even where the positives
+  # from the same subset are thinned.
+  #
+  # The COCO copy is used here because its `images` list includes the negatives
+  # explicitly (an image with no annotations), which is exactly the distinction
+  # between "background" and "we lost the label file" that the merge needs.
+  # Source: Science Data Bank / Zenodo, "FASDD". Verify the licence yourself.
+
+  - name: fasdd_uav
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/FASDD/FASDD_UAV"
+    format: coco
+    images: images
+    annotations: annotations/instances.json
+    viewpoint: uav
+    # Genuine drone imagery. The reference viewpoint for this project.
+    weight: 1.0
+    grouping: filename_family
+    licence: "check FASDD terms before redistribution (research use; verify)"
+    notes: "UAV subset. Closest match to the ground-station feed."
+
+  - name: fasdd_cv
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/FASDD/FASDD_CV"
+    format: coco
+    images: images
+    annotations: annotations/instances.json
+    viewpoint: ground
+    # Surveillance/handheld viewpoint: useful texture, wrong geometry. Halved.
+    weight: 0.5
+    # ...but its negatives are viewpoint-independent confusers, so keep all.
+    negative_weight: 1.0
+    grouping: filename_family
+    licence: "check FASDD terms before redistribution (research use; verify)"
+    notes: "Ground/surveillance subset. Holds most of the ~52k negatives."
+
+  - name: fasdd_rs
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/FASDD/FASDD_RS"
+    format: coco
+    images: images
+    annotations: annotations/instances.json
+    viewpoint: satellite
+    # Satellite nadir at kilometre scale is a different sensor geometry
+    # entirely; a little helps with smoke-plume shape, a lot hurts.
+    weight: 0.3
+    negative_weight: 0.5
+    grouping: filename_family
+    licence: "check FASDD terms before redistribution (research use; verify)"
+    notes: "Remote-sensing subset. Weighted low: wrong scale for a drone."
+
+  # ---------------------------------------------------------------- FLAME ---
+  # FLAME (Northern Arizona University): prescribed pile burn in an Arizona
+  # pine forest, filmed from a Phantom 3 Professional and a Matrice 200. The
+  # segmentation set (~2,000 frames with pixel masks) is the usable part for
+  # detection; masks are converted to one box per connected component.
+  #
+  # This is ONE burn on ONE day in ONE forest. It is the most on-viewpoint data
+  # available and simultaneously the narrowest: everything in it shares
+  # lighting, terrain, camera and fuel type. Grouping is by directory so the
+  # whole sequence lands on one side of the split -- treating its frames as
+  # independent images is precisely the leak this merge exists to prevent.
+
+  - name: flame_seg
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/FLAME/segmentation"
+    format: mask
+    images: images
+    masks: masks
+    mask_class: fire
+    # Speckle below ~0.04% of the frame is mask noise, not a flame.
+    mask_min_area: 0.0004
+    viewpoint: uav
+    weight: 1.0
+    grouping: parent_dir
+    licence: "IEEE DataPort, CC BY 4.0 at time of writing -- verify"
+    notes: "Aerial pile burn, fire masks only. No smoke class in this subset."
+
+  # FLAME also ships ~48k frames labelled only Fire / No_Fire for
+  # classification. The Fire half is deliberately NOT imported: a whole-frame
+  # "this picture contains fire" label trains a scene classifier wearing a
+  # detector's output layer, which is the exact failure tools/audit_dataset.py
+  # was written after. The No_Fire half is pure gold as background imagery from
+  # the correct viewpoint, and is imported as negatives.
+  - name: flame_negatives
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/FLAME/classification/No_Fire"
+    format: negatives_only
+    images: .
+    viewpoint: uav
+    weight: 1.0
+    # Frames from continuous flight footage: keep every 10th, because 25 fps of
+    # the same hillside is one scene stored a thousand times.
+    frame_stride: 10
+    grouping: filename_family
+    licence: "IEEE DataPort, CC BY 4.0 at time of writing -- verify"
+    notes: "Aerial forest with no fire in frame. Background imagery only."
+
+  # ------------------------------------------------- Boreal Forest Fire -----
+  # Aerial/UAV imagery of boreal forest fires -- different biome, different
+  # canopy, different smoke colour from FLAME's ponderosa pine. Small, and
+  # valuable precisely because it is not FLAME.
+  - name: boreal_uav
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/BorealForestFire"
+    format: yolo
+    images: images
+    labels: labels
+    # MANDATORY and unguessable: the source's own class index order. Get this
+    # wrong and every fire is labelled smoke on every tablet, with no test
+    # downstream able to notice. Read the dataset's own data.yaml/classes.txt.
+    class_names: [fire, smoke]
+    viewpoint: uav
+    weight: 1.0
+    grouping: filename_family
+    licence: "verify with the dataset's authors before redistribution"
+    notes: "Boreal biome UAV imagery. Biome diversity against FLAME."
+
+  # --------------------------------------------------------------- D-Fire ---
+  # ~21.5k images, ~26.6k boxes, ground-level surveillance and web-scraped
+  # stills, already in YOLO format with classes [smoke, fire] -- note the
+  # order, which is the opposite of ours and is why class_names is required.
+  # A large share of D-Fire is background-only images, and those are kept.
+  #
+  # Positives are weighted down hard: this is a security-camera viewpoint, and
+  # a merge that is mostly D-Fire will validate beautifully and then fail from
+  # 120 m looking down at 45 degrees.
+  - name: dfire
+    commercial_use: "unverified"          # the repository suggests permissive terms; not confirmed by a human
+    path: "{data_root}/D-Fire"
+    format: yolo
+    images: images
+    labels: labels
+    class_names: [smoke, fire]
+    viewpoint: ground
+    weight: 0.25
+    negative_weight: 1.0
+    # Mostly independent stills, but the surveillance sequences are not, and
+    # they share filename families. Grouping by family covers both.
+    grouping: filename_family
+    # A box covering ~the whole frame is a scene label, not a detection.
+    max_box_area: 0.95
+    licence: "MIT-style per the D-Fire repository -- verify current terms"
+    notes: "Ground-level. Positives thinned, negatives kept in full."
+
+  # ------------------------------------------------------------ Corsican ---
+  # The Corsican Fire Database (Université de Corse): a few hundred close-range
+  # visible/NIR fire images with pixel-accurate masks. Excellent flame
+  # segmentation, entirely the wrong viewpoint and scale -- a wall of flame
+  # filling the frame at 10 m. Kept at low weight for flame texture and colour
+  # diversity only.
+  - name: corsican
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/Corsican"
+    format: mask
+    images: images
+    masks: masks
+    mask_class: fire
+    mask_min_area: 0.001
+    viewpoint: ground
+    weight: 0.15
+    grouping: filename_family
+    # Close-range flame frequently fills the frame; those boxes teach nothing
+    # a drone will ever see.
+    max_box_area: 0.90
+    licence: "research use, request access from Université de Corse -- verify"
+    notes: "Close-range ground flame. Texture diversity only, heavily thinned."
+
+  # ------------------------------------------- mined from our own logs ------
+  # Frames the deployed system got wrong, exported from incident logs by the
+  # workflow in hard_negatives.md. This source starts empty and is the most
+  # valuable one in the file once it is not: it is the only entry recorded from
+  # the actual camera, actual downlink and actual terrain the model will fly
+  # over. Grouping is per-incident, so one incident never straddles the split.
+  - name: mined_negatives
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/mined/negatives"
+    format: negatives_only
+    images: .
+    viewpoint: uav
+    weight: 1.0
+    enabled: false           # flip to true once the directory has frames in it
+    grouping: regex
+    # <incident-id>/<frame>.jpg -- the incident is the group.
+    group_regex: "^(?P<group>[^/]+)/"
+    licence: "own footage; check operational-release policy before publishing"
+    notes: "False positives from our own incident logs, re-labelled background."
+
+  - name: mined_positives
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/mined/positives"
+    format: yolo
+    images: images
+    labels: labels
+    class_names: [fire, smoke]
+    viewpoint: uav
+    weight: 1.0
+    enabled: false
+    grouping: regex
+    group_regex: "^(?P<group>[^/]+)/"
+    licence: "own footage; check operational-release policy before publishing"
+    notes: "Missed or mis-boxed detections from our own logs, hand-corrected."
+
+  # --- person, from the air --------------------------------------------------
+  # None of the fire datasets above carry person labels, so this class comes
+  # from separate aerial-person sources. Two consequences worth understanding
+  # before training:
+  #
+  #   1. No image will contain both a fire and a person unless you label one.
+  #      tools/audit_dataset.py flags exactly this, and it is a real limitation
+  #      rather than a false alarm: a model can learn "aerial forest scene =>
+  #      look for fire" and "aerial field scene => look for people", which
+  #      collapses the moment a real incident shows a crew working next to a
+  #      flame front. Mining that combination from your own footage (see
+  #      hard_negatives.md) is the fix, and it matters more than volume.
+  #   2. Person is by far the smallest object here. Check the box-size
+  #      histogram in the audit: if the tiny bucket is thin, the model will
+  #      only find people who are already obvious.
+  - name: heridal
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/HERIDAL"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav
+    class_names: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "HERIDAL is research-use; confirm terms before redistribution"
+    notes: >
+      Wilderness search and rescue imagery: people in non-urban terrain shot
+      from altitude. The closest public match to a drone looking for someone in
+      country a wildfire would be burning through.
+
+  - name: sard
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/SARD"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav
+    class_names: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "check SARD terms before redistribution"
+    notes: >
+      Search-and-rescue aerial set with people in varied poses -- lying, seated,
+      partly obscured. Posture matters: a casualty is rarely standing, and a
+      model trained only on upright people finds only upright people.
+
+  - name: tinyperson
+    commercial_use: "unverified"          # nobody has checked this yet
+    path: "{data_root}/TinyPerson"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: aerial_far
+    class_names: [person]
+    weight: 0.6
+    grouping: filename_family
+    licence: "check TinyPerson terms before redistribution"
+    notes: >
+      Maritime and beach scenes, so the background is wrong for wildfire -- but
+      the object scale is exactly right. Included for the tiny-box regime, which
+      is the regime that decides whether this class is useful at altitude.
+
+  - name: visdrone
+    commercial_use: "no"          # the dataset states research use only
+    path: "{data_root}/VisDrone"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav_urban
+    class_names: [person]
+    weight: 0.4
+    grouping: filename_family
+    licence: "VisDrone is research-use only; verify before any deployment"
+    notes: >
+      Drone imagery, but urban and traffic-heavy. Weighted down: it teaches
+      people-from-above at useful scales while carrying a scene prior that does
+      not match open country. Map only its pedestrian/people categories.
+
+  # --- thermal, people from altitude ----------------------------------------
+  # Verified by download, not by reputation: 2,898 aerial thermal images,
+  # 12,312 person boxes, 60-130 m altitude, day and night, CC BY 4.0.
+  # 73% of its person boxes are under 0.1% of frame area, which is the regime
+  # that decides whether this class is worth anything at altitude -- most
+  # person datasets are dominated by large, close, upright people and flatter
+  # a model that would find nobody from a drone.
+  #
+  # It is THERMAL and contains no fire. Including it alongside RGB fire sources
+  # trains one model on two sensors, which does not work: keep it for a
+  # separate thermal model, or drop it if the airframe is RGB-only. See
+  # docs/DATASETS.md, which explains why thermal is the right sensor for this
+  # class and what that costs.
+  - name: hituav_thermal
+    commercial_use: "yes"          # CC BY 4.0 confirmed in the repository LICENSE file
+    path: "{data_root}/HIT-UAV"
+    format: coco
+    images: normal_json
+    annotations: normal_json/annotations/train.json
+    viewpoint: uav_thermal
+    class_names: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "CC BY 4.0 -- commercial use permitted with attribution (verified in repo LICENSE)"
+    notes: >
+      github.com/suojiashun/HIT-UAV-Infrared-Thermal-Dataset. Its COCO file keys
+      the box list "annotation" and filenames "filename", both non-standard;
+      prepare_datasets.py accepts the aliases and now refuses a file with no
+      recognisable box list rather than reading it as zero boxes.

@@ -5,6 +5,84 @@ datasets/
 runs/
 wandb/
 *.pt.tmp
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+# Node
+node_modules/
+package-lock.json
+# OS
+.DS_Store
+Thumbs.db
+# Local inference scratch
+inspection_results/
+# Test artefacts (regenerate with tests/make_fixtures.py)
+tests/fixtures/
+# Pretrained weights - downloaded on demand by Ultralytics, not ours to vendor
+yolo11*.pt
+yolov8*.pt
+# Scratch render used when checking print layout; regenerate as needed
+docs/print-preview.png
+# Bytecode and build products
+*.egg-info/
+build/
+dist/
+.eggs/
+# Environments
+env/
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# Model weights and training runs. These are large, they are binary, and they
+# are reproducible from training/ -- git is the wrong place for them. Keep the
+# weights hash in the incident log instead (ModelInfo.weights_sha), which is
+# what makes an old log replayable against the model that produced it.
+models/
+weights/
+*.pt
+*.onnx
+*.engine
+*.torchscript
+# Datasets. Tens of gigabytes, licensed separately, and rebuilt by
+# training/prepare_datasets.py from the sources listed in docs/VALIDATION.md.
+data/
+*.zip
+*.tar
+*.tar.gz
+# Incident logs contain operational footage of real emergencies and the
+# locations they happened at. They are records, they may be evidence, and they
+# never belong in a public repository. Retention and handling: docs/SAFETY.md.
+incidents/
+# TLS material for the station. The private key must not leave the laptop; the
+# certificate is regenerated per network by `python -m station certs`.
+certs/
+*.pem
+*.key
+*.crt
+# Local configuration. config.example.yaml is the committed template; the
+# working copy holds this department's IPs and paths.
+config.yaml
+config.local.yaml
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+
+# ---------------------------------------------------------------------------------
+# Inspection product
+# ---------------------------------------------------------------------------------
+# Rebuilt datasets — regenerate with tools/rebuild_turbine.py
+datasets/
+
+# Training run outputs
+runs/
+wandb/
+*.pt.tmp
 
 # Python
 __pycache__/
@@ -33,3 +111,9 @@ yolov8*.pt
 
 # Scratch render used when checking print layout; regenerate as needed
 docs/print-preview.png
+
+# The deployed browser model is the exception to the weights rules above. GitHub Pages
+# serves web/ as static files, so the .onnx the site loads has to be committed; it is
+# quantised to about 10 MB for exactly that reason. Everything else stays ignored.
+!web/models/*.onnx
+!web/models/manifest.json
