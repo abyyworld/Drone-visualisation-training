@@ -101,8 +101,16 @@ def main() -> int:
 
     args.work.mkdir(parents=True, exist_ok=True)
 
+    # Ultralytics writes the .onnx beside the input .pt, and Kaggle mounts /kaggle/input
+    # read-only - so exporting straight from an attached notebook output dies with
+    # "[Errno 30] Read-only file system" after doing all the work. Copy somewhere writable
+    # first; it costs one file copy and removes the whole class of problem.
+    weights = args.work / args.weights.name
+    if args.weights.resolve() != weights.resolve():
+        shutil.copy(args.weights, weights)
+
     print(f"Exporting {args.weights} at imgsz={args.imgsz}, opset={OPSET}\n")
-    exported = Path(YOLO(str(args.weights)).export(
+    exported = Path(YOLO(str(weights)).export(
         format="onnx", imgsz=args.imgsz, opset=OPSET, simplify=True, dynamic=False))
 
     fp32 = args.work / f"{args.name}_fp32.onnx"
@@ -152,7 +160,7 @@ def main() -> int:
     manifest_path = args.out / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     manifest[args.name]["imgsz"] = args.imgsz
-    manifest[args.name]["labels"] = list(YOLO(str(args.weights)).names.values())
+    manifest[args.name]["labels"] = list(YOLO(str(weights)).names.values())
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     report = {"chosen": chosen["label"], "imgsz": args.imgsz,
