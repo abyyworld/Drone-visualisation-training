@@ -251,6 +251,13 @@ class SourceSpec:
     max_box_area: float | None = None
     min_box_area: float = 0.0
     licence: str = ""
+    #: Whether this source may be used in a model that ships commercially:
+    #: "yes", "no", or "unverified". Defaults to unverified, because that is
+    #: the true state of a source nobody has checked, and because a field that
+    #: defaults to permissive would quietly wave through the exact sources this
+    #: exists to stop. Enforced by --licence-gate; recorded in the manifest so
+    #: the model card carries the provenance of every image behind it.
+    commercial_use: str = "unverified"
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -1516,6 +1523,7 @@ def prepare(
             "format": spec.format,
             "viewpoint": spec.viewpoint,
             "licence": spec.licence,
+            "commercial_use": spec.commercial_use,
             "weight": spec.weight,
             "negative_weight": spec.effective_negative_weight,
             "frame_stride": spec.frame_stride,
@@ -1930,6 +1938,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--copy-mode", choices=_VALID_COPY_MODES, help="override output.copy_mode")
     parser.add_argument("--only", action="append", default=[], metavar="SOURCE",
                         help="merge only this source; repeatable")
+    parser.add_argument(
+        "--licence-gate",
+        choices=("off", "warn", "strict"),
+        default="warn",
+        help=(
+            "How to treat sources whose commercial_use is not 'yes'. "
+            "'warn' (default) lists them and continues -- right for research and "
+            "for a demo. 'strict' refuses to build, and is what a model destined "
+            "for a product should be built with: most public aerial datasets are "
+            "research-use-only, and that is a licensing problem no amount of "
+            "accuracy fixes. 'off' disables the check entirely."
+        ),
+    )
     parser.add_argument("--exclude", action="append", default=[], metavar="SOURCE",
                         help="skip this source; repeatable")
     parser.add_argument("--max-images", type=int, metavar="N",
@@ -1971,6 +1992,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.max_images is not None:
             for spec in cfg.sources:
                 spec.max_images = min(args.max_images, spec.max_images or args.max_images)
+
+        # Licence gate, before any file is copied. A model is only as
+        # distributable as the most restrictive image behind it, and that is
+        # not something anyone can retrofit: once weights are trained on
+        # research-only imagery, the weights carry the restriction.
+        selected = [
+            spec for spec in cfg.sources
+            if spec.name not in set(args.exclude)
+            and (not args.only or spec.name in set(args.only))
+        ]
+        restricted = [s for s in selected if str(s.commercial_use).lower() != "yes"]
+        if restricted and args.licence_gate != "off":
+            lines = [
+                f"  {s.name:20s} commercial_use={s.commercial_use:<11s} {s.licence or '(no licence recorded)'}"
+                for s in restricted
+            ]
+            body = "\n".join(lines)
+            if args.licence_gate == "strict":
+                log.error(
+                    "REFUSED (licence gate): %d of %d sources are not cleared for "
+                    "commercial use:\n%s\n"
+                    "Either clear them with the rights holder and set commercial_use: yes, "
+                    "exclude them, or build with --licence-gate warn for research use only.",
+                    len(restricted), len(selected), body,
+                )
+                return 1
+            log.warning(
+                "%d of %d sources are NOT cleared for commercial use:\n%s\n"
+                "This dataset is fine for research and for a demo. A model trained on it "
+                "must not ship. Re-run with --licence-gate strict to enforce that.",
+                len(restricted), len(selected), body,
+            )
 
         report = prepare(
             cfg,

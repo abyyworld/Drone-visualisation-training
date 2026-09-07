@@ -74,6 +74,7 @@ sources:
   # Source: Science Data Bank / Zenodo, "FASDD". Verify the licence yourself.
 
   - name: fasdd_uav
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/FASDD/FASDD_UAV"
     format: coco
     images: images
@@ -86,6 +87,7 @@ sources:
     notes: "UAV subset. Closest match to the ground-station feed."
 
   - name: fasdd_cv
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/FASDD/FASDD_CV"
     format: coco
     images: images
@@ -100,6 +102,7 @@ sources:
     notes: "Ground/surveillance subset. Holds most of the ~52k negatives."
 
   - name: fasdd_rs
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/FASDD/FASDD_RS"
     format: coco
     images: images
@@ -126,6 +129,7 @@ sources:
   # independent images is precisely the leak this merge exists to prevent.
 
   - name: flame_seg
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/FLAME/segmentation"
     format: mask
     images: images
@@ -146,6 +150,7 @@ sources:
   # was written after. The No_Fire half is pure gold as background imagery from
   # the correct viewpoint, and is imported as negatives.
   - name: flame_negatives
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/FLAME/classification/No_Fire"
     format: negatives_only
     images: .
@@ -163,6 +168,7 @@ sources:
   # canopy, different smoke colour from FLAME's ponderosa pine. Small, and
   # valuable precisely because it is not FLAME.
   - name: boreal_uav
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/BorealForestFire"
     format: yolo
     images: images
@@ -187,6 +193,7 @@ sources:
   # a merge that is mostly D-Fire will validate beautifully and then fail from
   # 120 m looking down at 45 degrees.
   - name: dfire
+    commercial_use: "unverified"          # the repository suggests permissive terms; not confirmed by a human
     path: "{data_root}/D-Fire"
     format: yolo
     images: images
@@ -210,6 +217,7 @@ sources:
   # filling the frame at 10 m. Kept at low weight for flame texture and colour
   # diversity only.
   - name: corsican
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/Corsican"
     format: mask
     images: images
@@ -232,6 +240,7 @@ sources:
   # the actual camera, actual downlink and actual terrain the model will fly
   # over. Grouping is per-incident, so one incident never straddles the split.
   - name: mined_negatives
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/mined/negatives"
     format: negatives_only
     images: .
@@ -245,6 +254,7 @@ sources:
     notes: "False positives from our own incident logs, re-labelled background."
 
   - name: mined_positives
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/mined/positives"
     format: yolo
     images: images
@@ -274,12 +284,13 @@ sources:
   #      histogram in the audit: if the tiny bucket is thin, the model will
   #      only find people who are already obvious.
   - name: heridal
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/HERIDAL"
     format: yolo
     images: images
     labels: labels
     viewpoint: uav
-    classes: [person]
+    class_names: [person]
     weight: 1.0
     grouping: filename_family
     licence: "HERIDAL is research-use; confirm terms before redistribution"
@@ -289,12 +300,13 @@ sources:
       country a wildfire would be burning through.
 
   - name: sard
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/SARD"
     format: yolo
     images: images
     labels: labels
     viewpoint: uav
-    classes: [person]
+    class_names: [person]
     weight: 1.0
     grouping: filename_family
     licence: "check SARD terms before redistribution"
@@ -304,12 +316,13 @@ sources:
       model trained only on upright people finds only upright people.
 
   - name: tinyperson
+    commercial_use: "unverified"          # nobody has checked this yet
     path: "{data_root}/TinyPerson"
     format: yolo
     images: images
     labels: labels
     viewpoint: aerial_far
-    classes: [person]
+    class_names: [person]
     weight: 0.6
     grouping: filename_family
     licence: "check TinyPerson terms before redistribution"
@@ -319,12 +332,13 @@ sources:
       is the regime that decides whether this class is useful at altitude.
 
   - name: visdrone
+    commercial_use: "no"          # the dataset states research use only
     path: "{data_root}/VisDrone"
     format: yolo
     images: images
     labels: labels
     viewpoint: uav_urban
-    classes: [person]
+    class_names: [person]
     weight: 0.4
     grouping: filename_family
     licence: "VisDrone is research-use only; verify before any deployment"
@@ -347,13 +361,13 @@ sources:
   # docs/DATASETS.md, which explains why thermal is the right sensor for this
   # class and what that costs.
   - name: hituav_thermal
+    commercial_use: "yes"          # CC BY 4.0 confirmed in the repository LICENSE file
     path: "{data_root}/HIT-UAV"
     format: coco
     images: normal_json
     annotations: normal_json/annotations/train.json
     viewpoint: uav_thermal
-    sensor: thermal
-    classes: [person]
+    class_names: [person]
     weight: 1.0
     grouping: filename_family
     licence: "CC BY 4.0 -- commercial use permitted with attribution (verified in repo LICENSE)"
