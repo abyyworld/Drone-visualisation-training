@@ -160,7 +160,17 @@ def main() -> None:
     ap.add_argument("--m", type=int, default=5)
     args = ap.parse_args()
 
-    import av
+    try:
+        import av
+    except ImportError as exc:  # pragma: no cover - depends on the machine
+        # The rest of the codebase names the package and the command; this is
+        # the encoder path, and it is the one someone runs an hour before a
+        # demonstration. A bare ModuleNotFoundError is not an answer then.
+        raise SystemExit(
+            "writing the overlay video needs the 'av' package, which is not installed.\n"
+            "Install it with: pip install av\n"
+            f"(underlying error: {exc})"
+        ) from exc
 
     tf = TemporalFilter(TemporalConfig(n=args.n, m=args.m))
     model = ModelInfo(name="demo-colour-threshold", version="0.0.0-not-a-model",
