@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches theme-color in web/index.html and the icon, so the status bar, the splash
+         and the app icon are one colour rather than three. -->
+    <color name="brand">#1F4E5C</color>
+</resources>

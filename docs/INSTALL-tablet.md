@@ -1,19 +1,95 @@
 # Installing on the MK15 tablet
 
-The inspection app installs as a home-screen app with an icon, no APK and no app store. It
-is a Progressive Web App: the tablet's browser downloads it once, keeps it, and from then on
-it opens in its own window with no address bar. To Android it looks and behaves like an
-installed app.
+Two routes to the same app with an icon on the home screen. Both run identical code - the
+APK is a WebView around the very same `web/` directory the site deploys, copied in at build
+time, so there is no second implementation to keep in step.
 
-**Why not an APK.** An APK has to be built, signed, sideloaded past Android's unknown-sources
-warning, and rebuilt and re-sideloaded for every change. A PWA updates itself the next time
-the tablet has a connection, and the whole delivery mechanism is a URL. The app is HTML,
-JavaScript and models - there is nothing in it that needs native Android, so an APK would be
-a wrapper around the same web page with more steps.
+| | Install from the browser | APK |
+|---|---|---|
+| Needs | Chrome, and internet once | A file, and unknown-sources enabled |
+| Updates | Itself, next time it has signal | You sideload a new APK |
+| Works on a locked-down tablet | Only if the browser supports installing | Yes |
+| Works with no connection ever | No: the first load is a download | Yes: everything is inside the file |
+| Where the models live | Downloaded and cached by the browser | Inside the APK |
+
+**Take the APK if** the MK15 has no Play Store, its browser has no install option, the
+tablet may never see WiFi, or you are setting up several units from one file.
+
+**Take the browser route if** the tablet has a current Chrome and internet now and then. It
+is less to maintain, because it updates itself.
 
 ---
 
-## Install it
+## Route A: the APK
+
+### Get it
+
+Every push to `main` builds one. Repository -> **Actions** -> **Build Android APK** -> the
+most recent run -> **Artifacts** -> `drone-inspection-apk`. It is a zip; the `.apk` is
+inside.
+
+### Install it
+
+1. Copy the `.apk` onto the tablet (USB, or a memory card).
+2. Open it with the tablet's file manager.
+3. Android asks to allow installs from that source. Allow it - this is Android's standard
+   warning for any app that did not come from a store, not a sign that anything is wrong.
+4. The icon appears in the app drawer.
+
+### What is in it
+
+The web app, the ONNX runtime, and the icon. **Not** any detection model, because none is
+trained yet - the APK ships with the API engines working and the on-device engine reporting
+that it has no model, which is the truthful state. When a model lands in `web/models/`, the
+next APK contains it and the on-device engine starts working offline.
+
+### It needs a current Android System WebView
+
+The app is a web page, so it runs in the tablet's WebView, and it uses ES modules, dynamic
+import and `createImageBitmap`. An MK15 whose WebView has never been updated may be too old
+for those, and the app will open to a blank screen or an error rather than a broken half.
+
+That component updates through the Play Store separately from the Android version, so an
+old tablet with a fresh WebView is fine. If the app opens blank: update **Android System
+WebView** and **Chrome** from the Play Store, then reopen it.
+
+### Signing, and upgrading in place
+
+With no signing key configured, CI builds a **debug** APK. It installs and runs normally.
+The catch is upgrades: Android only replaces an app with one signed by the same key, so a
+debug APK from a later build may have to be uninstalled first (which loses nothing - the app
+stores no data).
+
+To get in-place upgrades, create a key once and give it to the repository:
+
+```bash
+keytool -genkeypair -v -keystore release.jks -keyalg RSA -keysize 4096 \
+        -validity 10000 -alias drone-inspection
+
+base64 -w0 release.jks    # paste the output as the secret below
+```
+
+Repository -> Settings -> Secrets and variables -> Actions, add four secrets:
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`. CI then builds a signed release APK instead.
+
+**Keep `release.jks` and back it up somewhere safe.** Lose it and every future build is a
+different app to Android, and every tablet has to uninstall before it can update. It never
+goes in the repository - `*.jks` and `*.keystore` are gitignored for that reason.
+
+### Building it yourself
+
+```bash
+npm install --no-save onnxruntime-web@1.23.0   # optional; bundles the runtime
+cd android && ./gradlew assembleDebug
+# android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Needs a JDK 17 or newer and the Android SDK. The Gradle wrapper fetches everything else.
+
+---
+
+## Route B: install from the browser
 
 1. Put the tablet on WiFi with internet. This is needed **once**, for the install.
 2. Open **Chrome** and go to:
@@ -32,11 +108,10 @@ a wrapper around the same web page with more steps.
 
 The MK15 ships a stock Android browser that is old and often has no install option.
 
-- Install Chrome from the Play Store if the unit has it, and use that.
-- No Play Store: download the Chrome APK from `google.com/chrome` on the tablet itself and
-  install it, allowing installs from unknown sources when prompted.
-- Neither is possible: the site still works as a normal page in whatever browser exists.
-  You lose the icon and the full-screen window; you do not lose any function.
+- **Use the APK instead.** This is exactly the case it exists for.
+- Or install Chrome from the Play Store, if the unit has one, and use that.
+- Or open the site in whatever browser exists. You lose the icon and the full-screen
+  window; you do not lose any function.
 
 ### It must be HTTPS
 
@@ -47,6 +122,8 @@ for testing runs fine but cannot be installed, and that is a browser rule, not a
 ---
 
 ## What works without a connection
+
+Applies to both routes, except where the table above says otherwise.
 
 | | Offline |
 |---|---|
@@ -68,11 +145,13 @@ and arriving with no signal gives an app that opens and then cannot analyse anyt
 
 ## Updating
 
-Open it on WiFi. The service worker fetches the new version in the background and it is live
-next launch. Nothing to reinstall.
+**Browser install:** open it on WiFi. The service worker fetches the new version in the
+background and it is live next launch. Nothing to reinstall. To force it: Android
+**Settings -> Apps -> Drone Inspection -> Storage -> Clear cache**, then reopen on WiFi.
 
-To force it: Android **Settings -> Apps -> Drone Inspection -> Storage -> Clear cache**, then
-reopen on WiFi.
+**APK:** download the newer one from Actions and install it over the top. If Android refuses
+because the signature differs, uninstall first - see Signing above for how to stop that
+happening again.
 
 ---
 
@@ -100,5 +179,6 @@ with the key in an environment variable.
 
 ## Rebuilding the icon
 
-`python3 tools/make_icons.py` redraws `web/icons/` from a script, so the mark is 25 lines of
-code rather than a binary nobody can edit. Change the colours or the shape there and rerun.
+`python3 tools/make_icons.py` redraws both the web icons and the Android launcher icons from
+one script, so the browser tab, the home-screen shortcut and the APK are the same mark
+rather than three slightly different ones. Change the colours or the shape there and rerun.

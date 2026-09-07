@@ -125,3 +125,14 @@ docs/print-preview.png
 # Written by tests/test_web.mjs on every run and uploaded as a CI artifact.
 # It is evidence of one run, not a document, so it does not belong in the tree.
 docs/web-app.png
+
+# Android build output. The wrapper jar IS tracked (it is how anyone reproduces the build
+# without matching Gradle versions by hand); the local SDK pointer and the outputs are not.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore

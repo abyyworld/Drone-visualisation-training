@@ -1,0 +1,169 @@
+/*
+ * The APK is a thin native shell around the same web/ directory the site deploys.
+ *
+ * There is no second implementation and no second codebase to keep in step: the assets are
+ * copied out of web/ at build time, so a change to the web app is in the next APK by
+ * definition. The Java in this module is a WebView, an asset loader and a file picker, and
+ * that is deliberately all it is.
+ *
+ * Why the assets are served over https://appassets.androidplatform.net rather than file://
+ * is in MainActivity.java, and it is the single most important decision in this module.
+ */
+
+plugins {
+    id 'com.android.application'
+}
+
+// The web app is the source of truth; this module never edits it in place.
+def webRoot = rootProject.file('../web')
+def ortDist = rootProject.file('../node_modules/onnxruntime-web/dist')
+def stagedAssets = layout.buildDirectory.dir('generated/webassets')
+
+android {
+    namespace 'world.abyy.droneinspection'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'world.abyy.droneinspection'
+        // Android 7.0. The floor is set by what the app actually needs at runtime, not by
+        // this number: the page uses ES modules, dynamic import and createImageBitmap, so
+        // it needs a reasonably current Android System WebView. That component updates
+        // through the Play Store independently of the OS version, which is why a low
+        // minSdk is still worth having - an old tablet with a fresh WebView is fine.
+        minSdk 24
+        targetSdk 35
+        versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
+        versionName project.hasProperty('versionName') ? project.versionName : '1.0'
+    }
+
+    signingConfigs {
+        release {
+            // Populated from environment only when a keystore is supplied. Without one the
+            // release variant is left unsigned and CI falls back to the debug APK, rather
+            // than inventing a throwaway key - a key that changes every build produces an
+            // APK that cannot be installed over the previous one.
+            def storePath = System.getenv('ANDROID_KEYSTORE_PATH')
+            if (storePath) {
+                storeFile file(storePath)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false   // there is almost no Java here to shrink
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += stagedAssets
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packagingOptions {
+        // onnxruntime-web ships .wasm; Android must not compress it or instantiation is slow.
+        jniLibs.useLegacyPackaging = false
+        resources.excludes += ['**/*.map']
+    }
+    androidResources {
+        noCompress += ['wasm', 'onnx']
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+/*
+ * Stage web/ into the APK's assets.
+ *
+ * sw.js is deliberately left out. Its whole job is caching files over a network, and inside
+ * the APK every one of those files is already local. Keeping it would add one failure mode
+ * and nothing else: a service worker that has cached the previous version's shell serves it
+ * after an app update, so the user installs a new APK and sees the old app. The registration
+ * in app.js already swallows a failure, so a missing sw.js is a no-op rather than an error.
+ */
+tasks.register('stageWebApp', Copy) {
+    description = 'Copy the web app into the APK assets'
+    from(webRoot) {
+        exclude 'sw.js'
+    }
+    into stagedAssets.map { it.dir('www') }
+}
+
+/*
+ * Bundle the ONNX runtime if it has been installed, and point the app at the copy.
+ *
+ * The deployed site loads it from a CDN, which is right for a web page and wrong for a
+ * tablet that will be at a wind farm with no signal. When node_modules holds the package,
+ * it goes in the APK and the staged manifest is rewritten to load it from there; when it
+ * does not, the app keeps the CDN default and the on-device engine simply needs a
+ * connection the first time. Both states are honest, so neither one fails the build.
+ *
+ * Install it with `npm ci` in the repository root before building a release APK.
+ */
+tasks.register('stageOnnxRuntime', Copy) {
+    description = 'Bundle onnxruntime-web so the on-device engine works with no connection'
+    onlyIf { ortDist.isDirectory() }
+    from(ortDist) {
+        exclude '**/*.map'
+        exclude '**/*.d.ts'
+        exclude '**/*.node'
+    }
+    into stagedAssets.map { it.dir('www/ort') }
+}
+
+tasks.register('pointManifestAtBundledRuntime') {
+    description = 'Rewrite the staged model manifest to load the runtime from the APK'
+    dependsOn 'stageWebApp', 'stageOnnxRuntime'
+    onlyIf { ortDist.isDirectory() }
+
+    def manifest = stagedAssets.map { it.file('www/models/manifest.json') }
+    inputs.dir(webRoot)
+    outputs.file(manifest)
+
+    doLast {
+        def file = manifest.get().asFile
+        def json = new groovy.json.JsonSlurper().parse(file)
+        json.runtime = (json.runtime ?: [:]) + [ortBase: 'ort/']
+        file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+        logger.lifecycle('Bundled onnxruntime-web; manifest points at ort/')
+    }
+}
+
+tasks.register('reportBundledModels') {
+    description = 'Say which detection models are going into the APK'
+    dependsOn 'stageWebApp'
+    doLast {
+        def models = stagedAssets.get().dir('www/models').asFile.listFiles()
+                ?.findAll { it.name.endsWith('.onnx') } ?: []
+        if (models) {
+            models.each { logger.lifecycle("Bundling model: ${it.name} (${it.length() / 1e6} MB)") }
+        } else {
+            // Not a failure. The API engines need no local model, and the app already
+            // reports an absent detector rather than pretending to have one.
+            logger.lifecycle('No .onnx in web/models: the APK ships with the API engines only.')
+        }
+    }
+}
+
+tasks.named('preBuild') {
+    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'pointManifestAtBundledRuntime', 'reportBundledModels'
+}

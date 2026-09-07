@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Draw the app icons for web/icons/.
 
+Writes both sets from one drawing: the web app's icons in web/icons/, and the Android
+launcher icons in android/app/src/main/res/mipmap-*/. One mark, so the browser tab, the
+home-screen shortcut and the sideloaded APK are not three slightly different logos.
+
 Drawn from a script rather than committed as opaque binaries, so the mark can be changed by
 editing 25 lines instead of opening an image editor, and so nothing in the repo is a blob
 nobody can regenerate.
@@ -25,8 +29,15 @@ GROUND = (20, 56, 66)
 PALE = (234, 242, 244)
 AMBER = (241, 196, 15)
 
-OUT = Path(__file__).resolve().parent.parent / "web" / "icons"
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "web" / "icons"
+ANDROID_RES = ROOT / "android" / "app" / "src" / "main" / "res"
 SIZES = (192, 512)
+
+# Android launcher densities. The legacy square icon and the round variant are both drawn
+# with the maskable safe zone, because a launcher that crops to a circle or a squircle will
+# otherwise cut the blade tips off.
+MIPMAP = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 
 
 def draw(size: int, maskable: bool):
@@ -66,6 +77,19 @@ def main():
         draw(size, maskable=True).save(OUT / f"icon-{size}-maskable.png")
         print(f"icon-{size}.png, icon-{size}-maskable.png")
     print(f"Written to {OUT}")
+
+    if not ANDROID_RES.is_dir():
+        print(f"No {ANDROID_RES}; skipping the launcher icons.")
+        return 0
+
+    for density, pixels in MIPMAP.items():
+        folder = ANDROID_RES / f"mipmap-{density}"
+        folder.mkdir(parents=True, exist_ok=True)
+        icon = draw(pixels, maskable=True)
+        icon.save(folder / "ic_launcher.png")
+        icon.save(folder / "ic_launcher_round.png")
+        print(f"mipmap-{density}/ic_launcher.png ({pixels}px)")
+    print(f"Written to {ANDROID_RES}")
     return 0
 
 

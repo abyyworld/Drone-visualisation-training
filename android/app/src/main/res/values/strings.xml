@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Drone Inspection</string>
+    <string name="no_browser">No app on this tablet can open that link.</string>
+    <string name="no_picker">No file manager on this tablet can pick a file. Install one, or use the browser version of the app.</string>
+</resources>

@@ -37,9 +37,16 @@ be dropped. Upload a still of anything suspicious.
 
 ## On the tablet
 
-`docs/INSTALL-tablet.md`. It installs from the browser as a home-screen app, no APK. The app
-shell and the on-device models are cached, so the local engine works with no signal. The API
-engines cannot, and the app says so rather than queueing work that will never send.
+`docs/INSTALL-tablet.md`. Two routes, same code:
+
+- **From the browser.** Add to home screen. Updates itself, needs a current Chrome.
+- **APK.** `android/` is a WebView around the same `web/` directory, copied in at build
+  time. Built by CI on every push to `main` and downloadable from Actions. Take this one
+  when the tablet has no Play Store, no install option, or may never see WiFi - everything
+  including the ONNX runtime is inside the file.
+
+Either way the on-device engine works with no signal; the API engines cannot, and the app
+says so rather than queueing work that will never send.
 
 ## Why the trained model is not the default
 
