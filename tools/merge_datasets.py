@@ -47,6 +47,84 @@ FRACTIONS = {"train": 0.70, "valid": 0.15, "test": 0.15}
 DROP = "__drop__"   # mapping value meaning "this class is not wanted in the merged set"
 
 
+
+# Proposed groupings for wind turbine blade defects. Roboflow projects name the same defect
+# a dozen ways - craze, crack, cracked, hide_craze - and deciding each by hand is slow and
+# inconsistent. This proposes, it does not decide: anything unmatched blocks the merge until
+# a person places it.
+#
+# Four targets rather than eight, deliberately. Six classes of 300 boxes make six weak
+# detectors; three of 600 make three usable ones.
+#
+# Phrases are listed explicitly rather than generated from a word soup. An earlier version
+# built them from sliding windows over a string, which quietly turned "crack damage" into a
+# rule mapping bare "damage" to crack, and "vg panel with missing teeth" into one mapping
+# "panel" to structural damage. Both were wrong and neither was visible without testing.
+SYNONYMS = {
+    "crack": (
+        "crack", "cracks", "cracked", "cracking", "crack damage", "craze", "crazing",
+        "hide craze", "hidden craze", "fissure", "split", "fracture",
+        "transverse crack", "longitudinal crack",
+    ),
+    "surface_damage": (
+        "erosion", "le erosion", "leading edge erosion", "edge erosion", "peeling",
+        "surface peeling", "paint peeling", "delamination", "corrosion", "rust",
+        "abrasion", "wear", "surface eye", "injury", "damage", "damaged",
+        "surface damage", "pitting", "gelcoat", "blister",
+    ),
+    "structural_damage": (
+        "breakage", "broken", "break", "missing", "missing material",
+        "missing surface material", "hole", "puncture", "structural",
+        "structural damage", "severe", "severe damage", "tear", "torn",
+        "missing teeth", "vg panel with missing teeth", "detached",
+    ),
+    "contamination": (
+        "dirt", "dust", "dusty", "soil", "soiling", "soiled", "oil", "surface oil",
+        "grease", "bird", "bird drop", "bird drops", "bird droppings", "bird dropping",
+        "lightning", "lightning strike", "lightning receptor", "burn", "burnmark",
+        "burn mark", "surface attach", "debris", "stain", "snow",
+    ),
+}
+
+# Classes naming the object rather than a defect. Keeping them trains the model to find
+# blades, which is not the job, and dilutes every real class. Checked before the defect
+# groups so that "panel" drops rather than matching a phrase that happens to contain it.
+NOT_A_DEFECT = (
+    "panel", "vg panel", "blade", "blades", "turbine", "wind turbine", "background",
+    "normal", "healthy", "good", "clean", "ok", "undamaged", "no damage",
+)
+
+
+def normalise(name: str) -> str:
+    return " ".join(name.lower().replace("-", " ").replace("_", " ").split())
+
+
+def propose(names: list[str]) -> tuple[dict, list[str]]:
+    """Map each source class name to a target. Returns (mapping, unmatched).
+
+    Exact match first, then longest containing phrase, so "leading edge erosion" beats
+    "erosion" and a name containing no known phrase is reported rather than guessed.
+    """
+    exact = {phrase: DROP for phrase in NOT_A_DEFECT}
+    for target, phrases in SYNONYMS.items():
+        for phrase in phrases:
+            exact.setdefault(phrase, target)
+    ordered = sorted(exact.items(), key=lambda pair: -len(pair[0]))
+
+    mapping, unmatched = {}, []
+    for name in names:
+        clean = normalise(name)
+        if clean in exact:
+            mapping[name] = exact[clean]
+            continue
+        hit = next((target for phrase, target in ordered if f" {phrase} " in f" {clean} "), None)
+        if hit:
+            mapping[name] = hit
+        else:
+            unmatched.append(name)
+    return mapping, unmatched
+
+
 def load_names(root: Path) -> list[str]:
     """Class names from data.yaml, without requiring a yaml parser."""
     config = root / "data.yaml"
@@ -101,7 +179,19 @@ def discover(scans: list[dict], template: Path) -> None:
             every_name.append(name)
         print()
 
-    mapping = {name: name.lower().strip().replace(" ", "_") for name in sorted(set(every_name))}
+    mapping, unmatched = propose(sorted(set(every_name)))
+    if unmatched:
+        print("NOT RECOGNISED - place these by hand before merging:")
+        for name in unmatched:
+            print(f"    {name!r}")
+        print()
+        for name in unmatched:
+            mapping[name] = "PLACE_ME"
+    print("Proposed grouping:")
+    for target in sorted(set(mapping.values())):
+        members = sorted(k for k, v in mapping.items() if v == target)
+        print(f"    {target:<20}{', '.join(members)}")
+    print()
     template.parent.mkdir(parents=True, exist_ok=True)
     template.write_text(json.dumps(
         {"$comment": [
@@ -141,6 +231,12 @@ def main() -> int:
 
     spec = json.loads(args.mapping.read_text())
     mapping = spec["classes"] if "classes" in spec else spec
+    placeholders = [k for k, v in mapping.items() if v == "PLACE_ME"]
+    if placeholders:
+        raise SystemExit("these classes still say PLACE_ME in the mapping:\n  "
+                         + "\n  ".join(placeholders)
+                         + "\n\nDecide what each one is before merging.")
+
     targets = sorted({v for v in mapping.values() if v != DROP})
     if not targets:
         raise SystemExit("the mapping drops every class")
