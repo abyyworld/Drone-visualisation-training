@@ -42,13 +42,40 @@ from pathlib import Path
 REPO = "github.com/abyyworld/Drone-visualisation-training.git"
 
 
-def get_token() -> str | None:
-    """Kaggle Secrets first, then the environment, so this also runs outside Kaggle."""
+# Kaggle has no API to list secret labels, so a mistyped label is indistinguishable from
+# no secret at all. Rather than make the exact string load-bearing, try the names people
+# actually use. --secret-name covers anything else.
+SECRET_NAMES = (
+    "GITHUB_TOKEN", "GITHUB_KEY", "GH_TOKEN",
+    "github key", "github_key", "github token", "github_token",
+)
+
+
+def get_token(preferred: str | None = None) -> tuple[str, str] | tuple[None, None]:
+    """Return (token, where_it_came_from), or (None, None).
+
+    Kaggle Secrets first, then the environment, so this also runs outside Kaggle.
+    """
+    candidates = ([preferred] if preferred else []) + list(SECRET_NAMES)
     try:
         from kaggle_secrets import UserSecretsClient
-        return UserSecretsClient().get_secret("GITHUB_TOKEN")
-    except Exception:
-        return os.environ.get("GITHUB_TOKEN") or None
+
+        client = UserSecretsClient()
+        for label in candidates:
+            try:
+                value = client.get_secret(label)
+                if value:
+                    return value, f"Kaggle secret {label!r}"
+            except Exception:
+                continue          # wrong label; try the next
+    except ImportError:
+        pass                      # not on Kaggle
+
+    for label in candidates:
+        value = os.environ.get(label)
+        if value:
+            return value, f"environment variable {label}"
+    return None, None
 
 
 def scrub(text: str, secret: str) -> str:
@@ -69,15 +96,21 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", default="turbine", help="model name in the manifest")
     parser.add_argument("--metrics", type=Path, help="evaluate.py --out directory")
+    parser.add_argument("--secret-name",
+                        help="Kaggle Secret label holding the GitHub token, if it is not "
+                             "one of the names tried by default")
     args = parser.parse_args()
 
     model = Path("web/models") / f"{args.name}.onnx"
     if not model.exists():
         raise SystemExit(f"{model} not found - run tools/export_onnx.py first")
 
-    token = get_token()
+    token, origin = get_token(args.secret_name)
     if not token:
-        print("No GITHUB_TOKEN found, so nothing was pushed. The model is still in this")
+        print("No GitHub token found, so nothing was pushed. Tried these Kaggle secret")
+        print(f"labels: {', '.join(SECRET_NAMES)}.")
+        print("If yours is named something else, pass --secret-name 'your label'.")
+        print("\nThe model is still in this")
         print(f"run's Output at {model} and can be downloaded by hand.")
         print("\nTo have future runs publish themselves, see the setup notes in")
         print("tools/publish_results.py.")
@@ -103,6 +136,7 @@ def main() -> int:
     if branch == "main":
         raise SystemExit("refusing to push to main - that deploys the live site")
 
+    print(f"Using the token from {origin}.")
     run(["git", "config", "user.name", "abyyworld"])
     run(["git", "config", "user.email", "annolieberto@gmail.com"])
 
