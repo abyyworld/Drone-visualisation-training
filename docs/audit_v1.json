@@ -1,0 +1,156 @@
+{
+  "dataset": "/home/user/Drone-visualisation-training",
+  "classes": [
+    "corrosion",
+    "crack",
+    "healthy",
+    "surface_peeling"
+  ],
+  "distribution": {
+    "per_split": {
+      "train": {
+        "images": 6581,
+        "backgrounds": 98,
+        "boxes": 8484,
+        "per_class": {
+          "corrosion": 539,
+          "crack": 1790,
+          "healthy": 5284,
+          "surface_peeling": 871
+        }
+      },
+      "valid": {
+        "images": 627,
+        "backgrounds": 8,
+        "boxes": 831,
+        "per_class": {
+          "corrosion": 62,
+          "crack": 188,
+          "healthy": 506,
+          "surface_peeling": 75
+        }
+      },
+      "test": {
+        "images": 312,
+        "backgrounds": 3,
+        "boxes": 409,
+        "per_class": {
+          "corrosion": 16,
+          "crack": 103,
+          "healthy": 261,
+          "surface_peeling": 29
+        }
+      }
+    },
+    "test_classes_too_thin_to_measure": {
+      "corrosion": 16,
+      "surface_peeling": 29
+    }
+  },
+  "shortcut": {
+    "families": [
+      {
+        "family": "<numeric>",
+        "files": 2484,
+        "boxes": 3673,
+        "classes": {
+          "corrosion": 617,
+          "crack": 2081,
+          "surface_peeling": 975
+        },
+        "purity": 0.5665668390961067,
+        "dominant": "crack"
+      },
+      {
+        "family": "Areial_Healthy",
+        "files": 1692,
+        "boxes": 1881,
+        "classes": {
+          "healthy": 1881
+        },
+        "purity": 1.0,
+        "dominant": "healthy"
+      },
+      {
+        "family": "Healthy_Train",
+        "files": 3344,
+        "boxes": 4170,
+        "classes": {
+          "healthy": 4170
+        },
+        "purity": 1.0,
+        "dominant": "healthy"
+      }
+    ],
+    "single_class_families": [
+      "Areial_Healthy",
+      "Healthy_Train"
+    ],
+    "families_share_a_class": true,
+    "images_with_multiple_classes": 202,
+    "class_pairs_never_co_occurring": [
+      "corrosion + healthy",
+      "crack + healthy",
+      "healthy + surface_peeling"
+    ],
+    "scene_labels": [
+      "healthy"
+    ],
+    "shortcut_present": true
+  },
+  "split_leakage": {
+    "valid": {
+      "images": 627,
+      "with_adjacent_train_frame": 548,
+      "adjacent_fraction": 0.8740031897926634,
+      "confirmed_iou_over_0.5": 204,
+      "confirmed_fraction": 0.3253588516746411
+    },
+    "test": {
+      "images": 312,
+      "with_adjacent_train_frame": 267,
+      "adjacent_fraction": 0.8557692307692307,
+      "confirmed_iou_over_0.5": 87,
+      "confirmed_fraction": 0.27884615384615385
+    },
+    "sources_in_multiple_splits": 0
+  },
+  "geometry": {
+    "per_class": {
+      "corrosion": {
+        "n": 617,
+        "median_area": 0.0875,
+        "tiny_fraction": 0.0535,
+        "huge_fraction": 0.0357
+      },
+      "crack": {
+        "n": 2081,
+        "median_area": 0.067,
+        "tiny_fraction": 0.0932,
+        "huge_fraction": 0.0154
+      },
+      "healthy": {
+        "n": 6051,
+        "median_area": 0.4418,
+        "tiny_fraction": 0.0043,
+        "huge_fraction": 0.4267
+      },
+      "surface_peeling": {
+        "n": 975,
+        "median_area": 0.0481,
+        "tiny_fraction": 0.2164,
+        "huge_fraction": 0.0051
+      }
+    },
+    "median_area_spread": 9.2,
+    "scale_imbalance": true
+  },
+  "integrity": {
+    "total_files": 7520,
+    "unique_image_content": 7515,
+    "duplicate_files": 5,
+    "polygon_label_files": 4927,
+    "box_label_files": 2484,
+    "orphans": {}
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "dataset": "/home/user/Drone-visualisation-training",
+  "files": 7520,
+  "unique_sources": 3133,
+  "thresholds": {
+    "0": {
+      "distinct": 3096,
+      "annotated": 3054
+    },
+    "3": {
+      "distinct": 2873,
+      "annotated": 2835
+    },
+    "6": {
+      "distinct": 2281,
+      "annotated": 2260
+    },
+    "10": {
+      "distinct": 936,
+      "annotated": 929
+    }
+  },
+  "headline_threshold": 6
+}

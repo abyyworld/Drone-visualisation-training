@@ -1,0 +1,24 @@
+{
+  "name": "drone-inspection",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Turbine blade and solar panel defect detection with browser-based inference",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/test_web.mjs",
+    "fixtures": "python3 tests/make_fixtures.py",
+    "serve": "node -e \"import('node:http').then(async h=>{const{readFile}=await import('node:fs/promises');const{extname,join}=await import('node:path');const m={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.onnx':'application/octet-stream','.png':'image/png'};h.createServer(async(q,s)=>{const p=join('web',decodeURIComponent(q.url.split('?')[0]));const f=p.endsWith('/')?join(p,'index.html'):p;try{const b=await readFile(f);s.writeHead(200,{'content-type':m[extname(f)]||'application/octet-stream','content-length':b.length});s.end(q.method==='HEAD'?undefined:b)}catch{s.writeHead(404).end('not found')}}).listen(8080,()=>console.log('http://localhost:8080'))})\""
+  },
+  "devDependencies": {
+    "onnxruntime-web": "1.23.0"
+  },
+  "comment": [
+    "onnxruntime-web is a devDependency, not a runtime one: the deployed site loads it from",
+    "a CDN (see web/js/runtime.js). The local copy exists so tests/test_web.mjs can serve it",
+    "and run offline. Set `runtime.ortBase` in web/models/manifest.json to self-host it in",
+    "production too.",
+    "",
+    "playwright is not listed here — it is large and only the test needs it. Install it with",
+    "`npm install --no-save playwright@1.56.1 && npx playwright install chromium`, as CI does."
+  ]
+}
