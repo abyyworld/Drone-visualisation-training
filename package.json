@@ -14,7 +14,8 @@
   },
   "devDependencies": {
     "onnxruntime-web": "1.23.0",
-    "@mediapipe/tasks-vision": "1.0.1"
+    "@mediapipe/tasks-vision": "1.0.1",
+    "libheif-js": "1.23.2"
   },
   "comment": [
     "onnxruntime-web is a devDependency, not a runtime one: the deployed site loads it from",
@@ -27,6 +28,10 @@
     "",
     "@mediapipe/tasks-vision is a devDependency for the same reason onnxruntime-web is: the",
     "deployed site loads it from a CDN, and the local copy exists so the tests and the APK",
-    "build can serve it. Set `runtime.mediapipeBase` in the manifest to self-host it."
+    "build can serve it. Set `runtime.mediapipeBase` in the manifest to self-host it.",
+    "",
+    "libheif-js decodes the HEIC an iPhone shoots, which only Safari opens natively. Note",
+    "its licence: LGPL-3.0, where everything else here is Apache-2.0 or MIT. It is loaded",
+    "as its own separate file and only when a HEIC is actually dropped."
   ]
 }

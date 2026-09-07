@@ -13,6 +13,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+      The Analyse screen's live tracking uses the tablet's own camera through the WebView.
+      Declared optional: the Camera screen uses the drone's feed over the network and needs
+      no local camera at all, and a device without one must still install the app.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

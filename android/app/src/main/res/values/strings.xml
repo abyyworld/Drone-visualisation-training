@@ -35,4 +35,6 @@
     <string name="hint_interval">Not a frame rate. One round trip to a provider takes seconds, so frames are sampled and the overlay says how old its boxes are. Shorter means fresher boxes and a proportionally larger bill.</string>
     <string name="stream_must_be_rtsp">The address has to start with rtsp:// or rtsps://.</string>
     <string name="save">Save</string>
+    <string name="camera_granted">Camera allowed. Press Start camera again.</string>
+    <string name="camera_denied">Without the camera, live tracking cannot run. Uploads still work.</string>
 </resources>

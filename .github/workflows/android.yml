@@ -72,7 +72,7 @@ jobs:
       # See the stageOnnxRuntime task in android/app/build.gradle: without this the app
       # still builds and still runs, it just loads the runtime from a CDN on first use.
       - name: Fetch the runtimes for bundling
-        run: npm install --no-audit --no-fund onnxruntime-web@1.23.0 @mediapipe/tasks-vision@1.0.1
+        run: npm install --no-audit --no-fund onnxruntime-web@1.23.0 @mediapipe/tasks-vision@1.0.1 libheif-js@1.23.2
 
       # A version derived from the commit, so an APK on a tablet can be traced to a build.
       # versionCode must increase for Android to accept an in-place upgrade; the commit
@@ -151,6 +151,8 @@ jobs:
               "assets/www/js/zip.js",
               "assets/www/js/ondevice.js",
               "assets/www/js/track.js",
+              "assets/www/js/live.js",
+              "assets/www/js/heic.js",
               # The detector that makes the app work with no key and no connection.
               "assets/www/models/detector.tflite",
               "assets/www/css/app.css",

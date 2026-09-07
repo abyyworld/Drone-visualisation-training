@@ -12,6 +12,7 @@
  */
 
 import { classify, decodeAdvice } from './formats.js';
+import { isHeic, decodeHeic } from './heic.js';
 
 // ImageNet statistics, used by the torchvision-pretrained gate backbone. The YOLO detectors
 // take plain 0..1 input and must NOT be normalised this way.
@@ -110,9 +111,12 @@ export async function loadImage(file) {
   }
   try {
     // Never gated on a list of formats this file happens to know about. What a browser can
-    // decode changes with every release, and the only way to find out is to ask it.
+    // decode changes with every release, and the only way to find out is to ask it. Safari
+    // decodes HEIC natively, so this succeeds there and the fallback below never loads.
     return await createImageBitmap(file);
   } catch {
+    // Nothing else gets a second chance, because nothing else has one to give.
+    if (isHeic(file)) return decodeHeic(file);
     throw new Error(decodeAdvice(file));
   }
 }

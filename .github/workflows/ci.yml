@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --quiet onnx numpy Pillow onnxruntime
-          npm install --no-audit --no-fund onnxruntime-web@1.23.0 @mediapipe/tasks-vision@1.0.1
+          npm install --no-audit --no-fund onnxruntime-web@1.23.0 @mediapipe/tasks-vision@1.0.1 libheif-js@1.23.2
           npm install --no-audit --no-fund --no-save playwright@1.56.1
           npx playwright install --with-deps chromium
 

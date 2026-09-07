@@ -23,6 +23,7 @@ def kotlinVersion = '1.9.25'
 def webRoot = rootProject.file('../web')
 def ortDist = rootProject.file('../node_modules/onnxruntime-web/dist')
 def mediapipeDist = rootProject.file('../node_modules/@mediapipe/tasks-vision')
+def heicDist = rootProject.file('../node_modules/libheif-js/libheif-wasm')
 def stagedAssets = layout.buildDirectory.dir('generated/webassets')
 
 android {
@@ -95,6 +96,7 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.core:core:1.15.0'
 
     // The live screen. No browser can play RTSP, which is what the MK15 hands its video
     // out as, so the video path is native and Media3 is what speaks it.
@@ -181,10 +183,24 @@ tasks.register('stageMediaPipe', Copy) {
     into stagedAssets.map { it.dir('www/vendor/tasks-vision') }
 }
 
+/*
+ * libheif, so a HEIC opens on a tablet with no signal.
+ *
+ * Its licence is LGPL-3.0 where everything else in this APK is Apache-2.0 or MIT, which is
+ * satisfied by shipping it as its own replaceable file rather than compiling it in - which
+ * is what this is. See web/js/heic.js.
+ */
+tasks.register('stageHeicDecoder', Copy) {
+    description = 'Bundle libheif so iPhone photographs open offline'
+    onlyIf { heicDist.isDirectory() }
+    from(heicDist) { exclude '**/*.map' }
+    into stagedAssets.map { it.dir('www/vendor/libheif') }
+}
+
 tasks.register('pointManifestAtBundledRuntime') {
     description = 'Rewrite the staged model manifest to load the runtime from the APK'
-    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe'
-    onlyIf { ortDist.isDirectory() || mediapipeDist.isDirectory() }
+    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe', 'stageHeicDecoder'
+    onlyIf { ortDist.isDirectory() || mediapipeDist.isDirectory() || heicDist.isDirectory() }
 
     def manifest = stagedAssets.map { it.file('www/models/manifest.json') }
     inputs.dir(webRoot)
@@ -196,6 +212,7 @@ tasks.register('pointManifestAtBundledRuntime') {
         def runtime = (json.runtime ?: [:])
         if (ortDist.isDirectory()) runtime += [ortBase: 'ort/']
         if (mediapipeDist.isDirectory()) runtime += [mediapipeBase: 'vendor/tasks-vision']
+        if (heicDist.isDirectory()) runtime += [heicUrl: 'vendor/libheif/libheif-bundle.mjs']
         json.runtime = runtime
         file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
         logger.lifecycle("Bundled runtimes; manifest runtime = ${runtime}")
@@ -219,5 +236,6 @@ tasks.register('reportBundledModels') {
 }
 
 tasks.named('preBuild') {
-    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe', 'pointManifestAtBundledRuntime', 'reportBundledModels'
+    dependsOn 'stageWebApp', 'stageOnnxRuntime', 'stageMediaPipe', 'stageHeicDecoder',
+            'pointManifestAtBundledRuntime', 'reportBundledModels'
 }

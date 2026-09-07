@@ -5,6 +5,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.ValueCallback;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -21,6 +24,7 @@ import android.view.ViewGroup;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -72,6 +76,19 @@ public class MainActivity extends AppCompatActivity {
     /** Held between launching the picker and its result, for <input type="file">. */
     @Nullable
     private ValueCallback<Uri[]> pendingFileCallback;
+
+    /**
+     * Asks Android for the camera when the page first wants it.
+     *
+     * The page's own request is denied while this runs, because a WebView permission
+     * request cannot be held open across a system dialog. The operator presses Start again
+     * once granted, which is one extra tap and no ambiguity about what happened.
+     */
+    private final ActivityResultLauncher<String> cameraPermission = registerForActivityResult(
+            new ActivityResultContracts.RequestPermission(),
+            granted -> Toast.makeText(this,
+                    granted ? R.string.camera_granted : R.string.camera_denied,
+                    Toast.LENGTH_LONG).show());
 
     private final ActivityResultLauncher<Intent> filePicker = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -140,6 +157,37 @@ public class MainActivity extends AppCompatActivity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            /**
+             * Let the page open the camera for live tracking.
+             *
+             * A WebView denies this by default, silently, and the page then reports that the
+             * camera was refused - which reads as the tablet having no camera. Granted only
+             * for video and only once Android itself has granted it to the app, so the
+             * system permission is still the thing in charge.
+             */
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                boolean wantsCamera = false;
+                for (String resource : request.getResources()) {
+                    if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                        wantsCamera = true;
+                    }
+                }
+                boolean allowed = ContextCompat.checkSelfPermission(
+                        MainActivity.this, Manifest.permission.CAMERA)
+                        == PackageManager.PERMISSION_GRANTED;
+
+                if (wantsCamera && allowed) {
+                    request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                } else if (wantsCamera) {
+                    request.deny();
+                    cameraPermission.launch(Manifest.permission.CAMERA);
+                } else {
+                    // Audio and everything else. This app never needs a microphone.
+                    request.deny();
+                }
+            }
+
             @Override
             public boolean onShowFileChooser(WebView view,
                                              ValueCallback<Uri[]> callback,

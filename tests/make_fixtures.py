@@ -215,6 +215,7 @@ def main() -> int:
     print(f"  {'not_an_image.txt':16s} plain text")
 
     fetch_person_photo(out)
+    fetch_heic_photo(out)
 
     print(f"\nFixtures written to {out}")
     return 0
@@ -252,6 +253,29 @@ def fetch_person_photo(out: Path) -> None:
             "The on-device detector test needs it. Put a photograph containing a person at "
             f"{target} by hand if this machine has no network."
         )
+
+
+# HEIC is what an iPhone shoots and what only Safari decodes, so it is the format most
+# likely to arrive and least likely to open. Nokia publish this sample alongside their HEIF
+# reference implementation.
+HEIC_PHOTO = "https://raw.githubusercontent.com/nokiatech/heif/gh-pages/content/images/autumn_1440x960.heic"
+
+
+def fetch_heic_photo(out: Path) -> None:
+    """Download a real HEIC. A hand-made one would not exercise the decoder honestly."""
+    import urllib.error
+    import urllib.request
+
+    target = out / "photo.heic"
+    if target.is_file() and target.stat().st_size > 1000:
+        print(f"  {'photo.heic':16s} already present")
+        return
+    try:
+        with urllib.request.urlopen(HEIC_PHOTO, timeout=60) as response:
+            target.write_bytes(response.read())
+        print(f"  {'photo.heic':16s} {target.stat().st_size} bytes, fetched")
+    except (urllib.error.URLError, OSError) as problem:
+        raise SystemExit(f"Could not fetch {HEIC_PHOTO}: {problem}")
 
 
 if __name__ == "__main__":

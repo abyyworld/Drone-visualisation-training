@@ -31,7 +31,7 @@ const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.onnx': 'application/octet-stream',
   '.wasm': 'application/wasm', '.png': 'image/png', '.map': 'application/json',
-  '.jpg': 'image/jpeg', '.tflite': 'application/octet-stream',
+  '.jpg': 'image/jpeg', '.tflite': 'application/octet-stream', '.heic': 'image/heic',
 };
 
 // --- expectations, derived from the fixtures -------------------------------------------
@@ -92,8 +92,19 @@ async function buildSite() {
   }
   await cp(mediapipe, join(SITE, 'vendor', 'tasks-vision'), { recursive: true });
 
+  // libheif, for the HEIC an iPhone produces. Served locally for the same reason.
+  const heic = join(ROOT, 'node_modules', 'libheif-js', 'libheif-wasm');
+  if (!existsSync(heic)) {
+    throw new Error('libheif-js not found. Run `npm install libheif-js@1.23.2`.');
+  }
+  await cp(heic, join(SITE, 'vendor', 'libheif'), { recursive: true });
+
   const manifest = JSON.parse(await readFile(join(ROOT, 'web', 'models', 'manifest.json'), 'utf8'));
-  manifest.runtime = { ortBase: '/ort/', mediapipeBase: '/vendor/tasks-vision' };
+  manifest.runtime = {
+    ortBase: '/ort/',
+    mediapipeBase: '/vendor/tasks-vision',
+    heicUrl: '/vendor/libheif/libheif-bundle.mjs',
+  };
 
   // The turbine entry in the shipped manifest is deliberately empty: it is waiting on a
   // model, and its labels and weights described a dataset that has since been removed. The
@@ -386,6 +397,18 @@ async function main() {
     // on that same photograph - no error, just nothing - which is indistinguishable from a
     // frame with nobody in it. This check is what would catch a well-meaning switch back.
     check('the detector is not silently finding nothing', labels.length > 0);
+
+    // HEIC: what an iPhone shoots, and what no browser but Safari will open. It used to be
+    // dropped before anything tried to decode it, because the operating system gives it no
+    // MIME type and file.type.startsWith('image/') therefore said it was not an image.
+    console.log('\nHEIC from a phone');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'photo.heic'));
+    const heicCard = await cardFor(page, 'photo.heic');
+    await heicCard.locator('.badge').waitFor({ timeout: 120000 });
+    check('a HEIC is decoded and analysed rather than refused',
+      (await heicCard.getAttribute('class')).includes('card--analysed'));
+    check('and it is rendered, so an annotated export has something to draw on',
+      await heicCard.locator('canvas').count() === 1);
 
     await page.locator('#engine-provider').selectOption('local');
 

@@ -19,6 +19,7 @@ import { zip } from './zip.js';
 import { detectOnDevice, configureOnDevice, handles as onDeviceHandles } from './ondevice.js';
 import { Tracker } from './track.js';
 import { LiveView } from './live.js';
+import { configureHeic } from './heic.js';
 
 const MODELS_BASE = 'models/';
 const MAX_FILES = 100;
@@ -105,6 +106,7 @@ async function loadManifest() {
     state.manifest = await response.json();
     configureRuntime(state.manifest.runtime ?? {});
     configureOnDevice(state.manifest.runtime ?? {}, state.manifest.ondevice ?? {});
+    configureHeic(state.manifest.runtime ?? {});
   } catch (error) {
     showBanner(
       'error',

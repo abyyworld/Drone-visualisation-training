@@ -60,6 +60,7 @@ const SHELL = [
   'js/ondevice.js',
   'js/track.js',
   'js/live.js',
+  'js/heic.js',
   'prompts/inspection.json',
   'models/manifest.json',
   'manifest.webmanifest',
