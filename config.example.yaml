@@ -123,6 +123,21 @@ temporal:
   # tuning n/m against footage, and read the `persisted` field in the log.
   emit_unconfirmed: false
 
+  # Per-class overrides of n/m. A person at altitude is a few pixels, is
+  # frequently behind canopy or smoke, and flickers far more than a flame front
+  # does -- a track that would confirm at 3-of-5 for fire may never confirm at
+  # all, and a track that never confirms is a person never drawn. So person
+  # confirms sooner and is judged over a longer window. The cost is a busier
+  # overlay; the alternative is silence about someone who is there.
+  #
+  # Absence of a person box still means only that the model produced nothing.
+  # It is not a statement that nobody is present, and no amount of tuning here
+  # makes it one.
+  per_class:
+    person:
+      n: 2
+      m: 6
+
 
 # ---------------------------------------------------------------- stream
 stream:

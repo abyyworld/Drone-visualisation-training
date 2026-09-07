@@ -257,3 +257,78 @@ sources:
     group_regex: "^(?P<group>[^/]+)/"
     licence: "own footage; check operational-release policy before publishing"
     notes: "Missed or mis-boxed detections from our own logs, hand-corrected."
+
+  # --- person, from the air --------------------------------------------------
+  # None of the fire datasets above carry person labels, so this class comes
+  # from separate aerial-person sources. Two consequences worth understanding
+  # before training:
+  #
+  #   1. No image will contain both a fire and a person unless you label one.
+  #      tools/audit_dataset.py flags exactly this, and it is a real limitation
+  #      rather than a false alarm: a model can learn "aerial forest scene =>
+  #      look for fire" and "aerial field scene => look for people", which
+  #      collapses the moment a real incident shows a crew working next to a
+  #      flame front. Mining that combination from your own footage (see
+  #      hard_negatives.md) is the fix, and it matters more than volume.
+  #   2. Person is by far the smallest object here. Check the box-size
+  #      histogram in the audit: if the tiny bucket is thin, the model will
+  #      only find people who are already obvious.
+  - name: heridal
+    path: "{data_root}/HERIDAL"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav
+    classes: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "HERIDAL is research-use; confirm terms before redistribution"
+    notes: >
+      Wilderness search and rescue imagery: people in non-urban terrain shot
+      from altitude. The closest public match to a drone looking for someone in
+      country a wildfire would be burning through.
+
+  - name: sard
+    path: "{data_root}/SARD"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav
+    classes: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "check SARD terms before redistribution"
+    notes: >
+      Search-and-rescue aerial set with people in varied poses -- lying, seated,
+      partly obscured. Posture matters: a casualty is rarely standing, and a
+      model trained only on upright people finds only upright people.
+
+  - name: tinyperson
+    path: "{data_root}/TinyPerson"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: aerial_far
+    classes: [person]
+    weight: 0.6
+    grouping: filename_family
+    licence: "check TinyPerson terms before redistribution"
+    notes: >
+      Maritime and beach scenes, so the background is wrong for wildfire -- but
+      the object scale is exactly right. Included for the tiny-box regime, which
+      is the regime that decides whether this class is useful at altitude.
+
+  - name: visdrone
+    path: "{data_root}/VisDrone"
+    format: yolo
+    images: images
+    labels: labels
+    viewpoint: uav_urban
+    classes: [person]
+    weight: 0.4
+    grouping: filename_family
+    licence: "VisDrone is research-use only; verify before any deployment"
+    notes: >
+      Drone imagery, but urban and traffic-heavy. Weighted down: it teaches
+      people-from-above at useful scales while carrying a scene prior that does
+      not match open country. Map only its pedestrian/people categories.

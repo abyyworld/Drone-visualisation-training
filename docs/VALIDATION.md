@@ -360,3 +360,33 @@ firefighter is looking at the screen.
 Nothing here says anything about real fire: the clip is synthetic and the
 detector is a colour threshold. What it establishes is that the measurement
 works, so the first real run produces a number you can trust.
+
+## Validating the `person` class
+
+Do this separately from fire and smoke, and do not let one average cover both.
+The classes fail differently and a combined number hides the one that matters.
+
+Measure recall for person broken out by:
+
+* **Posture** — standing, seated, lying. A casualty is rarely standing, and a
+  model trained mostly on upright people finds mostly upright people. This is
+  the single most common way an aerial person detector flatters itself.
+* **Occlusion** — in the open, partial canopy, full canopy, behind smoke. Report
+  the canopy numbers separately; they will be much worse, and they are the
+  conditions a wildland search actually happens in.
+* **Altitude and box size** — the tiny bucket is the one that decides whether
+  this class is useful. If tiny recall is near zero, the honest conclusion is
+  that the system finds people only when they are already obvious, and it
+  should be described that way to the crew.
+* **Ground cover** — a person on scrub, on rock, on ash. Contrast against the
+  background matters more than resolution.
+
+What a pass looks like is a judgement for the department, not a number this
+document can set. What is *not* a pass is a single aggregate recall figure with
+no breakdown: that number is dominated by the easy cases and says nothing about
+the hard ones.
+
+Run the miss list and look at the images. For this class especially, the list of
+people the model did not box is the work product — more so than any metric
+computed from it.
+

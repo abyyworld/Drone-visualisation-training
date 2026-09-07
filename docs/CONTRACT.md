@@ -2,7 +2,7 @@
 
 Normative definition of everything crossing a process boundary. The Python
 side is `station/core/types.py`; the browser side is `app/js/wire.js`. Those two
-files and this document must agree. `WIRE_VERSION` is currently **1**.
+files and this document must agree. `WIRE_VERSION` is currently **2**.
 
 Transport: one WebRTC peer connection per tablet, carrying a video track and a
 reliable-ordered data channel named `detections`. Messages are UTF-8 JSON, one
@@ -24,7 +24,7 @@ object per message.
   "source_id": "rtsp://192.168.144.25:8554/main.264",
   "model": {
     "name": "yolo11s-fire", "version": "0.3.1",
-    "classes": ["fire", "smoke"], "weights_sha": "9f2c1ab",
+    "classes": ["fire", "smoke", "person"], "weights_sha": "9f2c1ab",
     "imgsz": 640, "conf_threshold": 0.25
   },
   "detections": [
@@ -64,6 +64,38 @@ otherwise.
 An unknown `v` is a hard parse error on both sides. A tablet that silently
 dropped fields it did not understand would render a partial overlay, and a
 partial overlay is indistinguishable from a quiet scene.
+
+## The `person` class
+
+Added in wire v2, appended so that indices 0 and 1 keep their meaning and
+pre-v2 weights and incident logs still decode.
+
+The version was bumped even though the message *shape* did not change. A v1
+tablet would have parsed a person payload quite happily and drawn it in the
+unknown-class fallback — a thin white dashed box labelled `?`. For a box around
+a human being, being silently mislabelled is worse than the tablet refusing to
+connect, so the refusal is the intended behaviour.
+
+Three rules attach to this class and not to the others:
+
+* **It is never summarised.** No count, no "N people", no tally. A count
+  implies the denominator is known; only the boxes actually drawn are known.
+* **It is never allowed to fall through to a default style.** `app/js/overlay.js`
+  gives it its own colour, its own dash pattern, its own corner treatment and a
+  minimum drawn size, because it is the smallest object on screen and the most
+  consequential to overlook.
+* **Its temporal window is looser.** `temporal.per_class` defaults person to
+  2-of-6 against the global 3-of-5. A person at altitude flickers far more than
+  a flame front, and a track that never confirms is a person never drawn. The
+  cost is a busier overlay; the alternative is silence about someone who is
+  there.
+
+The absence of a person box carries no information about whether anyone is
+present. At altitude a person is a handful of pixels, routinely hidden by
+canopy, smoke or terrain, and easily confused with a rock. Misses are the
+normal case. Personnel accountability comes from roll call and crew tracking,
+never from this feed — `station/core/safety.py` fails the build on text that
+blurs the two.
 
 ## Overlay synchronisation
 

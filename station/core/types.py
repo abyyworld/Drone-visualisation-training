@@ -47,7 +47,9 @@ __all__ = [
     "MSG_STATUS",
     "CLASS_FIRE",
     "CLASS_SMOKE",
+    "CLASS_PERSON",
     "CLASSES",
+    "LIFE_SAFETY_CLASSES",
     "PipelineState",
     "BBox",
     "Detection",
@@ -60,16 +62,40 @@ __all__ = [
 
 #: Bumped on any incompatible change to the shapes below. The tablet refuses to
 #: render a payload whose version it does not understand rather than guessing.
-WIRE_VERSION = 1
+#:
+#: v2 added the ``person`` class. The message *shape* did not change, so an old
+#: tablet would have parsed a person payload happily -- and drawn it in the
+#: fallback style, unlabelled and indistinguishable from a smoke box. For a
+#: class where the object is a human being, a mislabelled box is worse than no
+#: connection, so the version was bumped to force the refusal.
+WIRE_VERSION = 2
 
 MSG_DETECTIONS = "detections"
 MSG_STATUS = "status"
 
 CLASS_FIRE = "fire"
 CLASS_SMOKE = "smoke"
+#: People on the ground, from the air. Added last, deliberately: appending keeps
+#: indices 0 and 1 meaning what they meant, so weights trained before this class
+#: existed still decode correctly and an old incident log still replays.
+#:
+#: This class has a different error profile from the other two and the whole
+#: system has to respect it. A person at altitude occupies a handful of pixels,
+#: is frequently occluded by canopy, smoke or terrain, and is the same size as
+#: a rock. Misses are the normal case, not the failure case. Nothing downstream
+#: may present the absence of a person box as an absence of people -- see
+#: ``station/core/safety.py``, which enforces that in text, and
+#: ``docs/SAFETY.md``, which explains why it is the strictest rule here.
+CLASS_PERSON = "person"
 #: Ordered, and the order is load-bearing: it is the class index order the
 #: trained weights emit. ``tools/export.py`` asserts the exported model agrees.
-CLASSES: tuple[str, ...] = (CLASS_FIRE, CLASS_SMOKE)
+CLASSES: tuple[str, ...] = (CLASS_FIRE, CLASS_SMOKE, CLASS_PERSON)
+
+#: Classes describing a human being. Held separately because several rules key
+#: on it rather than on a literal string: the overlay never lets one of these
+#: fall through to a default style, and the incident log records them whatever
+#: the confidence.
+LIFE_SAFETY_CLASSES: frozenset[str] = frozenset({CLASS_PERSON})
 
 
 class PipelineState:

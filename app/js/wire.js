@@ -20,16 +20,34 @@
  *     nothing at all, and nothing in this module invites any other reading.
  */
 
-/** Bumped on any incompatible change; must equal types.py WIRE_VERSION. */
-export const WIRE_VERSION = 1;
+/**
+ * Bumped on any incompatible change; must equal types.py WIRE_VERSION.
+ *
+ * v2 added the `person` class. The message shape did not change, so a v1 build
+ * would have parsed it and drawn the box in the unknown-class fallback style --
+ * a thin white dashed rectangle labelled '?'. For a box around a human being,
+ * being mislabelled is worse than the tablet refusing to connect, which is why
+ * this is a version bump and not an additive change.
+ */
+export const WIRE_VERSION = 2;
 
 export const MSG_DETECTIONS = 'detections';
 export const MSG_STATUS = 'status';
 
 export const CLASS_FIRE = 'fire';
 export const CLASS_SMOKE = 'smoke';
+export const CLASS_PERSON = 'person';
 /** Ordered, and the order is load-bearing: it is the model's class index order. */
-export const CLASSES = Object.freeze([CLASS_FIRE, CLASS_SMOKE]);
+export const CLASSES = Object.freeze([CLASS_FIRE, CLASS_SMOKE, CLASS_PERSON]);
+
+/**
+ * Classes that describe a human being.
+ *
+ * Kept as a set rather than a string comparison because several rules key on
+ * it: the overlay refuses to let one fall through to the unknown-class style,
+ * and nothing may summarise these away as a count.
+ */
+export const LIFE_SAFETY_CLASSES = Object.freeze(new Set([CLASS_PERSON]));
 
 /** Liveness of the station pipeline. Never a statement about the scene. */
 export const PipelineState = Object.freeze({

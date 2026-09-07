@@ -22,6 +22,7 @@ import pytest
 from station.core.types import (
     CLASSES,
     CLASS_FIRE,
+    CLASS_PERSON,
     CLASS_SMOKE,
     MSG_DETECTIONS,
     MSG_STATUS,
@@ -229,7 +230,7 @@ class TestModelInfo:
 
     def test_classes_default_to_the_contract_order(self):
         assert ModelInfo(name="m", version="1").classes == CLASSES
-        assert CLASSES == (CLASS_FIRE, CLASS_SMOKE)
+        assert CLASSES == (CLASS_FIRE, CLASS_SMOKE, CLASS_PERSON)
 
     def test_classes_survive_as_a_tuple_in_order(self):
         # The order is the trained model's class-index order; a set or a
@@ -468,7 +469,7 @@ class TestParseMessage:
     def test_accepts_a_dict(self):
         assert isinstance(parse_message(PipelineStatus(state="stalled").to_wire()), PipelineStatus)
 
-    @pytest.mark.parametrize("version", [0, 2, 99, "1", None, -1])
+    @pytest.mark.parametrize("version", [0, 1, 3, 99, "2", None, -1])
     def test_unknown_wire_version_is_rejected(self, version):
         # Hard failure, not a best-effort parse. A tablet that silently dropped
         # fields it did not understand would render a partial overlay, and a
@@ -500,10 +501,12 @@ class TestParseMessage:
         with pytest.raises(json.JSONDecodeError):
             parse_message("{not json")
 
-    def test_current_wire_version_is_one(self):
+    def test_current_wire_version_is_two(self):
         # Bumping this is a two-sided change: station/core/types.py,
         # app/js/wire.js and docs/CONTRACT.md must move together.
-        assert WIRE_VERSION == 1
+        # v2 added the person class; see docs/CONTRACT.md for why an additive
+        # class warranted a version bump rather than a silent extension.
+        assert WIRE_VERSION == 2
 
 
 def test_wire_version_matches_the_browser_parser(repo_root):

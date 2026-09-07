@@ -78,6 +78,10 @@ SKIP_DIRS = frozenset(
 #: findings note in this suite's docstring companion, ``test_allowed_contexts_
 #: covers_the_contract_files`` below.
 LOCAL_EXEMPTIONS: dict[str, str] = {
+    "tests/test_person_class.py": (
+        "carries the banned phrasings as parametrised fixtures, asserting that "
+        "each one is refused; the phrases are the test input, not operator text"
+    ),
     "station/core/types.py": (
         "the wire contract's module docstring names the fields this protocol "
         "refuses to have ('No all_clear', 'It does not mean the scene is "
@@ -168,6 +172,19 @@ class TestTheCheckerCatchesViolations:
         ("advice = 'clear to approach'", "clear to approach"),
         ("chip.title = 'Status: OK'", "status: ok"),
         ("readme = 'a fire detector for drones'", "fire detector"),
+        # --- the person class. Higher stakes than the rest of this list: at
+        # altitude a person is a few pixels behind canopy, so an empty screen
+        # over an occupied hillside is the expected output, not a fault.
+        ("banner = 'No one detected'", "no one detected"),
+        ("msg = 'zero casualties found'", "zero casualties"),
+        ("label = '0 people found'", "0 people found"),
+        ("toast('Nobody present')", "nobody present"),
+        ("h3 = 'The building is empty'", "building is empty"),
+        ("status = 'Sector evacuated'", "sector evacuated"),
+        ("line = 'area is clear of people'", "clear of people"),
+        ("summary = 'All personnel accounted for'", "personnel accounted"),
+        ("done = 'Search complete'", "search complete"),
+        ("caption = 'counts the occupants in frame'", "counts occupants"),
         # Note the exact wording: the shipped pattern matches "guarantee
         # detection" but not the plural "guarantees detection" -- see the
         # findings note for this suite.

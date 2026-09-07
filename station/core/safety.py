@@ -5,7 +5,7 @@ reasoning has teeth: ``tests/test_safety_invariants.py`` walks the whole
 repository -- station, PWA, docs -- and fails the build if any of these
 phrases appear in operator-facing text.
 
-The threat model, stated once: RGB fire detection fails toward *silence*.
+The threat model, stated once: RGB detection fails toward *silence*.
 Thin smoke against bright sky, smouldering with no flame, fire under canopy,
 fire at night -- in every one of those the model returns an empty list, which
 is byte-identical to the result it returns for an empty field. A human
@@ -13,6 +13,14 @@ operator knows when they are struggling to see. The model cannot report that
 it is struggling, so the interface must never let an empty result be read as
 an informed all-clear. Absence of evidence is displayed as absence of
 evidence: nothing at all.
+
+The ``person`` class sharpens all of this rather than adding a footnote to it.
+A person seen from a drone is a few pixels, is hidden by canopy and smoke as a
+matter of course, and is easily confused with a rock or a stump. The model will
+miss people who are plainly there. That is tolerable in a tool that says *look
+here* and intolerable in one anybody reads as *nobody is down there* -- so the
+patterns covering people are the strictest in this file, and personnel
+accountability stays with roll call and crew tracking, where it belongs.
 
 This is not a legal disclaimer bolted on at the end. EN 54 and UL 268 govern
 fixed fire-detection installations and do not apply to a drone-feed overlay --
@@ -50,7 +58,11 @@ FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "reports a negative finding as a finding; an empty result is not evidence of absence",
     ),
     (
-        re.compile(r"\b0\s+(fires?|smoke|detections?)\s+(detected|found)\b", re.I),
+        re.compile(
+            r"\b(0|zero|no)\s+(fires?|smoke|detections?|people|persons?|casualties|victims)\s+"
+            r"(detected|found|present|visible|located)\b",
+            re.I,
+        ),
         "a zero count reads as a measurement; it is only a null result",
     ),
     (
@@ -77,6 +89,37 @@ FORBIDDEN_UI_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"\b(guarantee|guaranteed|ensures?)\s+(detection|safety|coverage)\b", re.I),
         "no detection guarantee exists, and false negatives are the known failure mode",
+    ),
+    # --- the person class -------------------------------------------------
+    # These are the strictest entries here, because the object is a human
+    # being and the miss rate is highest. A person at altitude is a few pixels,
+    # is routinely hidden by canopy, smoke or terrain, and looks like a rock.
+    # An empty screen is the expected output over an occupied hillside, so
+    # anything that phrases it as an absence of people is not merely optimistic
+    # -- it is the sentence that gets a search called off.
+    (
+        re.compile(r"\b(no|zero)\s+(one|body|people|persons?|casualties|victims|survivors)\b", re.I),
+        "states that nobody is present; a person the model cannot resolve is the normal case, not a rare one",
+    ),
+    (
+        re.compile(r"\b(nobody|no-one)\s+(there|present|detected|found|visible|inside)\b", re.I),
+        "asserts an absence of people from a null result",
+    ),
+    (
+        re.compile(r"\b(area|zone|sector|building|structure)\s+(is\s+)?(empty|unoccupied|evacuated|clear\s+of\s+people)\b", re.I),
+        "declares a space empty of people -- a search-and-rescue conclusion this system cannot support",
+    ),
+    (
+        re.compile(r"\ball\s+(personnel|crew|firefighters|occupants)\s+(accounted|clear|safe|out)\b", re.I),
+        "a personnel accountability claim; accountability comes from roll call and crew tracking, never from a camera",
+    ),
+    (
+        re.compile(r"\b(search|sweep)\s+(is\s+)?(complete|finished|done)\b", re.I),
+        "implies the model finishing a pass means the area has been searched",
+    ),
+    (
+        re.compile(r"\bcounts?\s+(the\s+)?(people|persons|occupants|survivors)\b", re.I),
+        "a count implies the denominator is known; only the boxes drawn are known",
     ),
 )
 

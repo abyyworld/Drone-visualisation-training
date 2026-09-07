@@ -75,6 +75,17 @@ class TemporalConfig:
     #: Emit tracks that have not yet reached ``n``, flagged as unconfirmed.
     #: Off by default: the point of the filter is to not show flicker.
     emit_unconfirmed: bool = False
+    #: Per-class overrides of ``n``/``m``, e.g. ``{"person": {"n": 2, "m": 6}}``.
+    #:
+    #: Person is easier to lose than a fire is: a few pixels at altitude, often
+    #: behind canopy or smoke, so a track that would confirm at 3-of-5 for a
+    #: flame front may never confirm at all. The default lowers ``n`` for
+    #: person and widens ``m``, trading a calmer overlay for surfacing weaker
+    #: evidence sooner -- which is the right trade when the alternative is
+    #: never drawing a box around someone who is there.
+    per_class: dict[str, dict[str, int]] = field(
+        default_factory=lambda: {"person": {"n": 2, "m": 6}}
+    )
 
 
 @dataclass(slots=True)

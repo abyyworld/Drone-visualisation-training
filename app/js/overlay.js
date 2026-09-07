@@ -21,7 +21,7 @@
  *     renders soft, and a 1 px hairline box in direct sunlight is invisible.
  */
 
-import { CLASS_FIRE, CLASS_SMOKE } from './wire.js';
+import { CLASS_FIRE, CLASS_SMOKE, CLASS_PERSON } from './wire.js';
 
 /**
  * Where the picture actually sits inside the element, in CSS pixels.
@@ -58,16 +58,27 @@ export function computeVideoRect(videoWidth, videoHeight, clientWidth, clientHei
  *
  * Colour is never the only carrier. Red already means something else on an
  * incident ground, and roughly one man in twelve on a fire crew cannot
- * separate these hues reliably -- so fire and smoke also differ in stroke
- * pattern (solid vs dashed), in corner marks, and in a word printed in full.
+ * separate these hues reliably -- so the classes also differ in stroke pattern,
+ * in corner marks, and in a word printed in full.
+ *
+ * `person` gets the loudest treatment of the three, and a minimum drawn size.
+ * That is not emphasis for its own sake: it is the smallest object on screen
+ * and the most consequential to overlook.
  */
 const CLASS_STYLE = Object.freeze({
-  [CLASS_FIRE]: { colour: '#FFB000', label: 'FIRE', dash: [], corners: true },
-  [CLASS_SMOKE]: { colour: '#00D5FF', label: 'SMOKE', dash: [14, 9], corners: false },
+  [CLASS_FIRE]: { colour: '#FFB000', label: 'FIRE', dash: [], corners: true, minPx: 0 },
+  [CLASS_SMOKE]: { colour: '#00D5FF', label: 'SMOKE', dash: [14, 9], corners: false, minPx: 0 },
+  // A person box is tiny -- a few pixels at altitude -- so at natural size it
+  // is easy to miss on a sunlit tablet, which defeats the point of drawing it.
+  // `minPx` inflates the drawn box to a legible minimum without touching the
+  // reported geometry: the operator has to be able to SEE that something was
+  // marked before they can look at it. The third dash pattern and the third
+  // corner treatment keep the class separable without relying on hue.
+  [CLASS_PERSON]: { colour: '#FF57D8', label: 'PERSON', dash: [4, 4], corners: true, minPx: 44 },
 });
 
 /** Anything the station names that this build has no rule for. Still drawn. */
-const UNKNOWN_STYLE = { colour: '#FFFFFF', label: '?', dash: [3, 6], corners: false };
+const UNKNOWN_STYLE = { colour: '#FFFFFF', label: '?', dash: [3, 6], corners: false, minPx: 0 };
 
 const HALO = 'rgba(0, 0, 0, 0.88)';
 

@@ -265,3 +265,52 @@ These belong in the operator briefing, not only in a repository:
 The design response to that list is not to promise it will improve. It is that
 the operator is watching the video, the overlay only ever adds a hint, and the
 system never says the words that would let a miss become a decision.
+
+## The `person` class
+
+Person detection was added at the department's request and with approval. It
+changes the risk profile of the system, so it is worth being explicit about
+what changed and what did not.
+
+**What did not change** is the invariant. The overlay says *look here*. It has
+never said *there is nothing there*, and it says it no less loudly now that the
+thing it might miss is a person.
+
+**What changed** is how much the invariant matters. A flame front is bright,
+large and persistent. A person seen from a drone at altitude is a handful of
+pixels, is routinely hidden by canopy, smoke or terrain, holds still, is often
+lying rather than standing, and looks a great deal like a rock. Misses are not
+an edge case for this class — over occupied ground, an empty screen is the
+expected output.
+
+That is tolerable in a tool nobody reads as a search. It is catastrophic in one
+somebody does. So four things are structural rather than advisory:
+
+1. **No count, ever.** Not "3 people", not "0 people". A count implies you know
+   the denominator; you know only the boxes drawn. `station/core/safety.py`
+   fails the build on counting language.
+2. **No accountability claim.** "All personnel accounted for", "sector
+   evacuated", "building is empty", "search complete" — all refused. Personnel
+   accountability comes from roll call and crew tracking. A camera cannot do it
+   and must not appear to.
+3. **Never anonymised on screen.** `app/js/overlay.js` gives person its own
+   colour, dash pattern, corner treatment, printed word and a minimum drawn
+   size. A class with no rule falls through to a thin white box labelled `?`,
+   and a human being is not a `?`. `tests/test_person_class.py` enforces this.
+4. **A looser temporal window.** Person confirms at 2-of-6 against the global
+   3-of-5, because a person flickers more than a flame front and a track that
+   never confirms is a person never drawn. This buys a busier overlay, which is
+   the right way round for this class.
+
+**The failure that actually worries us** is not a false box. It is a crew
+watching a screen with no boxes on it, over ground where someone is lying under
+canopy, and reading that screen as information. Nothing in the software can
+prevent that if the system is described wrongly — which is why it is described,
+everywhere, as a situational-awareness aid over video an operator is already
+watching, and never as a search tool.
+
+Validation follows from that: `docs/VALIDATION.md` requires false negatives to
+be measured for person separately, and broken out by occlusion and posture,
+because a model that finds standing people in the open and nobody under trees
+will look excellent in aggregate and fail at the only moment it matters.
+

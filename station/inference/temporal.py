@@ -110,6 +110,18 @@ class TemporalFilter:
         #: track id after a seek would let the tablet draw a line between two
         #: unrelated regions and call it one continuous fire.
         self._next_id: int = 1
+        # Resolved once: a per-class (n, m), falling back to the global pair.
+        # Validated here rather than at use, so a bad override fails at startup
+        # on the bench instead of silently mis-gating a class during an incident.
+        self._per_class: dict[str, tuple[int, int]] = {}
+        for cls, over in (getattr(cfg, "per_class", None) or {}).items():
+            n = int(over.get("n", cfg.n))
+            m = int(over.get("m", cfg.m))
+            if not 1 <= n <= m:
+                raise ValueError(
+                    f"temporal.per_class[{cls!r}]: need 1 <= n <= m, got n={n}, m={m}"
+                )
+            self._per_class[str(cls)] = (n, m)
         self._last_pts: float | None = None
         self._frames_seen: int = 0
 
@@ -256,6 +268,10 @@ class TemporalFilter:
             taken_dets.add(det_idx)
         return matches
 
+    def _window(self, cls: str) -> tuple[int, int]:
+        """The (n, m) in force for a class."""
+        return self._per_class.get(cls, (self.cfg.n, self.cfg.m))
+
     def _new_track(self, det: Detection, pts: float) -> Track:
         track = Track(
             track_id=self._next_id,
@@ -264,10 +280,10 @@ class TemporalFilter:
             conf=det.conf,
             first_seen_pts=pts,
             last_seen_pts=pts,
-            window=deque([True], maxlen=self.cfg.m),
+            window=deque([True], maxlen=self._window(det.cls)[1]),
         )
         self._next_id += 1
-        track.confirmed = track.hits_in_window >= self.cfg.n  # true only when n == 1
+        track.confirmed = track.hits_in_window >= self._window(det.cls)[0]  # true only when n == 1
         return track
 
     def _apply_hit(self, track: Track, det: Detection, pts: float) -> None:
@@ -277,7 +293,7 @@ class TemporalFilter:
         track.age = 0
         track.hits += 1
         track.window.append(True)
-        if track.hits_in_window >= self.cfg.n:
+        if track.hits_in_window >= self._window(track.cls)[0]:
             track.confirmed = True
 
     def _apply_miss(self, track: Track) -> None:
