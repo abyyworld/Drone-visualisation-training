@@ -51,10 +51,43 @@ capture-ID blocks, polygons normalised to boxes.
 - `report_generator.py` — CLI, consumes the web app's JSON export
 - Three Kaggle notebooks: turbine, solar, gate
 
+## The engine split
+
+The app now has two engines, chosen in the UI.
+
+**On-device** is the ONNX path described above and is still the goal. **Provider API**
+(`web/js/vlm.js`, three providers, key entered in the page) sends the image to a vision model
+instead. It exists because the trained detector reported zero detections on a turbine with a
+blade severed in half, and no amount of retraining on a class list that lacks "structural
+failure" fixes that.
+
+The API is a bridge, not the destination:
+
+- `tools/vlm_inspect.py` runs the same prompt from the command line and writes a label
+  sidecar per image, plus `inspection_summary.json` in the schema `report_generator.py`
+  already consumes.
+- `tools/vlm_to_yolo.py` accumulates reviewed sidecars into a YOLO dataset, split by whole
+  inspection so validation is not a memorisation test.
+- The prompt itself is `web/prompts/inspection.json`, read by both the browser and the CLI so
+  they cannot diverge.
+
+That dataset is made of imagery from the actual drone at the actual framing, which is the one
+thing the failed model never had. Train on it and the API becomes optional.
+
+Real-time never gets an API. The wildfire and crowd stations decode video at 25fps on a network
+with no internet (`docs/DEPLOYMENT.md`); a network round trip cannot be in that loop.
+
+## Deployment on a tablet
+
+`docs/INSTALL-tablet.md`. Web app manifest plus a service worker: installs from the browser
+with an icon and its own window, no APK to sign. The on-device engine works offline once the
+models are cached; the API engines cannot, and the app says so rather than queueing.
+
 ## What does not exist
 
-**No models are trained.** That is the whole remaining task. `best.pt` is the v1 model and
-must not be deployed.
+**No models are trained.** `archive/turbine-v2/` holds the superseded one, with its metrics and
+a written account of why 0.759 mAP50 did not survive a real photograph. It must not be
+deployed.
 
 ---
 

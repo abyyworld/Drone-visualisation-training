@@ -1,18 +1,50 @@
 # Drone Inspection
 
-Browser-based defect detection for wind turbine blades and solar panels. Images are analysed
-client-side with ONNX Runtime Web, so nothing is uploaded anywhere, there is no server to pay
-for, and GitHub Pages hosts the whole thing as static files.
+Defect analysis for wind turbine blades and solar panels, from drone photographs or video.
+Static site, no server, hosted on GitHub Pages, and installable on a tablet as an app with an
+icon.
 
 **Live:** https://abyyworld.github.io/Drone-visualisation-training/
 
-## State: awaiting a dataset
+## Two engines
 
-There is no model deployed and no training data in this repo. The site loads, reports that no
-detectors are available, and disables upload rather than pretending.
+| | On-device model | Provider API |
+|---|---|---|
+| Where it runs | This browser, via ONNX Runtime Web | Anthropic, Google or OpenAI |
+| Cost | Nothing | Per image |
+| Offline | Yes, once cached | No |
+| Images leave the device | Never | Yes, to the provider you pick |
+| What it can find | Only its trained classes | Anything it can see and describe |
+| Box precision | Tight | Approximate |
+| Needs a dataset first | Yes | No |
 
-The previous turbine dataset was removed. It scored well - mAP50 0.759 on a split with zero
-near-duplicate leakage, 0.5% false positives across 400 healthy blades - and then reported
+Pick one in the app. The header badge stops claiming local processing the moment an API engine
+is selected, because that claim would then be false. The key is held in the tab, never written
+to disk, and sent only to the provider chosen.
+
+For batch work and for building training data, `tools/vlm_inspect.py` does the same thing on
+the command line with the same prompt (`web/prompts/inspection.json`, read by both, so the
+page and the tool cannot grade the same photograph differently).
+
+## Video
+
+Drop an MP4 or WebM clip. It is sampled, scored for sharpness by Laplacian variance,
+deduplicated by difference hash, and reduced to a couple of dozen distinct in-focus frames.
+Five minutes at 25fps is 7,500 frames and most of them are the same photograph.
+
+It selects for coverage, not for interest: a defect visible in exactly one blurred frame can
+be dropped. Upload a still of anything suspicious.
+
+## On the tablet
+
+`docs/INSTALL-tablet.md`. It installs from the browser as a home-screen app, no APK. The app
+shell and the on-device models are cached, so the local engine works with no signal. The API
+engines cannot, and the app says so rather than queueing work that will never send.
+
+## Why the trained model is not the default
+
+`archive/turbine-v2/` holds the previous detector. It scored mAP50 0.759 on a split with zero
+near-duplicate leakage and 0.5% false positives across 400 healthy blades, and then reported
 "no defects" on a photograph of a turbine with a blade severed in half. Both facts are true,
 and the second is the one that matters.
 
@@ -28,7 +60,28 @@ a field is a different scale entirely, and detectors do not bridge that gap.
 wide framing is precisely what the model learned means *no defect*. That was the framing of the
 photograph it failed on. `tools/rebuild_turbine.py` printed this caveat on every run.
 
-## What a replacement needs
+## The plan: get back to a trained model, with the right data
+
+The API is not the destination. It is what makes the destination reachable.
+
+Every inspection writes a label sidecar. `tools/vlm_to_yolo.py` turns a pile of those into a
+YOLO dataset - split by whole inspection so validation is not a memorisation test, reviewed
+sidecars only, refusing to run on a label with no place in the class table rather than
+guessing one.
+
+That dataset is made of the operator's own photographs, at the operator's own framing, from
+the operator's own drone. It is the one thing the failed model never had. When it reaches the
+size below, train on it and the API becomes optional.
+
+```bash
+python3 tools/vlm_inspect.py photos/ --provider anthropic --domain turbine
+# review the annotated copies, correct the sidecars, set "reviewed": true
+python3 tools/vlm_to_yolo.py inspections/ --dry-run          # how much is there
+python3 tools/vlm_to_yolo.py inspections/ --out datasets/turbine_field
+python3 tools/audit_dataset.py datasets/turbine_field
+```
+
+## What a replacement dataset needs
 
 - **A class list covering the damage that matters**, structural failure included. Decided
   before collection, not after.
@@ -52,7 +105,7 @@ new dataset  ->  tools/rebuild_turbine.py   group-aware split, polygons to boxes
              ->  tools/publish_results.py   commits the model and its metrics
 ```
 
-Run it on Kaggle with `training/turbine/turbine_v2_kaggle.ipynb` - **Save Version → Save & Run
+Run it on Kaggle with `training/turbine/turbine_kaggle.ipynb` - **Save Version → Save & Run
 All (Commit)**, never a Draft Session. All hyperparameters live in `tools/train_turbine.py`,
 which the notebook clones fresh each run, so a stale notebook cannot produce a stale model.
 
@@ -75,7 +128,9 @@ is reported as unavailable rather than failing silently.
 
 ```bash
 npm run serve          # http://localhost:8080
-npm test               # 37 browser checks (needs playwright)
+npm test               # browser checks + the provider adapters (needs playwright)
+npm run test:vlm       # provider adapters only, no browser, no network
+python3 -m pytest tests/                # 497 checks
 python3 tests/test_export_contract.py   # proves the JS decoder matches Ultralytics
 ```
 
