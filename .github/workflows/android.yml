@@ -29,6 +29,10 @@ jobs:
   apk:
     name: APK
     runs-on: ubuntu-latest
+    # A build this small takes about three minutes. Anything past this is not slowness, it
+    # is a hang, and the first attempt did hang - so fail and say so rather than sitting on
+    # a runner for six hours.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +42,20 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@v4
+
+      # The build must never be able to ask a question. The first run of this workflow sat
+      # on the Build step for twenty-five minutes: the Android Gradle Plugin will download
+      # a missing SDK platform, and when the licence has not been accepted it waits on
+      # standard input, which on a runner never arrives. Accepting the licences and
+      # installing the exact packages up front means the plugin has nothing left to fetch.
+      - name: Prepare the Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "build-tools;35.0.0" "platform-tools" < /dev/null
+          echo "Installed platforms:"
+          ls "$ANDROID_HOME/platforms"
 
       - uses: actions/setup-node@v4
         with:
@@ -83,11 +101,14 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # Redirecting stdin from /dev/null is the belt to the braces above: anything in the
+        # build that still tries to read a console gets end-of-file and fails immediately,
+        # instead of blocking until the job times out.
         run: |
           ./gradlew ${{ steps.signing.outputs.signed == 'true' && 'assembleRelease' || 'assembleDebug' }} \
-            --no-daemon \
+            --no-daemon --console=plain --stacktrace \
             -PversionCode=${{ steps.version.outputs.code }} \
-            -PversionName=${{ steps.version.outputs.name }}
+            -PversionName=${{ steps.version.outputs.name }} < /dev/null
 
       - name: Name the artifact
         id: apk
