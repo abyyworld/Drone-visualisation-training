@@ -37,7 +37,7 @@ jobs:
       - name: Report which models are being published
         run: |
           echo "Models in web/models/:"
-          ls -lh web/models/*.onnx 2>/dev/null || echo "  none yet — the site will show its 'not deployed' banner"
+          ls -lh web/models/*.onnx 2>/dev/null || echo "  none yet - the site will show its 'not deployed' banner"
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

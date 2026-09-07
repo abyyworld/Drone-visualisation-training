@@ -11,8 +11,8 @@ for, and GitHub Pages hosts the whole thing as static files.
 There is no model deployed and no training data in this repo. The site loads, reports that no
 detectors are available, and disables upload rather than pretending.
 
-The previous turbine dataset was removed. It scored well — mAP50 0.759 on a split with zero
-near-duplicate leakage, 0.5% false positives across 400 healthy blades — and then reported
+The previous turbine dataset was removed. It scored well - mAP50 0.759 on a split with zero
+near-duplicate leakage, 0.5% false positives across 400 healthy blades - and then reported
 "no defects" on a photograph of a turbine with a blade severed in half. Both facts are true,
 and the second is the one that matters.
 
@@ -32,7 +32,7 @@ photograph it failed on. `tools/rebuild_turbine.py` printed this caveat on every
 
 - **A class list covering the damage that matters**, structural failure included. Decided
   before collection, not after.
-- **Negatives from the same domain as the positives** — healthy blade, same range, same camera,
+- **Negatives from the same domain as the positives** - healthy blade, same range, same camera,
   same framing. This is the single biggest fix.
 - **Range coverage matching the capture hardware**, so the training distribution and the
   deployment distribution are the same one.
@@ -52,7 +52,7 @@ new dataset  ->  tools/rebuild_turbine.py   group-aware split, polygons to boxes
              ->  tools/publish_results.py   commits the model and its metrics
 ```
 
-Run it on Kaggle with `training/turbine/turbine_v2_kaggle.ipynb` — **Save Version → Save & Run
+Run it on Kaggle with `training/turbine/turbine_v2_kaggle.ipynb` - **Save Version → Save & Run
 All (Commit)**, never a Draft Session. All hyperparameters live in `tools/train_turbine.py`,
 which the notebook clones fresh each run, so a stale notebook cannot produce a stale model.
 

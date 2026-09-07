@@ -23,7 +23,7 @@ much it buys:
    is there, it does not escalate, and nobody acts on it without seeing the
    video. That is what makes an occasional wrong box a cost rather than a
    hazard, and it is why the box is drawn on a canvas over the video instead of
-   being burned into the pixels — the operator can always see what is under it.
+   being burned into the pixels - the operator can always see what is under it.
 
 Everything below is written as: what it is, what the operator sees, why the
 model does it, and what to do. "Mitigation" always means data first.
@@ -38,8 +38,8 @@ model does it, and what to do. "Mitigation" always means data first.
 | 2 | Red apparatus | fire | staging area, roadside | mine own footage |
 | 3 | Brake lights, beacons, strobes | fire | traffic, ingress route | temporal filter + mined data |
 | 4 | Golden-hour light | fire (everywhere) | first/last hour of flying | dawn/dusk negatives |
-| 5 | Red roofs, terracotta | fire | wildland–urban interface, nadir | nadir negatives from own flights |
-| 6 | Autumn foliage | fire | September–November, deciduous | seasonal negatives |
+| 5 | Red roofs, terracotta | fire | wildland-urban interface, nadir | nadir negatives from own flights |
+| 6 | Autumn foliage | fire | September-November, deciduous | seasonal negatives |
 | 7 | Dust plumes | smoke | dirt roads, rotor wash, dozer line | mine own footage; FASDD |
 | 8 | Steam, fog, low cloud | smoke | dawn valleys, cooling plant, damp fuel | fog/vapour negatives |
 | 9 | Lens flare, sensor bloom | fire | sun in or near frame | flare-through footage; hood |
@@ -50,14 +50,14 @@ model does it, and what to do. "Mitigation" always means data first.
 **Operator sees** small boxes tracking with the crew.
 
 **Why** high-vis orange and fluorescent yellow-green are, in RGB, the most
-saturated small objects in a wildland scene — brighter and more saturated than
+saturated small objects in a wildland scene - brighter and more saturated than
 most real flame at distance. Retroreflective striping adds specular highlights
 that mimic flame's local contrast. A model trained mostly on "orange blob in
 dark vegetation" has learned exactly this feature.
 
 **Why it is the worst one on the list** it puts a marker on the crew. An
 operator who learns that boxes appear on their own people learns to discount
-boxes, and that habit is the actual risk here — worse than the box itself.
+boxes, and that habit is the actual risk here - worse than the box itself.
 
 **Mitigation** the only data that fixes this is *your* PPE, at *your* flight
 altitude, under *your* camera. Fly a training sortie over a staged crew and
@@ -88,7 +88,7 @@ a lot of the perceived false-positive rate for very few actual frames.
 
 **Operator sees** a box that appears and disappears at a road junction.
 
-**Why** small, extremely saturated red/amber, and — the trap — *flickering*.
+**Why** small, extremely saturated red/amber, and - the trap - *flickering*.
 Flicker is one of the features that distinguishes flame from a red object, so
 a beacon is a red object that also has the right temporal signature.
 
@@ -103,7 +103,7 @@ these frames goes a long way because the feature is so distinctive.
 ### 4. Golden-hour light
 
 **Operator sees** boxes scattered over sunlit slopes, tree crowns and rock,
-for the first and last hour of the flying day — which is when much of the
+for the first and last hour of the flying day - which is when much of the
 flying happens.
 
 **Why** a global warm colour cast shifts the whole scene toward the model's
@@ -123,7 +123,7 @@ normalisation removes it. Measure before and after on real footage.
 
 ### 5. Red roofs and terracotta
 
-**Operator sees** persistent boxes on buildings in the wildland–urban
+**Operator sees** persistent boxes on buildings in the wildland-urban
 interface, seen from nadir or near-nadir.
 
 **Why** a large uniform red region viewed from above, with no motion and no
@@ -131,7 +131,7 @@ plume. The interface is also where the model matters most, so this competes
 directly with the detections that count.
 
 **Mitigation** nadir background imagery over housing. This one is
-viewpoint-specific enough that ground-level datasets do not help at all — which
+viewpoint-specific enough that ground-level datasets do not help at all - which
 is the general argument for `viewpoint` weighting in `dataset_config.yaml`.
 
 ### 6. Autumn foliage
@@ -157,7 +157,7 @@ aircraft during a low hover.
 **Why** the single most likely false smoke detection for a drone. A dust plume
 has the right shape, the right motion, the right diffuse edges and often the
 right colour. Smoke and dust differ mainly in colour temperature and in how
-they disperse with height — dust settles, smoke rises and shears.
+they disperse with height - dust settles, smoke rises and shears.
 
 **Mitigation** background footage of vehicles on dirt roads and of rotor wash,
 from the air. Also worth annotating: the *tail* of a genuine plume is often
@@ -179,7 +179,7 @@ steam and thin white smoke are close to the same object. Note the direction of
 the danger here: this confuser sits right on top of the detection we most want,
 because thin white smoke on a bright sky is already the hardest true positive.
 
-**Mitigation** fog and vapour background imagery — and accept a worse trade
+**Mitigation** fog and vapour background imagery - and accept a worse trade
 here than elsewhere. Suppressing steam aggressively will suppress early thin
 smoke, which is the detection that buys the most time. Prefer to leave this one
 noisy and let the operator judge it.
@@ -208,7 +208,7 @@ not with the *scene*, which is also how an operator recognises it instantly.
 tarmac, or a metal roof.
 
 **Why** specular glint is small, extremely bright, saturated toward white-warm,
-and flickers frame to frame — a good match for distant flame, which is exactly
+and flickers frame to frame - a good match for distant flame, which is exactly
 what we are trying hardest to detect.
 
 **Mitigation** background footage over water at low sun angle. This is one of
@@ -221,7 +221,7 @@ incoherently frame to frame and rarely holds an IoU match for 3 of 5 frames.
 
 Campfires, barbecues, chimneys, burn barrels, controlled burns and the flare
 stack at a plant are all **correct** detections. They are not false positives
-and must never be trained away — a model taught that a small managed fire is
+and must never be trained away - a model taught that a small managed fire is
 background is a model taught to ignore a small fire.
 
 They are an *operational* filtering problem, and the right place to resolve
@@ -236,7 +236,7 @@ there.
 ## What you must not do
 
 * **Do not raise `conf_threshold` to make the catalogue go away.** It removes
-  distant, thin and early detections first — the ones worth the most — and it
+  distant, thin and early detections first - the ones worth the most - and it
   does so invisibly. If you change it, re-run the false-negative evaluation on
   real footage and record both numbers.
 * **Do not suppress small boxes.** The smallest boxes are the earliest
@@ -261,13 +261,13 @@ there.
 result, including the empty ones, with pts, model version and confidence, plus
 the recorded video and a pts → (segment, offset) index. That means a false
 positive seen in the field on Tuesday can be a training image on Wednesday, at
-the correct viewpoint, camera and terrain — which no public dataset can offer.
+the correct viewpoint, camera and terrain - which no public dataset can offer.
 
 The loop is: **review with the video → export frames → label → merge → audit →
 retrain → measure**. Reviewing against the video is not optional. A detection
 record on its own cannot tell you whether a box was wrong.
 
-### Step 1 — find the candidates
+### Step 1 - find the candidates
 
 ```bash
 # What did this incident actually produce? Read the summary first; it prints
@@ -284,7 +284,7 @@ Watch each one in the recorded video before exporting anything. Roughly a
 quarter of what looks like a false positive in a text listing turns out to be a
 real detection you had not noticed, which is the system doing its job.
 
-### Step 2 — export the frames
+### Step 2 - export the frames
 
 This snippet turns confirmed-wrong detections into images on disk, one
 directory per incident, so that `dataset_config.yaml`'s `mined_negatives`
@@ -342,7 +342,7 @@ Without PyAV, the same seek is one ffmpeg call per frame:
 ffmpeg -ss "$OFFSET" -i "$SEGMENT" -frames:v 1 -q:v 2 "$OUT/$PTS.jpg"
 ```
 
-### Step 3 — label honestly
+### Step 3 - label honestly
 
 Three outcomes per exported frame, and only you and the video can decide which:
 
@@ -353,12 +353,12 @@ Three outcomes per exported frame, and only you and the video can decide which:
   the plume and half the hillside. Re-box it correctly and put it under
   `mined/positives`. A sloppy box here is worse than no box.
 * **Something to box that the model missed.** Box it and file it under
-  `mined/positives` too — these are the most valuable images in the whole
+  `mined/positives` too - these are the most valuable images in the whole
   pipeline and the only ones that directly attack the failure mode that
   matters. Note the pts in the incident's notes so the false-negative audit can
   find it again.
 
-### Step 4 — merge, audit, retrain, measure
+### Step 4 - merge, audit, retrain, measure
 
 ```bash
 # Flip mined_negatives / mined_positives to `enabled: true` in dataset_config.yaml
@@ -369,8 +369,8 @@ python3 tools/audit_dataset.py --data datasets/wildfire-merged/data.yaml
 Then retrain (`training/train_kaggle.ipynb`) and compare against the *previous*
 model on the *same* held-out footage. Two numbers, both required:
 
-* the false positives you were trying to remove — did they go?
-* **recall on distant and thin targets — did it drop?**
+* the false positives you were trying to remove - did they go?
+* **recall on distant and thin targets - did it drop?**
 
 Mining hard negatives is a recall-for-precision trade whether or not you
 measure it. Measure it. A model that stopped boxing the fire truck and also

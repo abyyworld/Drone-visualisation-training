@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>wildfire-watch — device self-test</title>
+<title>wildfire-watch - device self-test</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <style>
@@ -44,7 +44,7 @@
   <div id="rows"></div>
   <div class="sub" style="margin-top:1rem">
     Core function is video plus overlay. Those need a secure context and WebRTC only.
-    A service worker and home-screen install are conveniences — if they fail, a plain
+    A service worker and home-screen install are conveniences - if they fail, a plain
     browser tab still works, and that is the documented fallback.
   </div>
 </main>
@@ -101,10 +101,10 @@ const CHECKS = [
   },
   {
     id: 'rvfc', name: 'requestVideoFrameCallback', critical: false,
-    why: 'Enables exact overlay alignment (sync tier 1), matching each box to the frame it was computed from. Without it the tablet estimates the offset instead — workable, slightly less precise.',
+    why: 'Enables exact overlay alignment (sync tier 1), matching each box to the frame it was computed from. Without it the tablet estimates the offset instead - workable, slightly less precise.',
     run: async () => {
       const ok = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
-      return { ok, detail: ok ? 'available — tier 1 sync possible' : 'absent — falls back to the offset estimator (tier 2)' };
+      return { ok, detail: ok ? 'available - tier 1 sync possible' : 'absent - falls back to the offset estimator (tier 2)' };
     },
   },
   {
@@ -124,23 +124,23 @@ const CHECKS = [
     id: 'wake', name: 'Screen Wake Lock', critical: false,
     why: 'A tablet that sleeps mid-incident is useless. If unsupported, disable auto-lock in device settings before an incident.',
     run: async () => {
-      if (!('wakeLock' in navigator)) return { ok: false, detail: 'navigator.wakeLock is undefined — set auto-lock to Never' };
+      if (!('wakeLock' in navigator)) return { ok: false, detail: 'navigator.wakeLock is undefined - set auto-lock to Never' };
       try {
         const lock = await navigator.wakeLock.request('screen');
         await lock.release();
         return { ok: true, detail: 'acquired and released' };
       } catch (err) {
-        return { ok: false, detail: `request threw: ${err && err.message ? err.message : err} — set auto-lock to Never` };
+        return { ok: false, detail: `request threw: ${err && err.message ? err.message : err} - set auto-lock to Never` };
       }
     },
   },
   {
     id: 'installed', name: 'Running as an installed PWA', critical: false,
-    why: 'Reports how this page was opened. A browser tab is a supported way to run — this is information, not a requirement.',
+    why: 'Reports how this page was opened. A browser tab is a supported way to run - this is information, not a requirement.',
     run: async () => {
       const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
       return { ok: true, warn: !standalone,
-               detail: standalone ? 'standalone (installed to home screen)' : 'browser tab — supported, and the documented fallback' };
+               detail: standalone ? 'standalone (installed to home screen)' : 'browser tab - supported, and the documented fallback' };
     },
   },
   {
@@ -168,7 +168,7 @@ const nodes = new Map();
 
 for (const c of CHECKS) {
   const row = document.createElement('div'); row.className = 'row';
-  const badge = document.createElement('div'); badge.className = 'badge pend'; badge.textContent = '—';
+  const badge = document.createElement('div'); badge.className = 'badge pend'; badge.textContent = '-';
   const body = document.createElement('div');
   body.innerHTML = `<div class="name"></div><div class="why"></div><div class="detail"></div>`;
   body.querySelector('.name').textContent = c.name + (c.critical ? ' (required)' : ' (optional)');
@@ -197,7 +197,7 @@ document.getElementById('run').addEventListener('click', async (ev) => {
     verdict.innerHTML = `<strong>${criticalFail} required check failed.</strong> This device cannot run the overlay as configured. Start with the secure-context row: on iOS the certificate must be installed <em>and</em> enabled under Settings → General → About → Certificate Trust Settings.`;
   } else if (optionalFail) {
     verdict.style.borderColor = '#ffa94d';
-    verdict.innerHTML = `<strong>Core function works.</strong> ${optionalFail} optional feature unavailable — run as a browser tab and, if Wake Lock failed, set auto-lock to Never. Video and overlay are unaffected.`;
+    verdict.innerHTML = `<strong>Core function works.</strong> ${optionalFail} optional feature unavailable - run as a browser tab and, if Wake Lock failed, set auto-lock to Never. Video and overlay are unaffected.`;
   } else {
     verdict.style.borderColor = '#8ce99a';
     verdict.innerHTML = '<strong>Everything passed.</strong> Home-screen install, offline caching and exact overlay sync are all available on this device.';

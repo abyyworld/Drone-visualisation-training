@@ -1,4 +1,4 @@
-# training/ — building the model the ground station runs
+# training/ - building the model the ground station runs
 
 This directory produces one artifact: a `yolo11s` checkpoint that emits two
 classes, `fire` and `smoke`, **in that index order**, which is
@@ -25,7 +25,7 @@ watching, and those boxes mean *look here*.
 
 It cannot mean the opposite. RGB fire and smoke models fail toward **silence**:
 thin smoke against a bright sky, smouldering with no visible flame, fire under
-canopy, fire at night — in every one of those the model returns an empty list,
+canopy, fire at night - in every one of those the model returns an empty list,
 and that empty list is byte-identical to the one it returns for an empty field.
 No metric in this directory changes that, so no metric in this directory may be
 quoted as coverage. See `station/core/safety.py`, which enforces the language
@@ -48,7 +48,7 @@ python3 -m pip install pillow numpy          # only for mask-format sources, and
 ```
 
 `prepare_datasets.py` deliberately imports nothing heavy at module level. It
-runs on a laptop with no GPU, no ffmpeg and no PyTorch — the same constraint the
+runs on a laptop with no GPU, no ffmpeg and no PyTorch - the same constraint the
 rest of the repo's pure-logic modules hold to. Pillow is needed only if you
 enable a `format: mask` source (FLAME, Corsican); without it those sources fail
 with a clear message and the rest of the merge still works.
@@ -58,7 +58,7 @@ Training itself needs `ultralytics` and a GPU, which is what
 
 ### 1. Get the raw datasets
 
-Download and unpack under `datasets/raw/` (or anywhere — `--data-root` points at
+Download and unpack under `datasets/raw/` (or anywhere - `--data-root` points at
 it). Add `datasets/` to your `.gitignore`; none of this belongs in git.
 
 ```
@@ -78,7 +78,7 @@ before you redistribute anything trained on them, and record what you checked.
 
 The layout above is what the shipped config expects. If yours differs, change
 the `images:` / `labels:` / `annotations:` keys rather than moving files around
-— the config is the record of what was merged.
+- the config is the record of what was merged.
 
 ### 2. Merge
 
@@ -120,7 +120,7 @@ for a quick smoke-test merge, `--copy-mode copy` where symlinks will not survive
 (packaging the merge as a Kaggle dataset, for instance), `--force` to overwrite,
 `--audit` to run the audit immediately afterwards and inherit its exit code.
 
-### 3. Audit — the gate
+### 3. Audit - the gate
 
 ```bash
 python3 tools/audit_dataset.py --data datasets/wildfire-merged/data.yaml
@@ -146,13 +146,13 @@ Compute reality, `yolo11s` at 640, batch 16, on a Kaggle P100:
 
 | Dataset | Images | 50 epochs | Fits Kaggle's 9 h session? |
 |---|---|---|---|
-| Full FASDD | 122,634 | ~12–16 h | **No** |
+| Full FASDD | 122,634 | ~12-16 h | **No** |
 | Weighted merge subset | ~30,000 | ~4 h | Yes |
 | FLAME + Boreal (UAV only) | ~10,000 | ~1.5 h | Yes |
 
-**For a full-FASDD run, rent a GPU.** A 4090 on Vast.ai or RunPod is 4–6× a
+**For a full-FASDD run, rent a GPU.** A 4090 on Vast.ai or RunPod is 4-6× a
 P100 for this workload and costs about **$2** for the whole run. A 14-hour job
-squeezed across two Kaggle sessions is not free — it is a resume mechanism you
+squeezed across two Kaggle sessions is not free - it is a resume mechanism you
 have to trust, twice, and a session timeout mid-run is exactly what wasted the
 sibling project's first attempt. Kaggle is the right tool for the ~30k merge,
 the UAV-only runs and anything where the point is a relative comparison.
@@ -167,7 +167,7 @@ epoch it stopped on.
 
 1. Copy `model_card.json` next to the weights and set `inference.weights`,
    `inference.model_name` and `inference.model_version` from it. Every logged
-   frame then names the model that produced it — without that an incident log
+   frame then names the model that produced it - without that an incident log
    cannot be replayed against the model that generated it.
 2. Evaluate on **your own drone footage**, not the val split. The val split
    shares cameras and terrain with training; your airframe does not.
@@ -190,8 +190,8 @@ has looked at.
 `tools/audit_dataset.py` detects it. `prepare_datasets.py` prevents it, which
 is the better place:
 
-* Every source declares a **`grouping`** — `filename_family`, `parent_dir`,
-  `regex` or `per_image` — and the merge assigns each whole group to exactly one
+* Every source declares a **`grouping`** - `filename_family`, `parent_dir`,
+  `regex` or `per_image` - and the merge assigns each whole group to exactly one
   split. There is no flag that splits by image. `per_image` exists for genuinely
   independent stills and requires `independent_images: true` to be written into
   the config as an explicit, recorded claim.
@@ -199,15 +199,15 @@ is the better place:
   the audit derives *identical* to the group the merge split by. The two tools
   then agree by construction instead of by coincidence.
 * No filename carries a source or class token, so no token can predict a label
-  — the other shortcut the audit hunts for. Provenance lives in
+  - the other shortcut the audit hunts for. Provenance lives in
   `provenance.jsonl`, where it cannot leak into training.
 * Before writing anything, the merge re-derives every sample's split and fails
   hard if one group reached two splits. That guard exists because a bug in the
   splitter would otherwise be invisible until the audit ran, and possibly not
   then.
 
-The cost is that split proportions are approximate — groups are indivisible and
-vary in size by three orders of magnitude — so the merge reports the realised
+The cost is that split proportions are approximate - groups are indivisible and
+vary in size by three orders of magnitude - so the merge reports the realised
 percentages and warns when they drift. Approximate proportions with an honest
 split beat exact proportions with a leaking one.
 
@@ -220,10 +220,10 @@ and the model learns their world.
 
 So each source carries a `weight` (the fraction of its **groups** kept) and,
 separately, a `negative_weight`. Ground-level *positives* are thinned to
-0.15–0.25; their *negatives* are kept at 1.0, because a red roof, a high-vis
+0.15-0.25; their *negatives* are kept at 1.0, because a red roof, a high-vis
 jacket and a dust plume are confusing from any angle. `frame_stride` thins dense
 video within a group, which removes near-duplicate frames without removing
-scenes — a different operation from dropping groups, and the right one for
+scenes - a different operation from dropping groups, and the right one for
 continuous footage.
 
 ## Why the negatives are the point
@@ -231,7 +231,7 @@ continuous footage.
 FASDD ships roughly 52,000 negative images: cloud, fog, sunset, industrial haze,
 red-lit scenes. They are preserved through the merge (`max_negative_fraction:
 null` by default) and written with **empty** label files rather than missing
-ones, because the two mean different things — an empty label is a deliberate
+ones, because the two mean different things - an empty label is a deliberate
 "there is nothing to box here", a missing one is a broken export.
 
 An unusually high background fraction is deliberate. The station runs at
@@ -246,12 +246,12 @@ the mining loop that grows this set from our own incident logs.
 
 A number without its dataset is not a result. Three things pin it down:
 
-* `manifest.json` — every source, its weight, its group strategy, what was
+* `manifest.json` - every source, its weight, its group strategy, what was
   dropped and why, the split policy, the seed and the SHA-256 of the config
   file that produced it.
-* `provenance.jsonl` — every output image mapped back to its original path,
+* `provenance.jsonl` - every output image mapped back to its original path,
   source dataset, group key and content hash.
-* `model_card.json` — the training arguments, the environment versions, the
+* `model_card.json` - the training arguments, the environment versions, the
   repo commit, the audit status and warnings, the metrics, and the weights hash
   that `ModelInfo.weights_sha` reports in every logged frame.
 
@@ -262,31 +262,31 @@ number you quote.
 
 ## Troubleshooting
 
-**`REFUSED: source 'x': path does not exist`** — the source is in the config but
+**`REFUSED: source 'x': path does not exist`** - the source is in the config but
 not on disk. Point `--data-root` at the right place, `--exclude` it, or set
 `enabled: false`. A missing source is refused rather than skipped on purpose: a
 manifest that describes datasets which were not actually merged is a manifest
 that lies.
 
-**`REFUSED: format 'yolo' requires 'class_names'`** — the source's own class
+**`REFUSED: format 'yolo' requires 'class_names'`** - the source's own class
 index order has to be stated. Read its `data.yaml` or `classes.txt`. D-Fire is
 `[smoke, fire]`, the opposite of ours; guessing produces a model whose fire and
 smoke are transposed on every tablet, with nothing downstream able to notice.
 
-**`REFUSED: grouping 'per_image' ...`** — you asked for what is effectively a
+**`REFUSED: grouping 'per_image' ...`** - you asked for what is effectively a
 random split. If the images really are independent stills, say so with
 `independent_images: true`. If they are video frames, they are not.
 
-**`REFUSED: only N group(s) across 3 split(s)`** — too few source videos to
+**`REFUSED: only N group(s) across 3 split(s)`** - too few source videos to
 split by video. Add sources, or lower a weight less aggressively. Splitting a
 group is not an option offered.
 
-**Audit fails on `split-leakage/perceptual`** — near-duplicate images across
+**Audit fails on `split-leakage/perceptual`** - near-duplicate images across
 splits that filename grouping could not see, usually the same scene scraped into
 two datasets. `dedup: true` catches byte-identical copies; re-encoded ones need
 the grouping widened, or the offending source excluded.
 
-**Audit warns `0.0% tiny` boxes** — the dataset has no distant targets, so
+**Audit warns `0.0% tiny` boxes** - the dataset has no distant targets, so
 small-target recall cannot be measured and probably was not learned. Distant
 smoke is the detection that buys the most time. Carry this into the model card
 and fix it with data.

@@ -4,14 +4,14 @@ Written to be read cold, in order. Nothing here needs this session to be running
 
 ---
 
-## 1. GitHub — nothing is required of you
+## 1. GitHub - nothing is required of you
 
 Everything is committed and pushed to the branch **`claude/wildfire-watch-setup-66paiq`**
 on `abyyworld/wildfire-analysis`, authored as `abyyworld <annolieberto@gmail.com>`.
 
 There is **no open pull request**, because none was asked for. The branch stands on its own
 and can be browsed, cloned, or merged whenever you want. If you do want a PR later, open it
-from the branch page on GitHub — one click, no local work.
+from the branch page on GitHub - one click, no local work.
 
 To pick it up on your own machine:
 
@@ -23,11 +23,11 @@ git checkout claude/wildfire-watch-setup-66paiq
 
 **Nothing trains itself while you are away.** There is no job running on GitHub and no
 process left behind. Training needs a GPU and needs the datasets, and neither exists in the
-environment this repo was built in — that work starts when you start it, at step 3 below.
+environment this repo was built in - that work starts when you start it, at step 3 below.
 
 ---
 
-## 2. Run the demo — no GPU, no drone, no model, about a minute
+## 2. Run the demo - no GPU, no drone, no model, about a minute
 
 The offline render is already committed, so the very first thing you can do is watch it:
 
@@ -35,7 +35,7 @@ The offline render is already committed, so the very first thing you can do is w
 demo/assets/wildfire_demo_overlay.mp4
 ```
 
-That is the real pipeline — real ingest, real temporal filter, real incident log — with the
+That is the real pipeline - real ingest, real temporal filter, real incident log - with the
 overlay burned in. Beside it sits `demo/assets/incident-demo/detections.jsonl`, one line per
 frame including the 78 frames that hold nothing.
 
@@ -48,7 +48,7 @@ python demo/render_demo.py --input /path/to/your/fire_video.mp4 \
 ```
 
 Any video file works. For anything shown to an audience, real footage beats the synthetic
-clip — the clip is a fixture, and it looks like one.
+clip - the clip is a fixture, and it looks like one.
 
 ### Showing it live on tablets and phones
 
@@ -59,7 +59,7 @@ python -m station certs                    # self-signed cert for the LAN
 python -m station -c config.yaml run       # serves the PWA over local WiFi
 ```
 
-Add `--stub` to run with no model at all — that is how the whole path was verified here.
+Add `--stub` to run with no model at all - that is how the whole path was verified here.
 
 **First open `https://<laptop-lan-ip>:8443/selftest.html` on the tablet and tap
 "Run the checks".** It answers, in about 30 seconds and on the actual device,
@@ -71,12 +71,12 @@ ones failing means run it as a browser tab, which is fully supported.
 
 Then open `https://<laptop-lan-ip>:8443` on the tablet. `station certs` prints the
 certificate fingerprint and the per-platform trust steps; compare the fingerprint with the
-one the tablet shows before trusting it. Expect a warning and accept it — that is normal for
+one the tablet shows before trusting it. Expect a warning and accept it - that is normal for
 a self-signed cert, and it is the step that has **not** yet been tested on a real iPad.
 
 This path is verified working end to end on the build machine: a WebRTC client connected,
 received the video track, 8 status heartbeats, and 121 detection messages carrying
-`rtp_ts` — which means the exact frame-matching tier of the overlay sync is live, not just
+`rtp_ts` - which means the exact frame-matching tier of the overlay sync is live, not just
 the fallback estimator.
 
 **Have the offline MP4 ready as a fallback.** If the certificate or the WiFi misbehaves in
@@ -84,23 +84,23 @@ the room, you play the video and the demonstration still lands.
 
 ---
 
-## 3. Training — this is the part only you can start
+## 3. Training - this is the part only you can start
 
 The repo cannot reach Zenodo, Hugging Face, Kaggle or IEEE DataPort, and has no GPU. So
 downloading and training happen on your side.
 
-**Downloads first — they are the long pole and mostly unattended:**
+**Downloads first - they are the long pole and mostly unattended:**
 
 | Dataset | Where | Friction | Use it for |
 |---|---|---|---|
-| **FLAME** | IEEE DataPort | free account | genuine UAV fire — start here |
+| **FLAME** | IEEE DataPort | free account | genuine UAV fire - start here |
 | **Boreal Forest Fire** | via the Sci Data 2025 paper | check licence | genuine UAV, boxes + segmentation |
 | **FASDD** | Zenodo / Science Data Bank | accept terms | bulk, and ~52k hard negatives |
 | **D-Fire** | GitHub `gaiasd/DFireDataset` | none | ground-level; weight it down |
 
 Exact click-by-click Kaggle steps are in **[docs/KAGGLE.md](docs/KAGGLE.md)**.
 
-**Then, in this order — do not skip the audit:**
+**Then, in this order - do not skip the audit:**
 
 ```bash
 python training/prepare_datasets.py --config training/dataset_config.yaml --out data/merged
@@ -119,13 +119,13 @@ splits grouped by source video so it cannot happen, and the audit proves it did 
 |---|---|---|---|
 | 0 | FLAME + Boreal (~10k) | ~1.5 h | yes, easily |
 | 1 | 30k subset + FASDD negatives | ~4 h | yes |
-| 2 | full FASDD (122,634) | ~12–16 h | **no** |
+| 2 | full FASDD (122,634) | ~12-16 h | **no** |
 
-Do run 0 first and **not for the accuracy** — it proves the chain end to end: train → export →
+Do run 0 first and **not for the accuracy** - it proves the chain end to end: train → export →
 class order survives → weights load in the station → boxes appear on video. A cheap run that
 finds a pipeline bug is worth far more than a long one that produces an unusable number.
 
-Only do run 2 if run 1's evaluation says data volume is the bottleneck, and it often is not —
+Only do run 2 if run 1's evaluation says data volume is the bottleneck, and it often is not -
 your real problem is false negatives on thin smoke, smouldering, canopy and night, which is a
 data *composition* problem, not a volume one. If you do run 2, rent a 4090 for ~$2 rather than
 fighting the session cap with checkpoint-resume.
@@ -143,9 +143,9 @@ inference:
 ## 4. Before anyone relies on it
 
 Read `docs/VALIDATION.md`. The short version: measure **false negatives** on the department's
-own footage, broken out by the conditions that break RGB detection — thin smoke on bright sky,
+own footage, broken out by the conditions that break RGB detection - thin smoke on bright sky,
 smouldering with no flame, fire under canopy, night, and small distant fire.
 
 The system is a situational-awareness aid. It says *look here*. It never says *there is
-nothing there*, and the interface is built so it cannot start saying that by accident —
+nothing there*, and the interface is built so it cannot start saying that by accident -
 `tests/test_safety_invariants.py` fails the build if that language appears anywhere.

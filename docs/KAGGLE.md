@@ -1,10 +1,10 @@
-# Training on Kaggle — exact steps
+# Training on Kaggle - exact steps
 
 Written to be followed literally. Roughly 20 minutes of your attention, then
-1.5–4 hours of waiting depending on which run you pick.
+1.5-4 hours of waiting depending on which run you pick.
 
 Before anything: **do run 0 first.** It is not about accuracy. It proves the
-whole chain — train → export → class order survives → weights load in the
+whole chain - train → export → class order survives → weights load in the
 station → boxes appear on video. A 1.5-hour run that finds a pipeline bug is
 worth far more than a 4-hour one that produces a number you cannot use.
 
@@ -12,7 +12,7 @@ worth far more than a 4-hour one that produces a number you cannot use.
 |---|---|---|---|
 | **0** | FLAME + Boreal (~10k, genuine UAV) | ~1.5 h | yes, comfortably |
 | **1** | + FASDD UAV & negatives (~30k) | ~4 h | yes |
-| **2** | full FASDD (122,634) | ~12–16 h | **no** — rent a 4090, ~$2 |
+| **2** | full FASDD (122,634) | ~12-16 h | **no** - rent a 4090, ~$2 |
 
 ---
 
@@ -23,12 +23,12 @@ Download on your own machine, then upload each as a **Kaggle Dataset**
 
 | Source | Where | Notes |
 |---|---|---|
-| **FLAME** | IEEE DataPort | free account; genuine UAV — start here |
+| **FLAME** | IEEE DataPort | free account; genuine UAV - start here |
 | **Boreal Forest Fire** | via the *Scientific Data* 2025 paper | check the licence |
 | FASDD | Zenodo / Science Data Bank | accept terms; run 1 onward |
 | D-Fire | GitHub `gaiasd/DFireDataset` | ground-level, weighted down to 0.25 |
 
-Search Kaggle first — several of these are already mirrored there, which saves
+Search Kaggle first - several of these are already mirrored there, which saves
 the upload entirely.
 
 ## 2. Create the notebook
@@ -36,7 +36,7 @@ the upload entirely.
 1. *Code → New Notebook*, then **File → Import Notebook** and upload
    `training/train_kaggle.ipynb` from this repo.
 2. **Settings → Accelerator → GPU P100** (T4 x2 also works; the notebook uses one).
-3. **Settings → Internet → On** — needed to `pip install ultralytics` and clone the repo.
+3. **Settings → Internet → On** - needed to `pip install ultralytics` and clone the repo.
 4. **Add Data** → attach the datasets from step 1.
 
 ## 3. Run All
@@ -44,7 +44,7 @@ the upload entirely.
 That is the whole procedure. There is nothing to edit.
 
 The notebook clones this repository itself, finds whatever datasets you
-attached, and trains on those — so the same file works for run 0 and run 1 with
+attached, and trains on those - so the same file works for run 0 and run 1 with
 no change beyond which datasets are attached.
 
 Two things it handles that used to need hand-editing, both of which are easy to
@@ -53,7 +53,7 @@ get wrong and expensive to get wrong:
 * **Kaggle renames your datasets.** A folder uploaded as `FLAME` is mounted at
   `/kaggle/input/flame-dataset`, which does not match the paths in
   `dataset_config.yaml`. The notebook bridges the two by looking for the
-  content the config expects, not just a matching name — a dataset can sit at
+  content the config expects, not just a matching name - a dataset can sit at
   the mount, one level below it, or under a completely unrelated slug. It also
   refuses lookalikes: `norm("D-Fire")` is `"dfire"`, which is a substring of
   `norm("wildfire-dataset")`, and merging that in as ground-level imagery
@@ -87,7 +87,7 @@ when the thing takes four hours, and the output is versioned so a later run can
 be compared against it.
 
 The interactive session is the right choice only when you are still sorting out
-which datasets attached correctly — it is faster to iterate on, and cheaper to
+which datasets attached correctly - it is faster to iterate on, and cheaper to
 interrupt.
 
 ## 5. Stop at the audit gate
@@ -99,7 +99,7 @@ If it reports **FAIL**, do not train. Fire datasets are cut from video, so a
 random train/val split puts frame 0412 in train and the near-identical 0413 in
 val; validation then measures memorisation and every number after it is
 fiction. `prepare_datasets.py` splits grouped by source video precisely so this
-cannot happen — a FAIL means something upstream is wrong (usually a source
+cannot happen - a FAIL means something upstream is wrong (usually a source
 whose frames carry no recoverable video id). Fix the grouping, re-merge, re-run
 the gate.
 
@@ -107,7 +107,7 @@ A **WARN** is readable: check which check warned and whether it matters for
 your run.
 
 Training then runs to `SESSION_BUDGET_H = 8.25` hours and checkpoints as it
-goes, so a session that dies is resumable — re-run the notebook and Cell 7
+goes, so a session that dies is resumable - re-run the notebook and Cell 7
 picks the checkpoint back up.
 
 ## 6. Read the validation output correctly
@@ -119,7 +119,7 @@ missed, and an overall average hides it completely.
 
 Treat mAP with suspicion. Published aerial RGB fire/smoke detectors land around
 **0.80 mAP@0.5** on honest held-out data. Markedly above that on your own split
-is far more often leakage than skill — the notebook says so itself when it
+is far more often leakage than skill - the notebook says so itself when it
 happens.
 
 You can rehearse this whole reading on the demo clip before any real data
@@ -131,8 +131,8 @@ python demo/validate_demo.py     # builds a split, scores it, writes the miss li
 
 ## 7. Getting the results back automatically (optional)
 
-The last cell pushes the run to a **`training-runs`** branch — weights, model
-card, audit report and metrics, one directory per run — so you do not have to
+The last cell pushes the run to a **`training-runs`** branch - weights, model
+card, audit report and metrics, one directory per run - so you do not have to
 download and move files by hand. It is skipped silently unless a token is
 available, and a failure there never fails the run: by that point the artifacts
 already exist and can be downloaded from the notebook's Output tab.
@@ -147,7 +147,7 @@ Set it up once:
 
 **Never put the token in the notebook, the repo, or a message.** GitHub's secret
 scanning revokes tokens that appear in a repository, usually within minutes, so
-a pasted token stops working anyway — and everything under `/kaggle/working` is
+a pasted token stops working anyway - and everything under `/kaggle/working` is
 published as your notebook's output, so a token written there leaks with it. The
 push cell clones to `/tmp` for exactly that reason, passes the credential inline
 rather than storing it in `.git/config`, scrubs it from any error message, and
@@ -189,6 +189,6 @@ python -m station -c config.yaml run
 
 `docs/VALIDATION.md`. The short version: measure **false negatives** on the
 department's own footage, broken out by the conditions that break RGB
-detection — thin smoke against bright sky, smouldering with no visible flame,
+detection - thin smoke against bright sky, smouldering with no visible flame,
 fire under canopy, night, and small distant fire. Nothing in this document
 substitutes for that.

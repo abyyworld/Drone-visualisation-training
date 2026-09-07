@@ -6,7 +6,7 @@ is cheap.
 
 ## Not branches
 
-Branches are for divergence that merges back. These domains never merge back —
+Branches are for divergence that merges back. These domains never merge back -
 they are permanent parallel products, and a long-lived branch per product rots
 in a specific, predictable way: a fix to the shared pipeline has to be
 cherry-picked into every branch, forever, and the first time one is missed a
@@ -16,18 +16,18 @@ nowhere that "the platform" actually lives.
 
 Not separate repositories either, for the same reason at larger scale. The
 original handoff said to *copy* the overlay code between wildfire and
-inspection rather than abstract it — right when two repos shared two hundred
+inspection rather than abstract it - right when two repos shared two hundred
 lines, wrong now that five products share the whole pipeline.
 
 **One repository. One `main`. Domains are configuration and weights.**
 
 That repository is **`drone-visualisation-training`**. `wildfire-analysis`
-becomes a profile inside it, not the other way round — the general name should
+becomes a profile inside it, not the other way round - the general name should
 own the platform, and a repo called "wildfire" would be a bad home for turbine
 inspection.
 
 **Move the code with its history, not by copying files.** The reasoning behind
-this pipeline lives in its commit messages — why the overlay drops boxes rather
+this pipeline lives in its commit messages - why the overlay drops boxes rather
 than dimming them, why frames are dropped rather than queued, why the offset
 estimator refuses an uncorroborated sample. A copy-paste migration throws all
 of that away and the next person re-introduces the bugs. Use a subtree merge:
@@ -49,7 +49,7 @@ The measurement that justifies this: `stream/`, `serve/` and `incidentlog/`
 contain zero references to fire or smoke, and `ingest/` has one in seven files.
 The pipeline was already domain-agnostic before anyone planned for it. What is
 domain-specific is the class list, the weights, the temporal parameters, the
-safety wording and the validation criteria — a config file, not a codebase.
+safety wording and the validation criteria - a config file, not a codebase.
 
 ```
 station/            the platform. Never names a domain again.
@@ -59,7 +59,7 @@ profiles/
   solar.yaml        panel defect classes
   turbine.yaml      blade defect classes
   event.yaml        crowd density  (see below: not a detector)
-models/             weights per profile — released as artifacts, not committed
+models/             weights per profile - released as artifacts, not committed
 ```
 
 `python -m station --profile wildfire run`
@@ -72,11 +72,11 @@ Anything else costs accuracy at both ends for no transfer benefit.
 
 | Profile | Classes | Why grouped this way |
 |---|---|---|
-| `wildfire` | fire, smoke, person | A crew works *at* the flame front. Fire and person co-occur in one frame and their spatial relationship is the whole point — a person 20 m from a fire is the most important box on the screen. Splitting them into two models means two sets of boxes to fuse and no model that ever sees the relationship. |
+| `wildfire` | fire, smoke, person | A crew works *at* the flame front. Fire and person co-occur in one frame and their spatial relationship is the whole point - a person 20 m from a fire is the most important box on the screen. Splitting them into two models means two sets of boxes to fuse and no model that ever sees the relationship. |
 | `traffic` | car, truck, person | Same argument. A pedestrian near a vehicle is the case that matters, and a car-only model cannot express it. |
 | `solar` | panel defects | Never flown at the same time as a wind farm. No visual structure shared with turbines, so training them together helps neither. |
 | `turbine` | blade defects | As above. Separate, smaller, better at its one job. |
-| `event` | crowd density | Not a detector at all — see below. |
+| `event` | crowd density | Not a detector at all - see below. |
 
 **So: person is a class inside wildfire and traffic, not a profile of its own.**
 That answers the question directly. A person means something different in each
@@ -86,14 +86,14 @@ the model needs to see.
 ### The one thing that changes this answer: sensor
 
 If the airframe carries thermal, person detection should move to the thermal
-stream, and then it *must* be a separate model — one model cannot take two
+stream, and then it *must* be a separate model - one model cannot take two
 sensors as input.
 
 - **RGB-only airframe** → person is a class inside `wildfire` and `traffic`.
   One model per profile. Simple, and what is built today.
 - **RGB + thermal airframe** → `wildfire` stays fire/smoke on RGB, and a
   `wildfire-thermal` profile does person on the thermal stream. Two models, two
-  streams, fused at the overlay — which costs nothing, because the wire format
+  streams, fused at the overlay - which costs nothing, because the wire format
   carries class-labelled boxes and does not care how many models produced them.
 
 Thermal is materially better for finding people: it works at night and sees
@@ -104,7 +104,7 @@ few pixels the colour of a rock. If the payload exists, use it. See
 ## Events are a different technique, not a fifth class list
 
 At concert density, people occlude each other and box detectors undercount
-badly — a YOLO trained on crowds will confidently report four hundred people in
+badly - a YOLO trained on crowds will confidently report four hundred people in
 a crowd of three thousand. The correct approach is **density-map regression**
 (CSRNet-style, trained on ShanghaiTech / UCF-QNRF / JHU-CROWD++), which outputs
 a density field rather than boxes.
@@ -112,7 +112,7 @@ a density field rather than boxes.
 That has two consequences:
 
 1. The `event` profile does not share the detection model interface. It shares
-   ingest, streaming, logging and the tablet — most of the platform — but its
+   ingest, streaming, logging and the tablet - most of the platform - but its
    inference stage and its overlay are its own.
 2. Its safety wording is its own, and it matters more than the others. A
    density estimate is not a headcount and not a capacity judgement.
@@ -129,10 +129,10 @@ data-protection position before collecting, not after.
 
 The invariant is the same everywhere and the sentence is different everywhere:
 
-- wildfire — no box does not mean no fire
-- inspection — no defect detected does not mean the asset is sound
-- traffic — no pedestrian box does not mean the road is clear
-- event — a density estimate is not a capacity judgement
+- wildfire - no box does not mean no fire
+- inspection - no defect detected does not mean the asset is sound
+- traffic - no pedestrian box does not mean the road is clear
+- event - a density estimate is not a capacity judgement
 
 So `station/core/safety.py` keeps the machinery and each profile supplies its
 own patterns and its own operator-facing copy. One test walks the repository
@@ -159,7 +159,7 @@ all along.
 1. **Extract the profile loader** and move wildfire's specifics into
    `profiles/wildfire.yaml`. The platform stops naming a domain.
 2. **Port the inspection repo** in as `solar.yaml` and `turbine.yaml`. This is
-   the step that proves the abstraction — if it does not fit two real domains
+   the step that proves the abstraction - if it does not fit two real domains
    it is wrong, and better to learn that now than at domain five.
 3. **Add traffic** as a config file plus a training run. If that is all it
    takes, the split worked.
