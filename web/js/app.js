@@ -54,6 +54,7 @@ async function init() {
     'drop', 'file-input', 'results', 'summary', 'status-banner', 'backend',
     'domain-override', 'override-row', 'export-json', 'export-images', 'print-report',
     'empty-state', 'progress', 'progress-bar', 'progress-label', 'clear', 'export-training',
+    'drop-blocked', 'engine-key-link',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -176,6 +177,39 @@ function usingApi() {
   return state.engine.provider !== ENGINE_LOCAL;
 }
 
+/**
+ * Why an upload cannot be analysed right now, or null when it can.
+ *
+ * One function, consulted both when files arrive and whenever the engine changes, so the
+ * drop zone can never look ready while the pipeline behind it has nothing to run. The bug
+ * this replaces: a warning banner above the fold, easy to scroll past, and a drop zone that
+ * looked like a working uploader and silently produced nothing.
+ */
+function blockedReason() {
+  if (usingApi()) {
+    if (!state.engine.apiKey) {
+      const provider = PROVIDERS[state.engine.provider];
+      return `Enter your ${provider.keyLabel} above before uploading. `
+        + 'Nothing can be analysed without it.';
+    }
+    if (!state.engine.model) return 'Choose a model above before uploading.';
+    return null;
+  }
+  if (!DOMAINS.some((k) => state.available[k])) {
+    return 'The on-device engine has no model to run yet. Choose a provider under '
+      + 'Analysis engine above and enter an API key.';
+  }
+  return null;
+}
+
+/** Show or clear that reason on the drop zone itself, where the files are going. */
+function renderDropState() {
+  const reason = blockedReason();
+  el['drop-blocked'].textContent = reason ?? '';
+  el['drop-blocked'].hidden = !reason;
+  el.drop.classList.toggle('drop--blocked', Boolean(reason));
+}
+
 function wireEngine() {
   el['engine-provider'].addEventListener('change', () => {
     state.engine.provider = el['engine-provider'].value;
@@ -184,6 +218,7 @@ function wireEngine() {
 
   el['engine-model'].addEventListener('change', () => {
     state.engine.model = el['engine-model'].value;
+    renderDropState();
   });
 
   el['engine-key'].addEventListener('input', () => {
@@ -191,6 +226,7 @@ function wireEngine() {
     // manager, and every provider then returns a flat 401 that reads like a wrong key.
     state.engine.apiKey = el['engine-key'].value.trim();
     el['engine-refresh'].disabled = !state.engine.apiKey;
+    renderDropState();
   });
 
   el['engine-key-toggle'].addEventListener('click', () => {
@@ -229,11 +265,14 @@ function renderEngine() {
   if (!provider) {
     state.engine.model = null;
     reportModelStatus();
+    renderDropState();
     return;
   }
 
   el['engine-key-label'].textContent = provider.keyLabel;
   el['engine-key-hint'].textContent = provider.keyHint;
+  el['engine-key-link'].href = provider.keyUrl;
+  el['engine-key-link'].textContent = `Get a ${provider.label} key`;
   el['engine-key'].value = '';
   state.engine.apiKey = '';
   el['engine-refresh'].disabled = true;
@@ -250,6 +289,8 @@ function renderEngine() {
 
   // A provider is not limited to the subjects a local model was trained for.
   for (const option of el['domain-override'].options) option.disabled = false;
+
+  renderDropState();
 }
 
 function fillModelOptions(models) {
@@ -418,27 +459,13 @@ async function handleFiles(files) {
   }
   if ((!images.length && !videos.length) || state.busy) return;
 
-  if (usingApi()) {
-    if (!state.engine.apiKey) {
-      showBanner('warning', 'Enter an API key for the selected engine before uploading.');
-      return;
-    }
-    if (!state.engine.model) {
-      showBanner('warning', 'Choose a model for the selected engine before uploading.');
-      return;
-    }
-  } else if (!DOMAINS.some((k) => state.available[k])) {
-    // This used to `return` with nothing said, which meant the file picker opened, files
-    // were chosen, and the page did nothing at all. A silent refusal is indistinguishable
-    // from a broken app, and it is the only outcome here that leaves someone with no idea
-    // what to do next.
-    showBanner(
-      'warning',
-      'The on-device engine has no model to run yet, so it cannot analyse these files. '
-      + 'Choose a provider under Analysis engine above and enter an API key, and they will '
-      + 'be analysed by a vision model instead.',
-    );
-    el['engine-provider'].focus();
+  const blocked = blockedReason();
+  if (blocked) {
+    // Never a silent return. That is what this was, and a silent refusal is
+    // indistinguishable from a broken app.
+    showBanner('warning', blocked);
+    renderDropState();
+    el['engine-key'].focus();
     return;
   }
 

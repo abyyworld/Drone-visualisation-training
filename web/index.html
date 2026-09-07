@@ -92,6 +92,9 @@
                   aria-pressed="false">Show</button>
         </div>
         <p id="engine-key-hint" class="field__hint"></p>
+        <p class="field__hint">
+          <a id="engine-key-link" href="#" target="_blank" rel="noopener noreferrer">Get a key</a>
+        </p>
       </div>
     </div>
 
@@ -114,6 +117,7 @@
       </svg>
       <p class="drop__title">Drop inspection images or video here</p>
       <p class="drop__hint">or click to browse - photographs or video, straight off a phone or a drone</p>
+      <p id="drop-blocked" class="drop__blocked" hidden></p>
       <input id="file-input" type="file" accept="image/*,video/*" multiple hidden>
       <!-- Widened at boot from web/js/formats.js, so the picker offers the formats a phone
            actually produces rather than only the ones this machine has a MIME type for. -->

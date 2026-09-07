@@ -332,8 +332,8 @@ async function main() {
 
     // Uploading with no key must say so, not fail silently or start a doomed request.
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
-    check('refuses to analyse without a key',
-      (await page.locator('#status-banner').textContent()).includes('Enter an API key'));
+    check('refuses to analyse without a key, naming the one it wants',
+      (await page.locator('#status-banner').textContent()).includes('Google AI Studio API key'));
     equal('and creates no card', await page.locator('.card').count(), 0);
 
     await page.locator('#engine-provider').selectOption('local');
@@ -375,6 +375,25 @@ async function main() {
     check('an API engine is pre-selected so the page is usable at all',
       (await page.locator('#engine-provider').inputValue()) !== 'local');
     check('the key field is showing', await page.locator('#engine-key-field').isVisible());
+
+    // The drop zone must say what is missing on the very first paint, not only after
+    // someone has dropped files into it and got nothing. A banner above the fold is easy
+    // to scroll past, and the drop zone looked like a working uploader - which is how
+    // "it does not upload" gets reported about an app behaving exactly as written.
+    check('the drop zone says what is missing before anything is dropped on it',
+      await page.locator('#drop-blocked').isVisible());
+    check('and names the key it wants',
+      (await page.locator('#drop-blocked').textContent()).includes('API key'));
+    check('with a link to where that key comes from',
+      (await page.locator('#engine-key-link').getAttribute('href') ?? '').startsWith('https://'));
+
+    // Typing a key clears it, without a reload.
+    await page.locator('#engine-key').fill('sk-ant-placeholder');
+    check('the blocker clears the moment a key is entered',
+      await page.locator('#drop-blocked').isHidden());
+    await page.locator('#engine-key').fill('');
+    check('and comes back when it is removed',
+      await page.locator('#drop-blocked').isVisible());
 
     // Now force it back to the on-device engine, which has nothing to run, and upload.
     // The bug this replaces: the picker opened, files were chosen, and nothing happened.

@@ -16,9 +16,15 @@
  *     and the app says so rather than queueing work that will never send.
  *
  * CACHING STRATEGY
- *     App shell: cache first, revalidated in the background. It is small, it changes only
- *     on deploy, and a fast cold start on a tablet matters more than being one deploy
- *     behind for a few seconds.
+ *     App shell: network first, falling back to cache. It was cache-first, revalidated in
+ *     the background, and that was wrong: a returning visitor got the previous deploy and
+ *     the new one only appeared on their second load. During development that means a fix
+ *     is shipped, tested, confirmed live - and the person reporting the bug still has the
+ *     broken version, with no way to tell. Correctness beats a few hundred milliseconds of
+ *     cold start for a file this size.
+ *
+ *     The cache is still written on every successful fetch, so offline still works; it is
+ *     just no longer preferred over a network that is right there.
  *
  *     Models and the runtime WASM: cache first, no revalidation. They are megabytes and
  *     immutable for a given filename - re-fetching them on a metered connection at a site
@@ -32,7 +38,7 @@
  *     deleted on activate, so a stale shell cannot outlive a release.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const SHELL_CACHE = `inspection-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `inspection-assets-${CACHE_VERSION}`;
 
@@ -95,7 +101,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(cacheFirst(request, ASSET_CACHE));
     return;
   }
-  event.respondWith(staleWhileRevalidate(request, SHELL_CACHE));
+  event.respondWith(networkFirst(request, SHELL_CACHE));
 });
 
 async function cacheFirst(request, cacheName) {
@@ -108,21 +114,21 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
-async function staleWhileRevalidate(request, cacheName) {
+async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const hit = await cache.match(request);
 
-  const fresh = fetch(request)
-    .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      cache.put(request, response.clone());
       return response;
-    })
-    .catch(() => null);
+    }
+  } catch {
+    // Offline, or the network is there but unusable. Fall through to whatever was cached.
+  }
 
+  const hit = await cache.match(request);
   if (hit) return hit;
-
-  const response = await fresh;
-  if (response) return response;
 
   // Offline with nothing cached. A navigation gets the shell if it is there; anything
   // else gets an honest failure rather than a blank page.

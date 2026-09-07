@@ -371,3 +371,29 @@ body {
   font-size: 0.8rem;
   color: var(--muted, #5b6470);
 }
+
+/* --------------------------------------------------------------------------------------
+   The drop zone when nothing can analyse yet.
+
+   A banner above the fold is easy to scroll past, and the drop zone itself looked ready.
+   Someone who has not entered a key was dropping files into what looked like a working
+   uploader and getting nothing, which is how "it does not upload" gets reported about an
+   app that is working exactly as written.
+   -------------------------------------------------------------------------------------- */
+
+.drop__blocked {
+  margin: 10px auto 0;
+  max-width: 46ch;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(230, 126, 34, 0.14);
+  color: #8a4b00;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.drop--blocked {
+  border-style: dashed;
+  opacity: 0.85;
+}

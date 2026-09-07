@@ -43,6 +43,7 @@ export const PROVIDERS = {
     label: 'Anthropic Claude',
     keyLabel: 'Anthropic API key',
     keyHint: 'Starts with sk-ant-. console.anthropic.com -> API keys',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
     models: [
       { id: 'claude-opus-5', label: 'Claude Opus 5 (most capable)' },
       { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (balanced)' },
@@ -53,6 +54,7 @@ export const PROVIDERS = {
     label: 'Google Gemini',
     keyLabel: 'Google AI Studio API key',
     keyHint: 'aistudio.google.com -> Get API key',
+    keyUrl: 'https://aistudio.google.com/apikey',
     models: [
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (most capable)' },
       { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (balanced)' },
@@ -63,6 +65,7 @@ export const PROVIDERS = {
     label: 'OpenAI',
     keyLabel: 'OpenAI API key',
     keyHint: 'Starts with sk-. platform.openai.com -> API keys',
+    keyUrl: 'https://platform.openai.com/api-keys',
     models: [
       { id: 'gpt-5', label: 'GPT-5 (most capable)' },
       { id: 'gpt-5-mini', label: 'GPT-5 mini (balanced)' },
