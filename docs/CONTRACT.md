@@ -141,3 +141,37 @@ what makes the log a usable record of what the model saw rather than a
 highlight reel of what it happened to catch. Together with the recorded video
 this gives after-action review, and accumulates the real-incident footage that
 the false-negative validation in [VALIDATION.md](VALIDATION.md) needs.
+
+## Known gap: an uncorroborated offset can hide a misaligned overlay
+
+`tests/test_sync.js` carries one deliberately failing test,
+*"a payload far ahead of the frame on screen also stops the boxes"*.
+
+The case: the tier-2 estimator takes its offset from the samples it has. Give it
+a single sample and the median *is* that sample, believed completely. A payload
+arriving 40 s from the frame on screen then defines a 40 s offset, the
+correction hides the discrepancy, and `ageS` comes out at 0 — the overlay
+reports itself perfectly synchronised while every box sits over the wrong
+ground. The `ahead` guard cannot see it, because the guard measures age *after*
+the offset has been applied.
+
+The obvious fix — refuse to trust an offset built from one sample — is wrong as
+stated, because a 40 s difference between the station's media timeline and the
+tablet's `video.currentTime` is perfectly legitimate; that is exactly what
+`stream_start_pts` exists to seed. With one sample and no seed there is no
+information that separates a real timeline difference from one bad measurement.
+
+Two honest routes, neither a one-line change:
+
+1. **Always seed from `stream_start_pts`** and treat a first sample that
+   contradicts the seed by more than `max_overlay_age_s` as the outlier rather
+   than as the truth. This is the better fix; it needs the station to send
+   `stream_start_pts` reliably on the first status of every session.
+2. **Require corroboration before tier 2** — but the floor must not be applied
+   where a caller has deliberately configured `minOffsetSamples: 1`, so it needs
+   to be a separate "unverified" tier rather than a change to the existing gate.
+
+Left failing on purpose: the test states a real defect, and deleting it to get a
+green suite would remove the only record that this hole exists. A tier-2 overlay
+running on a single offset sample should be treated as unverified until this is
+closed.

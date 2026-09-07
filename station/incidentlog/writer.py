@@ -292,6 +292,11 @@ class IncidentLogWriter:
         self.flush_every = max(1, int(flush_every))
         self.meta_refresh_s = float(meta_refresh_s)
         self._config_snapshot = _snapshot_config(config_snapshot)
+        # Kept alongside the snapshot so meta.json can state, without the reader
+        # having to dig, that these records are the filter's confirmed output.
+        _temporal = getattr(config_snapshot, "temporal", None)
+        self._temporal_n = getattr(_temporal, "n", None)
+        self._temporal_m = getattr(_temporal, "m", None)
         self._extra_meta = dict(extra_meta or {})
 
         self.counters = IncidentCounters()
@@ -659,6 +664,20 @@ class IncidentLogWriter:
             "config": self._config_snapshot,
             "counters": self.counters.as_dict(),
             "counters_as_of": utc_now_iso(),
+            # What these records ARE. They are the temporal filter's output, not
+            # the model's raw per-frame proposals: a frame with an empty list
+            # may mean the model proposed nothing, or that it proposed
+            # something the N-of-M filter had not yet confirmed. A
+            # false-negative audit that reads them as raw output would credit
+            # the model with misses that were really the filter holding back,
+            # and count confirmed boxes that coasted as fresh observations.
+            # Stated here so the reader never has to guess.
+            "detections_are": "post-temporal-filter (confirmed tracks)",
+            "temporal_filter": (
+                {"n": self._temporal_n, "m": self._temporal_m}
+                if self._temporal_n is not None
+                else None
+            ),
             "files": {
                 "detections": DETECTIONS_FILENAME,
                 "events": EVENTS_FILENAME if self.counters.events_logged else None,

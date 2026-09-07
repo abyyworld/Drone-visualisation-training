@@ -35,7 +35,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
@@ -46,7 +45,7 @@ from station.core.config import Config
 from station.core.types import utc_now_iso
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, keeps numpy/ingest optional
-    from station.ingest.base import Frame
+    pass
 
 __all__ = [
     "MANIFEST_FILENAME",

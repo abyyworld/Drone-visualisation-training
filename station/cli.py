@@ -468,7 +468,12 @@ async def _cmd_replay(args: argparse.Namespace) -> int:
         overrides["stream.port"] = args.port
     cfg = _load(args, overrides)
     cfg.source = replay_source_config(segment, loop=args.loop)
-    cfg.station_name = f"{cfg.station_name} [REPLAY {incident.name}]"
+    # Deliberately NOT written back to cfg.station_name: that name becomes an
+    # mDNS DNS SAN, so changing it makes ensure_cert() decide the existing
+    # certificate no longer covers this station and silently issue a new key.
+    # Every tablet that was told to trust the station would break on one replay,
+    # and again on the next live run.
+    replay_label = f"{cfg.station_name} [REPLAY {incident.name}]"
     # A replay must never write an incident log. The payloads are a copy of an
     # existing record, and a second directory holding them -- stamped with
     # today's date and this laptop's model -- would be a forgery of evidence.
@@ -500,13 +505,15 @@ async def _cmd_replay(args: argparse.Namespace) -> int:
         f"{segment.name}.\n*** This is not a live feed.\n",
         file=sys.stderr,
     )
-    return await _serve(cfg, pipeline, server, mode=f"replay {incident.name}", stub=False)
+    return await _serve(cfg, pipeline, server, mode=f"replay {incident.name}", stub=False,
+                        display_name=replay_label)
 
 
 # --------------------------------------------------------------- shared serve
 
 
-async def _serve(cfg: Config, pipeline: Any, server: Any, *, mode: str, stub: bool) -> int:
+async def _serve(cfg: Config, pipeline: Any, server: Any, *, mode: str, stub: bool,
+                 display_name: str | None = None) -> int:
     """Start the listener and the pipeline, then wait for a reason to stop.
 
     Args:
@@ -538,7 +545,7 @@ async def _serve(cfg: Config, pipeline: Any, server: Any, *, mode: str, stub: bo
         await server.stop()
         raise _CliError(f"pipeline could not start: {exc}", status=2) from exc
 
-    print(_banner(cfg, pipeline, info, mode=mode, stub=stub))
+    print(_banner(cfg, pipeline, info, mode=mode, stub=stub, display_name=display_name))
     sys.stdout.flush()
 
     finished = asyncio.create_task(pipeline.wait(), name="wildfire-cli-wait")
@@ -578,7 +585,8 @@ def _install_signal_handlers(stop: asyncio.Event) -> None:
             pass
 
 
-def _banner(cfg: Config, pipeline: Any, info: Any, *, mode: str, stub: bool) -> str:
+def _banner(cfg: Config, pipeline: Any, info: Any, *, mode: str, stub: bool,
+            display_name: str | None = None) -> str:
     """The block printed once the station is up.
 
     Reports what the station is doing and where to reach it. Contains no claim
@@ -597,7 +605,7 @@ def _banner(cfg: Config, pipeline: Any, info: Any, *, mode: str, stub: bool) -> 
         "wildfire-watch ground station",
         f"  {PRODUCT_DESCRIPTOR} -- detections are drawn over video, never burned into it",
         "",
-        f"  station    {cfg.station_name}",
+        f"  station    {display_name or cfg.station_name}",
         f"  mode       {mode}",
         f"  source     {cfg.source.uri or cfg.source.type}  ({cfg.source.type})",
         f"  model      {model_line}",

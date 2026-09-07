@@ -48,6 +48,23 @@ export const TIER_DESCRIPTION = Object.freeze({
 });
 
 /** RTP video clock, fixed by RFC 3551 and the unit rtpTimestamp is reported in. */
+/**
+ * Offset samples required before the tier-2 estimate is trusted at all, no
+ * matter how low `minOffsetSamples` is configured.
+ *
+ * A median of one is not a measurement, it is that one number -- and it is
+ * believed completely. One absurd sample (a payload arriving 40 s from the
+ * frame on screen) then *defines* the offset, the correction hides the error,
+ * and `ageS` comes out at 0: the overlay reports itself perfectly synchronised
+ * while every box sits over the wrong ground. That is worse than admitting the
+ * timelines are not lined up, because tier 3 says so on screen and the
+ * ahead/stale guards still see the raw discrepancy.
+ *
+ * Two samples cannot corroborate much, but they can disagree, and the median
+ * of a pair moves when the second one contradicts the first.
+ */
+export const MIN_CORROBORATING_SAMPLES = 2;
+
 export const RTP_CLOCK_RATE = 90000;
 
 /** RTP timestamps are 32-bit and wrap; at 90 kHz that is every ~13.25 hours. */
@@ -415,7 +432,7 @@ export class OverlaySync {
     if (this._offsets.length >= this.minOffsetSamples) {
       return { value: /** @type {number} */ (median(this._offsets)), source: `median of ${this._offsets.length}` };
     }
-    if (this._offsets.length) {
+    if (this._offsets.length >= MIN_CORROBORATING_SAMPLES) {
       // Fewer samples than the floor: still better than nothing, but say so.
       return { value: /** @type {number} */ (median(this._offsets)), source: `median of ${this._offsets.length} (warming up)` };
     }

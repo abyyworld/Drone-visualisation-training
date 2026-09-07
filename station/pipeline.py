@@ -345,6 +345,11 @@ class Pipeline:
         self._incident_log = incident_log
         self._incident_dir: Path | None = getattr(incident_log, "dir", None)
         self._recorder = recorder
+        # Pacing state for non-live sources; see _pace(). Assume live until a
+        # source says otherwise, so a mislabelled source is never slowed down.
+        self._source_is_live = True
+        self._pace_wall_origin: float | None = None
+        self._pace_pts_origin: float | None = None
         self._owns_incident_log = incident_log is None
         self._owns_recorder = recorder is None
 
@@ -682,9 +687,49 @@ class Pipeline:
 
         log.debug("decode thread finished")
 
+    def _pace(self, frame: Any) -> None:
+        """Hold a non-live source back to real time.
+
+        A file decodes as fast as the disk allows -- comfortably 18x real time
+        for 720p here -- and nothing downstream slows it down. The station's pts
+        timeline then races ahead of the tablet's ``video.currentTime``, the
+        overlay's offset match fails, and app/js/sync.js switches the boxes off
+        because the payloads are far ahead of the frame on screen. The system
+        looks broken on exactly the paths an operator uses to see it work:
+        the example config, ``make run-file``, ``make run-stub`` and ``replay``.
+
+        Live sources arrive at their own rate and are never paced here, and
+        neither is a pipeline with no streamer attached -- see below.
+
+        Sleeping only ever slows down. Falling behind -- a slow disk, a stalled
+        loop -- is absorbed rather than chased, because catching up means
+        publishing a burst, and a burst is what pushes the overlay out of sync
+        in the first place.
+        """
+        # Pace only when something is actually watching. The reason to slow a
+        # file down is to keep the station's pts timeline alongside the tablet's
+        # video.currentTime; with no streamer attached there is no such
+        # timeline to stay with, and offline work (tests, batch replay into a
+        # log) should run at whatever speed the disk allows.
+        if self._source_is_live or self.streamer is None:
+            return
+        pts = float(frame.pts)
+        if self._pace_wall_origin is None or self._pace_pts_origin is None:
+            self._pace_wall_origin, self._pace_pts_origin = time.monotonic(), pts
+            return
+        # A backwards pts means the file looped or the source was reopened;
+        # rebase rather than sleeping off the whole timeline.
+        if pts < self._pace_pts_origin:
+            self._pace_wall_origin, self._pace_pts_origin = time.monotonic(), pts
+            return
+        delay = (self._pace_wall_origin + (pts - self._pace_pts_origin)) - time.monotonic()
+        if delay > 0:
+            self._stop.wait(min(delay, 1.0))
+
     def _handle_frame(self, frame: Any) -> None:
         """Publish, record and enqueue one decoded frame."""
         m = self._metrics
+        self._pace(frame)
         m.frames_read += 1
         m.last_frame_monotonic = time.monotonic()
         self._source_rate.tick(m.last_frame_monotonic)
@@ -762,6 +807,10 @@ class Pipeline:
             self._note_source_recovered()
             info = getattr(self._source, "info", None)
             log.info("source open: %s", info.describe() if info is not None else self._source)
+            self._source_is_live = bool(getattr(info, "is_live", True)) if info is not None else True
+            # Reopening starts a new wall/pts relationship; a stale origin would
+            # make the pacer sleep off the whole elapsed outage.
+            self._pace_wall_origin = self._pace_pts_origin = None
             self._configure_recorder_fps(info)
             return True
         except Exception as exc:
@@ -847,6 +896,12 @@ class Pipeline:
                 self._queue.get_nowait()
             except queue.Empty:
                 break
+            # Counted, not silently discarded. These frames were read and never
+            # inferred, which is exactly what frames_dropped means; leaving them
+            # uncounted breaks the conservation the metrics are checked against
+            # (read == dequeued + dropped + still queued) and quietly
+            # understates how much of the feed the model never looked at.
+            self._metrics.frames_dropped += 1
 
     # --------------------------------------------------------- inference side
 

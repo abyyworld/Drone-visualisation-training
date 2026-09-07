@@ -60,8 +60,19 @@ TRUTH_CLASS = CLASS_FIRE
 #: endless when that is what a demo wants.
 DEFAULT_FRAME_COUNT = 300
 
-#: Warm orange in BGR -- the channel order every Frame in this system uses.
-_BLOB_BGR = (30.0, 140.0, 250.0)
+#: The blob's core colour, in BGR -- the channel order every Frame in this
+#: system uses. A hot, near-white orange rather than a saturated one, and the
+#: whiteness is load-bearing rather than cosmetic: its mean across the three
+#: channels (230) has to sit clearly above the brightest part of the sky
+#: gradient (170) so that the blob really is the brightest region *by channel
+#: mean*, which is what both this module and
+#: ``station.inference.stub.StubModelRunner`` claim in their docstrings and
+#: what the stub's blob detector actually measures. A saturated orange
+#: (30, 140, 250) has a mean of 139 -- darker than the sky -- so the whole
+#: `make run-stub` demo path found nothing at all, and an overlay that draws
+#: nothing is, by design, indistinguishable from one working on a quiet scene.
+#: A clipped near-white core is also what a real flame does to an RGB sensor.
+_BLOB_BGR = (200.0, 235.0, 255.0)
 
 #: Shapes the blob's edge. Deliberately well below 1.0, which makes the disc
 #: nearly flat-topped and its edge steep. The reason is the ground truth: the

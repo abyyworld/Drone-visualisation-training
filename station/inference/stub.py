@@ -420,7 +420,14 @@ class StubModelRunner:
             small = sub.astype(np.float32)
         # Float frames in 0..1 are common from some decoders; put everything on
         # the 0..255 scale the threshold is expressed in.
-        if small.max() <= 1.0:
+        #
+        # Decide this from the DTYPE, never from the data. Testing max() <= 1.0
+        # misreads a genuinely dark uint8 frame -- night, a source that has just
+        # reconnected, a lens cap -- as normalised, rescales it 255x into a
+        # saturated one, and makes the stub report fire at maximum confidence on
+        # a black frame. Fabricating a detection out of darkness is the exact
+        # failure this system must not have, even in a test fixture.
+        if np.issubdtype(sub.dtype, np.floating) and small.max() <= 1.0:
             small = small * 255.0
 
         mask = small >= self._blob_threshold

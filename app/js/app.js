@@ -21,6 +21,27 @@ const el = (id) => document.getElementById(id);
 const video = /** @type {HTMLVideoElement} */ (el('video'));
 const canvas = /** @type {HTMLCanvasElement} */ (el('overlay'));
 const banner = el('banner');
+
+/**
+ * Provenance strip, inserted next to the banner rather than declared in the
+ * markup so this stays a pure addition. Styled inline: it must be legible even
+ * if a stylesheet fails to load, because what it says is exactly what must not
+ * be missed.
+ */
+const provenance = (() => {
+  if (!banner || !banner.parentNode) return null;
+  const node = document.createElement('div');
+  node.id = 'provenance';
+  node.setAttribute('role', 'status');
+  node.hidden = true;
+  node.style.cssText = [
+    'background:#3b1d00', 'color:#ffd9a0', 'border:2px solid #ff9e1e',
+    'font-weight:700', 'letter-spacing:0.04em', 'padding:0.5rem 0.75rem',
+    'text-align:center', 'font-size:clamp(0.8rem,2.2vw,1rem)',
+  ].join(';');
+  banner.parentNode.insertBefore(node, banner);
+  return node;
+})();
 const playButton = el('playButton');
 
 const overlay = new Overlay(canvas, { fit: 'contain' });
@@ -33,6 +54,7 @@ const conn = new StationConnection({ prefix });
 const state = {
   link: { state: CONN.IDLE, error: null, nextRetryS: null, attempt: 0 },
   status: null,
+  statusSeenAt: null,
   /** Local monotonic stamp of when `last_inference_wall_time` last changed. */
   lastInferenceSeenAt: null,
   lastInferenceWall: null,
@@ -194,8 +216,18 @@ function updateStatus(result) {
 
   // --- pipeline (the station's liveness, never the scene)
   const st = state.status;
+  const beatAgeS = state.statusSeenAt === null || state.statusSeenAt === undefined
+    ? null
+    : (performance.now() - state.statusSeenAt) / 1000;
+  // Three missed heartbeats. The station sends one per status_interval_s, so a
+  // gap this long means the station is gone, not merely slow -- and a stale
+  // "RUNNING" is a claim the tablet has no basis to keep making.
+  const beatDeadlineS = (state.parameters?.status_interval_s ?? 1.0) * 3;
   if (!st) {
     chip('pipeline', 'warn', 'UNKNOWN', 'awaiting heartbeat from the station');
+  } else if (beatAgeS !== null && beatAgeS > beatDeadlineS) {
+    chip('pipeline', 'bad', 'NO HEARTBEAT',
+      `nothing from the station for ${beatAgeS.toFixed(0)} s; last state was ${st.state}`);
   } else {
     const fps = st.inference_fps === null ? '—' : `${st.inference_fps.toFixed(1)}/s`;
     const src = st.source_fps === null ? '—' : `${st.source_fps.toFixed(1)}/s`;
@@ -236,7 +268,46 @@ function updateStatus(result) {
   }
 
   updateBanner(result);
+  updateProvenance();
   if (!el('details').hidden) updateDetails(result);
+}
+
+
+/**
+ * The provenance strip: says when the boxes are not a live model on a live feed.
+ *
+ * Deliberately separate from the banner, which shows one message in priority
+ * order -- provenance would be masked the moment the link dropped, and "these
+ * boxes are fabricated" must not be the message that gets outranked. It is
+ * persistent for the same reason: someone walking up to the tablet mid-session
+ * has to be able to tell a demonstration from an incident.
+ *
+ * Two cases, both of which produce boxes indistinguishable from the real thing:
+ * the station running its stub runner (no model at all, generated detections),
+ * and replay of a recorded incident (real detections, but from the past).
+ *
+ * @returns {void}
+ */
+function updateProvenance() {
+  if (!provenance) return;
+  const replay = state.parameters?.replay || null;
+  const modelName = state.status?.model?.name || null;
+  const stub = modelName === 'stub';
+
+  let text = null;
+  if (replay) {
+    const which = replay.incident ? ` — ${replay.incident}` : '';
+    text = `REPLAY OF A RECORDING${which} — NOT A LIVE FEED`;
+  } else if (stub) {
+    text = 'GENERATED BOXES — NO MODEL IS RUNNING';
+  }
+
+  if (text) {
+    provenance.textContent = text;
+    provenance.hidden = false;
+  } else {
+    provenance.hidden = true;
+  }
 }
 
 /**
@@ -326,6 +397,10 @@ conn.on('detections', (frame) => {
 
 conn.on('status', (status) => {
   state.status = status;
+  // When the heartbeat arrived, in real time. Without this the chip below would
+  // keep asserting the last known state forever -- painting a confident
+  // "RUNNING" for a station that died minutes ago.
+  state.statusSeenAt = performance.now();
   sync.addStatus(status, Number.isFinite(video.currentTime) ? video.currentTime : null);
   if (status.last_inference_wall_time && status.last_inference_wall_time !== state.lastInferenceWall) {
     state.lastInferenceWall = status.last_inference_wall_time;
