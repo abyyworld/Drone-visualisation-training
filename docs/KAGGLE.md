@@ -129,7 +129,35 @@ exists:
 python demo/validate_demo.py     # builds a split, scores it, writes the miss list
 ```
 
-## 7. Bring the weights back to the station
+## 7. Getting the results back automatically (optional)
+
+The last cell pushes the run to a **`training-runs`** branch — weights, model
+card, audit report and metrics, one directory per run — so you do not have to
+download and move files by hand. It is skipped silently unless a token is
+available, and a failure there never fails the run: by that point the artifacts
+already exist and can be downloaded from the notebook's Output tab.
+
+Set it up once:
+
+1. **Create a fine-grained token**:
+   github.com/settings/personal-access-tokens/new → *Only select repositories* →
+   this repo → **Contents: Read and write**. Nothing else.
+2. **Kaggle → Add-ons → Secrets → Add a secret**, named exactly `GITHUB_TOKEN`.
+3. That is all. The cell reads it from Kaggle's vault at runtime.
+
+**Never put the token in the notebook, the repo, or a message.** GitHub's secret
+scanning revokes tokens that appear in a repository, usually within minutes, so
+a pasted token stops working anyway — and everything under `/kaggle/working` is
+published as your notebook's output, so a token written there leaks with it. The
+push cell clones to `/tmp` for exactly that reason, passes the credential inline
+rather than storing it in `.git/config`, scrubs it from any error message, and
+deletes the clone afterwards.
+
+Artifacts land on a separate branch, not the code branch, so training output
+never mixes with source history. Weights are ~19 MB per run; set
+`PUSH_WEIGHTS = False` in that cell to push only the metrics and the model card.
+
+## 8. Bring the weights back to the station
 
 Download `best.pt` from the notebook output, then:
 
@@ -157,7 +185,7 @@ python -m station check          # should now say the model can run
 python -m station -c config.yaml run
 ```
 
-## 8. Before anyone relies on it
+## 9. Before anyone relies on it
 
 `docs/VALIDATION.md`. The short version: measure **false negatives** on the
 department's own footage, broken out by the conditions that break RGB
