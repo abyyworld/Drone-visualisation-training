@@ -1,23 +1,38 @@
 #!/usr/bin/env python3
 """Export several ONNX variants of a detector, measure each, and keep the best.
 
-WHY THIS EXISTS
-    The first v2 export used int8 dynamic quantisation on the whole graph. Measured
-    against the same test split, it cost:
+WHAT THIS WAS BUILT TO TEST, AND WHY THAT HYPOTHESIS WAS WRONG
+    The shipped export was int8-quantised and measured well below the .pt it came from:
 
         best.pt        mAP50 0.759   mAP50-95 0.478
         int8 (all)     mAP50 0.667   mAP50-95 0.239
 
-    mAP50 lost 12%, but mAP50-95 lost 50%. That gap is the tell: mAP50 only asks whether
-    a box overlaps the truth at all, while mAP50-95 averages over tight IoU thresholds.
-    Losing half of it while keeping most of mAP50 means the model still finds defects but
-    places the boxes sloppily - which is what happens when the detection head's coordinate
-    regression is quantised to 8 bits.
+    mAP50 lost 12% while mAP50-95 lost 50%. Since mAP50 only asks whether a box overlaps
+    the truth at all and mAP50-95 averages over tight IoU thresholds, that gap reads as
+    "detections found, boxes badly placed" - and quantising the detection head's coordinate
+    regression to 8 bits is a textbook cause. 25 of the 88 quantised convolutions sit in
+    that head, which made the story fit.
 
-    So this exports the head in full precision and the backbone in int8, alongside the two
-    extremes, and evaluates all of them. The point is to choose on evidence rather than
-    assume, since a quantisation setting nobody measured is exactly how a model that looked
-    fine ended up worse than the one it came from.
+    Running it settled the question the other way:
+
+        fp32 (no quantisation)      38.1 MB   mAP50 0.643   mAP50-95 0.223
+        int8 everywhere             10.1 MB   mAP50 0.664   mAP50-95 0.238
+        int8 backbone, fp32 head    12.5 MB   mAP50 0.656   mAP50-95 0.228
+
+    Full precision is no better than int8 - marginally worse, within noise. Quantisation
+    costs essentially nothing. The loss is in the PyTorch-to-ONNX step itself and applies
+    to every variant equally.
+
+    A difference that lands identically on all three points at what they share: the export
+    and the ONNX validation path, not the weights. The leading suspect is preprocessing
+    rather than model damage - `val()` on a .pt uses rectangular inference by default,
+    while a static ONNX export forces every image into a square 960x960 letterbox, which
+    shrinks small defects relative to the frame. That is a hypothesis, not a finding; it
+    would be tested by evaluating the .pt with rectangular inference disabled and seeing
+    whether it drops to meet the ONNX numbers.
+
+    Kept as a tool because the measurement is the point. The head-exclusion variant it was
+    written to prove is now just one of three options it prices honestly.
 
 Usage:
     python3 tools/export_variants.py runs/turbine_v2/weights/best.pt \
