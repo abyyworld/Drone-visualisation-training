@@ -293,6 +293,106 @@ def check_integrity(records, root: Path) -> dict:
     }
 
 
+
+# A dataset can carry any number of files and still hold very little. The previous turbine
+# export was 7,520 files that collapsed to 3,133 unique sources and 2,281 distinct scenes,
+# roughly 750 of them containing a defect - about ten augmented copies per real photograph.
+# Nothing in an aggregate metric reveals that, and a model cannot learn variety that is not
+# there, so it is checked rather than assumed.
+MAX_FILES_PER_SCENE = 2.5    # above this, augmented copies dominate real photographs
+MIN_DEFECT_SCENES = 300      # below this, per-class AP is sampling noise whatever the count
+HAMMING_NEAR_DUPLICATE = 6   # dHash bits differing; empirically separates scenes from copies
+
+
+def check_variety(records) -> dict:
+    """Distinct photographs behind the file count.
+
+    Two passes. Filename-source dedup is stdlib and catches the common case, since augmenters
+    keep a stem and vary a suffix (Roboflow's `_jpg.rf.<hash>` being the obvious example).
+    Perceptual hashing catches the rest - copies renamed beyond recognition, and crops or
+    tiles of one photograph - but needs Pillow, so it degrades to the first pass rather than
+    making this tool require a dependency it otherwise does not.
+    """
+    files = len(records)
+    sources = {r["source"] for r in records}
+    defect_sources = {r["source"] for r in records if r["boxes"]}
+
+    scenes, defect_scenes, method = len(sources), len(defect_sources), "filename sources"
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        by_source = {}
+        for record in records:
+            by_source.setdefault(record["source"], record)
+        hashes, labelled = {}, set()
+        for source, record in by_source.items():
+            digest = _dhash(record["image"])
+            if digest is None:
+                continue
+            hashes[source] = digest
+            if record["boxes"]:
+                labelled.add(source)
+        if hashes:
+            groups = _cluster_near_duplicates(hashes)
+            scenes = len(groups)
+            defect_scenes = len({key for key, members in groups.items()
+                                 if members & labelled})
+            method = "perceptual hash"
+
+    ratio = files / scenes if scenes else 0.0
+    return {
+        "files": files, "unique_sources": len(sources),
+        "distinct_scenes": scenes, "distinct_defect_scenes": defect_scenes,
+        "files_per_scene": round(ratio, 2), "method": method,
+        "inflated": ratio > MAX_FILES_PER_SCENE,
+        "too_few_scenes": defect_scenes < MIN_DEFECT_SCENES,
+    }
+
+
+def _dhash(path: Path, size: int = 8):
+    """64-bit difference hash. Mirror-invariant comparison happens in the clustering."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as handle:
+            grey = handle.convert("L").resize((size + 1, size), Image.Resampling.LANCZOS)
+        pixels = list(grey.getdata())
+        bits = 0
+        for row in range(size):
+            offset = row * (size + 1)
+            for column in range(size):
+                bits = (bits << 1) | (pixels[offset + column] > pixels[offset + column + 1])
+        return bits
+    except Exception:
+        return None
+
+
+def _cluster_near_duplicates(hashes: dict) -> dict:
+    """Union-find over Hamming distance. Returns representative -> set of members."""
+    parent = {key: key for key in hashes}
+
+    def find(key):
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    items = list(hashes.items())
+    for index, (key_a, digest_a) in enumerate(items):
+        for key_b, digest_b in items[index + 1:]:
+            if bin(digest_a ^ digest_b).count("1") <= HAMMING_NEAR_DUPLICATE:
+                root_a, root_b = find(key_a), find(key_b)
+                if root_a != root_b:
+                    parent[root_a] = root_b
+
+    groups = defaultdict(set)
+    for key in hashes:
+        groups[find(key)].add(key)
+    return groups
+
+
 def build_report(root: Path) -> dict:
     names = load_class_names(root)
     records = collect(root)["records"]
@@ -307,6 +407,7 @@ def build_report(root: Path) -> dict:
         "split_leakage": check_split_leakage(records),
         "geometry": check_geometry(records, names),
         "integrity": check_integrity(records, root),
+        "variety": check_variety(records),
     }
 
 
@@ -316,11 +417,19 @@ def verdicts(report: dict) -> list[tuple[str, bool, str]]:
     leak = report["split_leakage"]
     geom = report["geometry"]
     integrity = report["integrity"]
+    variety = report["variety"]
 
     worst_leak = max(
         (leak[s]["confirmed_fraction"] for s in ("valid", "test") if s in leak), default=0.0
     )
     return [
+        (
+            "Real variety, not augmented inflation",
+            not variety["inflated"] and not variety["too_few_scenes"],
+            f"{variety['files']} files -> {variety['distinct_scenes']} distinct scenes "
+            f"({variety['files_per_scene']}x, by {variety['method']}); "
+            f"{variety['distinct_defect_scenes']} of them contain a defect",
+        ),
         (
             "No source-family shortcut",
             not shortcut["shortcut_present"],
