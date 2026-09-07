@@ -38,7 +38,8 @@
       "surface_peeling": 1.0
     },
     "displayName": "Wind turbine blade",
-    "notes": "No 'healthy' class by design: an image with no detections is the healthy result."
+    "notes": "No 'healthy' class by design: an image with no detections is the healthy result.",
+    "zeroDetectionNote": "Found none of: corrosion, crack, surface peeling. Trained on close-up blade imagery, so structural failure, missing or severed blade sections, and damage seen at long range are outside what it can assess. On a distant or whole-turbine photo this means \u201cnot assessed\u201d, not \u201cundamaged\u201d \u2014 use close-range shots of the blade surface."
   },
   "solar": {
     "file": "solar.onnx",
@@ -63,6 +64,7 @@
       "soiling": 1.0
     },
     "displayName": "Solar panel",
-    "notes": "RGB only. Cannot detect hotspots, cell defects, bypass-diode failure or offline modules - those are electrical faults visible only in thermal infrared."
+    "notes": "RGB only. Cannot detect hotspots, cell defects, bypass-diode failure or offline modules - those are electrical faults visible only in thermal infrared.",
+    "zeroDetectionNote": "Found none of the visible-light defect classes. RGB cannot show hotspots, cell defects, bypass-diode failure or offline modules; those need thermal infrared."
   }
 }

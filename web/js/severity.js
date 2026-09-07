@@ -11,7 +11,7 @@
  */
 
 export const SEVERITY = {
-  NONE: { key: 'none', label: 'No defects detected', rank: 0 },
+  NONE: { key: 'none', label: 'No defects found', rank: 0 },
   MINOR: { key: 'minor', label: 'Minor wear', rank: 1 },
   MODERATE: { key: 'moderate', label: 'Moderate damage', rank: 2 },
   SEVERE: { key: 'severe', label: 'Severe damage', rank: 3 },
