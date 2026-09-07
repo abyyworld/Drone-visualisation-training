@@ -1,9 +1,9 @@
-# Handoff — Turbine & solar inspection (this repo)
+# Handoff - Turbine & solar inspection (this repo)
 
 State of `Drone-visualisation-training` as of the audit-and-rebuild work. Paste this into a
 fresh session to pick the project back up.
 
-Consider renaming the repo to **`drone-inspection`** — it no longer contains only training
+Consider renaming the repo to **`drone-inspection`** - it no longer contains only training
 data, and the GitHub Pages URL is derived from the repo name.
 
 ---
@@ -18,7 +18,7 @@ The v1 turbine checkpoint (`best.pt`, yolov8m, 58 epochs) reports **mAP50 0.782 
   only defects. **Not one image in 7,520 holds a healthy region and a defect together**, so
   the model scored 0.78 by recognising capture style, not defects.
 - **32.5%** of held-out images have a same-class box at IoU>0.5 with their adjacent capture
-  frame in train — validation was partly a memorisation test.
+  frame in train - validation was partly a memorisation test.
 - Median `healthy` box covers **44%** of the frame vs **4.8%** for `surface_peeling`. A 9.2×
   spread the loss cannot balance.
 - Mixed polygon/box labels; 16 `corrosion` instances in test; the test split was never run.
@@ -37,18 +37,18 @@ capture-ID blocks, polygons normalised to boxes.
 
 ## What exists and is verified
 
-- `tools/audit_dataset.py` — catches all of the above, exits non-zero, pure stdlib
-- `tools/rebuild_turbine.py` — produces `datasets/turbine_v2` (gitignored, regenerable)
-- `tools/export_onnx.py` — opset 12, int8 quantise, rewrites the web manifest
-- `tools/evaluate.py` — per-class AP, confusion matrix, `--predict` for unlabelled images
-- `tools/image_quality.py` — per-class focus measurement; `--help-blur` for why not to filter
-- `tests/test_export_contract.py` — proves a real Ultralytics export matches the browser decoder
-- `web/` — complete browser app, inference via ONNX Runtime Web, domain gate, severity
+- `tools/audit_dataset.py` - catches all of the above, exits non-zero, pure stdlib
+- `tools/rebuild_turbine.py` - produces `datasets/turbine_v2` (gitignored, regenerable)
+- `tools/export_onnx.py` - opset 12, int8 quantise, rewrites the web manifest
+- `tools/evaluate.py` - per-class AP, confusion matrix, `--predict` for unlabelled images
+- `tools/image_quality.py` - per-class focus measurement; `--help-blur` for why not to filter
+- `tests/test_export_contract.py` - proves a real Ultralytics export matches the browser decoder
+- `web/` - complete browser app, inference via ONNX Runtime Web, domain gate, severity
   scoring, JSON/PNG/PDF export
-- `tests/` — **37 checks passing** in headless Chromium against ONNX fixtures with
+- `tests/` - **37 checks passing** in headless Chromium against ONNX fixtures with
   hand-computed outputs
-- `.github/workflows/` — Pages deploy + CI
-- `report_generator.py` — CLI, consumes the web app's JSON export
+- `.github/workflows/` - Pages deploy + CI
+- `report_generator.py` - CLI, consumes the web app's JSON export
 - Three Kaggle notebooks: turbine, solar, gate
 
 ## The engine split
@@ -94,20 +94,20 @@ deployed.
 ## Next steps, in order
 
 0. **Rebuild with the sharpness floor**: `python3 tools/rebuild_turbine.py --min-sharpness 20`
-   — drops 388 images (15%) where the box sits on a smear. Recommended; see `--help-blur`.
+   - drops 388 images (15%) where the box sits on a smear. Recommended; see `--help-blur`.
 1. **Train the turbine model.** `training/turbine/turbine_v2_kaggle.ipynb`, ~2–3 h on a Kaggle
    P100. Upload this repo as a Kaggle Dataset and attach it first.
    > **Expect aggregate mAP50 to fall to ~0.45–0.60.** That is the model losing a score it was
    > cheating for. Judge per-class defect AP and the `--predict` reality check.
 2. **Reality check.** Run `tools/evaluate.py --predict` over turbine photos from any unrelated
    source and *look at the boxes*. This is the check v1 never had.
-3. **Source solar data.** Roboflow Universe RGB solar sets. **Audit before training** —
+3. **Source solar data.** Roboflow Universe RGB solar sets. **Audit before training** -
    assume the same defects as the turbine set until proven otherwise.
-4. **Train solar**, then **train the gate** (turbine/solar/invalid — minutes to train; the
+4. **Train solar**, then **train the gate** (turbine/solar/invalid - minutes to train; the
    `invalid` class needs diverse negatives, including hard ones like metal structures and
    blue rectangles).
 5. **Export all three**, commit `web/models/`, and Pages deploys automatically.
-6. **Before deploying any model**, run the export contract check — it catches an
+6. **Before deploying any model**, run the export contract check - it catches an
    ONNX/manifest mismatch in 30 seconds, versus finding it as subtly-wrong boxes on a live
    site:
    ```bash
@@ -117,7 +117,7 @@ deployed.
    Verified already against a real export: output layout `(1, 7, 2100)` matches what
    `detect.js` assumes, and confidences agree with `model.predict()` to 1.6e-05.
 7. Optionally add the [Multiclass Wind Turbine Blade Defect dataset](https://pmc.ncbi.nlm.nih.gov/articles/PMC12996307/)
-   (1,065 real UAV images, 6 classes) — real drone imagery with defects and healthy blade in
+   (1,065 real UAV images, 6 classes) - real drone imagery with defects and healthy blade in
    the same frame, which is exactly what the current data lacks. The PDF is already in the repo.
 
 ## Gotchas
@@ -126,7 +126,7 @@ deployed.
   the second GPU returned.
 - Quantisation costs a couple of points of mAP. `tools/evaluate.py` accepts `.onnx`, so
   measure it rather than assuming.
-- `datasets/` is gitignored — regenerate with `tools/rebuild_turbine.py`.
+- `datasets/` is gitignored - regenerate with `tools/rebuild_turbine.py`.
 - The original 349 MB of images are in git history. Removing them from the working tree would
   not shrink a clone, and rewriting history is destructive, so they stay as the read-only
   rebuild source.
