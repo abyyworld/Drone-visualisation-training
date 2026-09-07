@@ -24,7 +24,7 @@
   "turbine": {
     "file": "turbine.onnx",
     "task": "detect",
-    "imgsz": 640,
+    "imgsz": 960,
     "labels": [
       "corrosion",
       "crack",
