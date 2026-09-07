@@ -94,6 +94,22 @@ def place(src: Path, dst: Path, copy: bool) -> None:
         shutil.copy2(src, dst)
 
 
+SOURCE_MISSING = """
+The source dataset is not in this repo.
+
+The original Roboflow turbine export was removed: it was 349 MB of close-up blade
+photographs that produced a detector unable to see a blade severed in half, because
+catastrophic structural failure is not corrosion, a crack, or peeling paint, and the
+background negatives were all wide aerial shots - which taught the model that wide
+framing contains nothing.
+
+Put a replacement where this script expects it: train/, valid/ and test/ directories,
+each with images/ and labels/ in YOLO format, plus a data.yaml naming the classes.
+Then run this script and tools/audit_dataset.py, and do not train on anything the audit
+fails.
+"""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -115,6 +131,9 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    if not (args.src / "train" / "images").is_dir():
+        raise SystemExit(SOURCE_MISSING)
 
     src, out = args.src.resolve(), args.out.resolve()
     random.seed(args.seed)
