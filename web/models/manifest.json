@@ -17,6 +17,7 @@
       "turbine",
       "solar",
       "crowd",
+      "wildfire",
       "invalid"
     ],
     "minConfidence": 0.6,
@@ -83,5 +84,31 @@
     "displayName": "Crowd",
     "notes": "Regions under pressure, not individual people. At event density a person is a few pixels wide and overlaps their neighbours, so no model can box them one by one, and a number would read as a count this image cannot support.",
     "zeroDetectionNote": "None of the pressure patterns above were found in this frame. That is a null result about this frame only: it is not a finding that the crowd is safe, and conditions change faster than any single image."
+  },
+  "wildfire": {
+    "file": "wildfire.onnx",
+    "task": "detect",
+    "imgsz": 960,
+    "labels": [],
+    "confThreshold": 0.25,
+    "iouThreshold": 0.45,
+    "severityWeights": {
+      "person": 5.0,
+      "structure_at_risk": 4.0,
+      "vehicle": 3.0,
+      "fire": 3.0,
+      "flame_front": 3.0,
+      "spot_fire": 3.0,
+      "ember": 2.0,
+      "smoke": 1.5,
+      "access_route": 1.0,
+      "escape_route": 1.0,
+      "water_source": 1.0,
+      "fuel": 1.0,
+      "terrain": 1.0
+    },
+    "displayName": "Wildfire",
+    "notes": "One frame from one angle. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "zeroDetectionNote": "Nothing in the list above was found in this frame. That describes this frame and nothing else - not the ground under the smoke, not what is inside the treeline, and not whether anyone is there."
   }
 }

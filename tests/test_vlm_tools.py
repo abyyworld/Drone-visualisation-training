@@ -195,7 +195,7 @@ def test_an_unknown_label_still_counts_for_something():
 def test_the_prompt_file_is_the_one_the_browser_loads():
     doc = json.loads(vlm_inspect.PROMPT_FILE.read_text())
     assert vlm_inspect.PROMPT_FILE == ROOT / "web" / "prompts" / "inspection.json"
-    assert set(doc["domains"]) == {"turbine", "solar", "crowd", "auto"}
+    assert set(doc["domains"]) == {"turbine", "solar", "crowd", "wildfire", "auto"}
     assert set(doc["certainty"]) == {"high", "medium", "low"}
     assert doc["certainty"]["high"] > doc["certainty"]["medium"] > doc["certainty"]["low"]
     for key in ("asset", "findings", "certainty", "box", "overall"):
@@ -212,6 +212,26 @@ def test_the_crowd_brief_refuses_to_put_a_number_on_people():
     crowd = json.loads(vlm_inspect.PROMPT_FILE.read_text())["domains"]["crowd"]
     assert "never as a number of\npeople" in crowd
     assert "Box the region, never the individual" in crowd
+
+
+def test_the_wildfire_brief_refuses_the_claims_that_get_people_killed():
+    """The domain station/core/safety.py was written for.
+
+    A drone sees one frame from one angle. Fire behind a smoke column, inside a treeline or
+    under canopy does not appear from above, and a person the camera cannot resolve is the
+    normal case. So the brief is forbidden from calling anything safe, clear, contained or
+    empty, and the whole file is checked against the repository's phrase list below.
+    """
+    wildfire = json.loads(vlm_inspect.PROMPT_FILE.read_text())["domains"]["wildfire"]
+    assert "Do not describe the scene as safe, clear, contained, out, under control" in wildfire
+    assert "invisible from above" in wildfire
+    assert "people, individually" in wildfire
+
+
+def test_a_person_at_a_fire_outranks_everything_else():
+    weights = vlm_inspect.severity_weights("wildfire")
+    for other in ("smoke", "fire", "vehicle", "water_source"):
+        assert vlm_inspect.weight_for("person", weights) > vlm_inspect.weight_for(other, weights)
 
 
 def test_an_empty_result_is_never_described_as_reassurance():

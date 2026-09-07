@@ -265,7 +265,7 @@ await throws('an empty list is an error, not a silent empty dropdown',
 console.log('\nShared prompt');
 const doc = JSON.parse(PROMPT_DOC);
 check('has a brief for every domain',
-  ['turbine', 'solar', 'crowd', 'auto'].every((k) => (doc.domains[k] ?? '').length > 100));
+  ['turbine', 'solar', 'crowd', 'wildfire', 'auto'].every((k) => (doc.domains[k] ?? '').length > 100));
 check('the schema names every key the parser reads',
   ['asset', 'asset_reason', 'findings', 'label', 'certainty', 'box', 'note', 'overall']
     .every((k) => doc.schema.includes(k)));
@@ -277,6 +277,14 @@ check('the crowd brief refuses to put a number on people',
 check('the crowd brief boxes regions rather than individuals',
   /Box the region, never the individual/.test(doc.domains.crowd));
 check('crowd is a recognised asset', /"crowd"/.test(doc.schema));
+check('wildfire is a recognised asset', /"wildfire"/.test(doc.schema));
+check('the wildfire brief is forbidden the reassuring adjectives',
+  /Do not describe the scene as safe, clear, contained, out, under control, or empty of people/
+    .test(doc.domains.wildfire));
+check('the wildfire brief says what is invisible from above',
+  /inside a treeline, or under a canopy is invisible from above/.test(doc.domains.wildfire));
+check('the wildfire brief asks for people individually',
+  /people, individually/.test(doc.domains.wildfire));
 check('the solar brief refuses thermal-only faults', /thermal infrared/.test(doc.domains.solar));
 check('the turbine brief names structural failure', /severed/.test(doc.domains.turbine));
 check('certainty bands are ordered', doc.certainty.high > doc.certainty.medium

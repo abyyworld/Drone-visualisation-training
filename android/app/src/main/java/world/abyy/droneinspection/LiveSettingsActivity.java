@@ -21,7 +21,7 @@ import java.util.List;
  */
 public class LiveSettingsActivity extends AppCompatActivity {
 
-    private static final List<String> DOMAINS = Arrays.asList("crowd", "turbine", "solar", "auto");
+    private static final List<String> DOMAINS = Arrays.asList("crowd", "wildfire", "turbine", "solar", "auto");
     private static final List<String> PROVIDERS = Arrays.asList("anthropic", "gemini", "openai");
 
     @Override

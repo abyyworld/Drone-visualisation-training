@@ -8,7 +8,7 @@ applied in the wrong direction, NMS that suppresses nothing, an off-by-one in th
 
 The gate fixture is a real (if trivial) computation over the input: global-average-pool the
 three channels and match the result against a per-class colour template: red -> turbine,
-blue -> solar, yellow -> crowd, green -> invalid. The templates are derived from the same
+blue -> solar, yellow -> crowd, magenta -> wildfire, green -> invalid. The templates are derived from the same
 ImageNet constants the browser normalises with, so the fixture encodes the preprocessing
 contract rather than merely happening to work. That makes the
 ImageNet normalisation in preprocess.js part of what gets tested, rather than bypassed.
@@ -60,10 +60,11 @@ def build_gate(path: Path) -> None:
     between a fixture that encodes the preprocessing contract and one that happens to work.
     """
     templates = {
-        "turbine": (1.0, 0.0, 0.0),   # red
-        "solar": (0.0, 0.0, 1.0),     # blue
-        "crowd": (1.0, 1.0, 0.0),     # yellow
-        "invalid": (0.0, 1.0, 0.0),   # green
+        "turbine": (1.0, 0.0, 0.0),    # red
+        "solar": (0.0, 0.0, 1.0),      # blue
+        "crowd": (1.0, 1.0, 0.0),      # yellow
+        "wildfire": (1.0, 0.0, 1.0),   # magenta
+        "invalid": (0.0, 1.0, 0.0),    # green
     }
     # Column j is the template for class j; rows are the R, G and B channels.
     weights = np.stack([_normalised(rgb) for rgb in templates.values()], axis=1)
@@ -192,9 +193,22 @@ def main() -> int:
         ],
     )
 
+    # Wildfire: smoke and a person, whose weights differ by more than any other pair here.
+    build_detector(
+        out / "wildfire.onnx",
+        num_classes=3,
+        size=960,
+        anchors=4,
+        detections=[
+            (300, 300, 400, 300, 1, 0.80),  # smoke
+            (700, 600, 40, 90, 2, 0.60),    # person
+        ],
+    )
+
     print("\nimages:")
     solid(out / "turbine_red.png", (255, 0, 0))
     solid(out / "crowd_yellow.png", (255, 255, 0))
+    solid(out / "wildfire_magenta.png", (255, 0, 255))
     solid(out / "solar_blue.png", (0, 0, 255))
     solid(out / "invalid_green.png", (0, 255, 0))
     (out / "not_an_image.txt").write_text("this is not an image\n")

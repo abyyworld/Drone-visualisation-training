@@ -390,7 +390,7 @@ export async function inspect({ provider, model, apiKey, image, domain = 'auto' 
   }
 
   return {
-    asset: ['turbine', 'solar', 'crowd', 'neither'].includes(parsed.asset) ? parsed.asset : 'neither',
+    asset: ['turbine', 'solar', 'crowd', 'wildfire', 'neither'].includes(parsed.asset) ? parsed.asset : 'neither',
     assetReason: typeof parsed.asset_reason === 'string' ? parsed.asset_reason : '',
     overall: typeof parsed.overall === 'string' ? parsed.overall : '',
     detections,

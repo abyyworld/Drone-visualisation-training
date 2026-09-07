@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Drone Inspection - Turbine, Solar &amp; Crowd Analysis</title>
+<title>Drone Inspection - Turbine, Solar, Crowd &amp; Wildfire</title>
 <meta name="description" content="Upload drone photographs or video of wind turbine blades, solar panels or a crowd, and get findings, severity scoring and a printable report.">
 <link rel="stylesheet" href="css/app.css">
 
@@ -25,7 +25,7 @@
   <div class="wrap masthead__inner">
     <div>
       <h1 class="masthead__title">Drone Inspection</h1>
-      <p class="masthead__sub">Wind turbine, solar panel &amp; crowd analysis</p>
+      <p class="masthead__sub">Wind turbine, solar panel, crowd &amp; wildfire analysis</p>
       <p id="report-stamp" class="masthead__stamp" hidden></p>
     </div>
     <div class="masthead__badges">
@@ -126,6 +126,7 @@
         <option value="turbine">Wind turbine blade</option>
         <option value="solar">Solar panel</option>
         <option value="crowd">Crowd</option>
+        <option value="wildfire">Wildfire</option>
       </select>
     </div>
 
@@ -149,8 +150,8 @@
     <p>
       Upload photographs or a video clip. A clip is sampled and reduced to the distinct,
       in-focus frames worth looking at, then every image is checked for what it shows.
-      Turbine blades, solar panels and crowds are analysed; anything else is refused rather
-      than guessed at. Findings are scored into a severity band and rolled up into an inspection
+      Turbine blades, solar panels, crowds and wildfires are analysed; anything else is
+      refused rather than guessed at. Findings are scored into a severity band and rolled up into an inspection
       verdict you can export as JSON or print as a PDF report.
     </p>
     <p>
@@ -177,6 +178,21 @@
           Cannot detect hotspots, cell defects, bypass-diode failure or offline modules.
           Those are electrical faults visible only in thermal infrared, and no visible-light
           model can find them - including this one.
+        </p>
+      </article>
+      <article>
+        <h3>Wildfire <span class="tag">one frame, one angle</span></h3>
+        <p>Marks <strong>flame and the fire front</strong>, <strong>smoke and its
+        direction</strong>, <strong>spot fires</strong>, <strong>people</strong>,
+        <strong>vehicles</strong>, <strong>structures in the path</strong>,
+        <strong>access and escape routes</strong>, <strong>water sources</strong> and the
+        <strong>fuel and terrain</strong> that change how it runs.</p>
+        <p class="caution">
+          It will not describe a scene as safe, clear, contained or empty of people, and
+          neither should anyone reading it. Fire behind a smoke column, inside a treeline or
+          under canopy does not appear from above, and a person the camera cannot resolve is
+          the normal case rather than a rare one. A result with nothing in it describes the
+          frame, not the ground.
         </p>
       </article>
       <article>
