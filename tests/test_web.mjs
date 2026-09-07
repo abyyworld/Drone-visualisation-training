@@ -298,11 +298,30 @@ async function main() {
     }
     await page.goto(`http://127.0.0.1:${port}/?nomodels`, { waitUntil: 'networkidle' });
     const banner = (await page.locator('#status-banner').textContent()).trim();
-    check('explains that no models are deployed', banner.includes('No detection models are deployed yet'),
-      banner);
-    check('names the deployment path', banner.includes('tools/export_onnx.py'), banner);
-    equal('upload disabled', await page.locator('#drop').getAttribute('aria-disabled'), 'true');
+    check('explains that no on-device model is deployed',
+      banner.includes('No on-device model is deployed yet'), banner);
+    check('points at the engine picker rather than at a build script',
+      banner.includes('Analysis engine') && !banner.includes('export_onnx.py'), banner);
     check('page still renders rather than erroring', await page.locator('.empty').isVisible());
+
+    // The state a fresh deploy is actually in, and the one that used to fail silently: no
+    // local model, so the page pre-selects a provider and asks for a key instead of
+    // accepting files and doing nothing with them.
+    check('an API engine is pre-selected so the page is usable at all',
+      (await page.locator('#engine-provider').inputValue()) !== 'local');
+    check('the key field is showing', await page.locator('#engine-key-field').isVisible());
+
+    // Now force it back to the on-device engine, which has nothing to run, and upload.
+    // The bug this replaces: the picker opened, files were chosen, and nothing happened.
+    await page.locator('#engine-provider').selectOption('local');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
+    const refusal = (await page.locator('#status-banner').textContent()).trim();
+    check('uploading with no engine to run it says so rather than doing nothing silently',
+      refusal.includes('no model to run yet'), refusal);
+    check('and says what to do about it',
+      refusal.includes('API key'), refusal);
+    equal('no card is created for a file it cannot analyse',
+      await page.locator('.card').count(), 0);
 
     // Gate absent but a detector present: fall back to a manual choice instead of guessing.
     console.log('\nDegraded mode - detector without gate');

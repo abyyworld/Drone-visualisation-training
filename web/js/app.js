@@ -26,6 +26,10 @@ const state = {
   // The engine the next batch will run on. `apiKey` lives here and nowhere else - not in
   // localStorage, not in the URL, not in an exported file - so closing the tab discards it.
   engine: { provider: ENGINE_LOCAL, model: null, apiKey: '' },
+  // Set once, the first time we find there is no on-device model. Without it, choosing
+  // "On-device model" from the picker would bounce straight back to a provider, which is
+  // the page overruling a deliberate choice rather than helping with an unmade one.
+  steeredToApi: false,
 };
 
 const el = {};
@@ -106,13 +110,22 @@ function reportModelStatus() {
   const missing = ['gate', 'turbine', 'solar', 'crowd'].filter((k) => !state.available[k]);
 
   if (!detectors.length) {
+    // No local model, but the API engines need none, so this is a setup step rather than a
+    // dead end. Select one for them: the alternative is a page that looks ready, accepts a
+    // file and does nothing, which is what it used to do.
+    if (!state.steeredToApi) {
+      state.steeredToApi = true;
+      const firstProvider = Object.keys(PROVIDERS)[0];
+      el['engine-provider'].value = firstProvider;
+      state.engine.provider = firstProvider;
+      renderEngine();
+    }
+
     showBanner(
       'warning',
-      'No detection models are deployed yet. Train them with the notebooks in training/, '
-      + 'export with tools/export_onnx.py into web/models/, and this page will pick them up '
-      + 'automatically - no code changes needed.',
+      'No on-device model is deployed yet, so analysis runs through a provider API. '
+      + 'Choose one under Analysis engine and enter your key. Nothing is uploaded until you do.',
     );
-    el.drop.setAttribute('aria-disabled', 'true');
     return;
   }
 
@@ -129,7 +142,9 @@ function reportModelStatus() {
     showBanner('warning', `Not yet deployed: ${missing.join(', ')}.`);
   }
 
-  // Only offer domains that actually have a model behind them.
+  // Only offer domains that actually have a model behind them. This applies to the
+  // on-device engine alone: a provider decides the subject from the picture, so every
+  // option is re-enabled when one is selected.
   for (const option of el['domain-override'].options) {
     if (option.value !== 'auto' && !state.available[option.value]) option.disabled = true;
   }
@@ -216,6 +231,9 @@ function renderEngine() {
   el['status-banner'].classList.add('hidden');
   el.drop.removeAttribute('aria-disabled');
   el['override-row'].classList.remove('hidden');
+
+  // A provider is not limited to the subjects a local model was trained for.
+  for (const option of el['domain-override'].options) option.disabled = false;
 }
 
 function fillModelOptions(models) {
@@ -390,6 +408,17 @@ async function handleFiles(files) {
       return;
     }
   } else if (!['turbine', 'solar', 'crowd'].some((k) => state.available[k])) {
+    // This used to `return` with nothing said, which meant the file picker opened, files
+    // were chosen, and the page did nothing at all. A silent refusal is indistinguishable
+    // from a broken app, and it is the only outcome here that leaves someone with no idea
+    // what to do next.
+    showBanner(
+      'warning',
+      'The on-device engine has no model to run yet, so it cannot analyse these files. '
+      + 'Choose a provider under Analysis engine above and enter an API key, and they will '
+      + 'be analysed by a vision model instead.',
+    );
+    el['engine-provider'].focus();
     return;
   }
 
