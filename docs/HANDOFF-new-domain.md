@@ -27,6 +27,52 @@ Written to be read cold.
 > inflation exists because a previous dataset was 7,520 files holding roughly 750 real
 > photographs, and nothing else revealed it.
 
+## Where things are
+
+The repo carries several products. Most of it is not yours. Read only your column plus the
+shared row, and do not go changing a shared file without saying so first.
+
+```
+SHARED - every domain depends on these
+  tools/                 dataset audit, merge, train, evaluate, export, publish
+  training/common/       label parsing, perceptual hashing, sharpness
+  station/core/          domain-agnostic runtime types and the safety invariant
+  station/{stream,serve,incidentlog}/   ingest, WebRTC out, incident logging
+  profiles/              one yaml per domain: classes, weights, thresholds, wording
+  tests/                 python and JS suites for the above
+
+REAL-TIME PRODUCT (wildfire, crowd - video in, detections out)
+  station/               the runtime; `python -m station check` reports a laptop's capability
+  station/inference/     model loading and the N-of-M temporal filter
+  app/                   tablet PWA, video plus Canvas overlay, no build step
+  demo/                  offline renderer and a synthetic clip with ground truth
+  training/wildfire/     dataset prep and the Kaggle notebook
+  Makefile               `make demo`
+  config.example.yaml
+
+INSPECTION PRODUCT (turbine, solar - photos in, PDF report out)
+  web/                   the browser app, ONNX Runtime Web, client-side inference
+  web/models/            manifest.json is the deploy switch; drop an .onnx beside it
+  training/turbine/      Kaggle notebooks
+  training/solar/
+  report_generator.py    PDF output
+
+DOCUMENTS worth reading before code
+  docs/PLATFORM.md       the architecture decision. Read this first.
+  docs/DATASETS.md       15 sources with licence status. One is confirmed commercial.
+  docs/SAFETY.md         the invariant about absence of detection
+  docs/KAGGLE.md         how to run training
+  docs/CONTRACT.md       the wire format between station and app
+  docs/HARDWARE.md
+  docs/VALIDATION.md
+  docs/OPEN_QUESTIONS.md
+```
+
+Two products, one platform. The real-time one streams video and decides in the moment; the
+inspection one takes uploads and produces a report. They share the tooling, the audit
+discipline and the safety rule, and nothing else. If you are adding a domain, first work out
+which of the two it is: wildfire and crowd are real-time, turbine and solar are inspection.
+
 ## What this project learned the expensive way
 
 These cost real GPU time and one deployed model. They apply to every domain.
