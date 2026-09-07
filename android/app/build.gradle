@@ -92,6 +92,29 @@ dependencies {
 }
 
 /*
+ * There is no Kotlin in this module, and Kotlin still broke the build.
+ *
+ * kotlin-stdlib-jdk7 and kotlin-stdlib-jdk8 were folded into kotlin-stdlib in Kotlin 1.8.
+ * The AndroidX libraries above pull kotlin-stdlib 1.8.22, while something transitive still
+ * asks for the old split artifacts at 1.6.21, so the same classes arrive twice and dexing
+ * refuses the build - which is correct of it, since which copy wins would otherwise be
+ * decided by classpath order.
+ *
+ * Forcing all three to one modern version fixes it: at 1.9.25 the jdk7 and jdk8 artifacts
+ * are empty shims that only depend on kotlin-stdlib, so nothing is duplicated. Forcing
+ * rather than excluding, because an exclude would silently drop a real dependency if the
+ * upstream layout ever changes again.
+ */
+def kotlinVersion = '1.9.25'
+configurations.configureEach {
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlinVersion"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
+    }
+}
+
+/*
  * Stage web/ into the APK's assets.
  *
  * sw.js is deliberately left out. Its whole job is caching files over a network, and inside

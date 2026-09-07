@@ -57,6 +57,13 @@ jobs:
           echo "Installed platforms:"
           ls "$ANDROID_HOME/platforms"
 
+      # Prints the resolved dependency graph before the build runs. The first real failure
+      # was a duplicate Kotlin stdlib arriving transitively through AndroidX, and the only
+      # way to see where a version comes from is to look at the tree.
+      - name: Resolved dependencies
+        working-directory: android
+        run: ./gradlew :app:dependencies --configuration debugRuntimeClasspath --no-daemon --console=plain < /dev/null || true
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
