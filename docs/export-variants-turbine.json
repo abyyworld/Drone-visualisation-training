@@ -1,0 +1,40 @@
+{
+  "note": "Measured on the turbine_v2 test split (172 images, 182 instances) at imgsz 960, CPU. best.pt on the same split scores mAP50 0.759 / mAP50-95 0.478; every ONNX variant lands near 0.65/0.23 regardless of quantisation, so the loss is in the export path, not the weights.",
+  "chosen": "int8 everywhere",
+  "imgsz": 960,
+  "variants": [
+    {
+      "label": "fp32 (no quantisation)",
+      "size_mb": 38.1,
+      "mAP50": 0.643,
+      "mAP50_95": 0.223,
+      "per_class": {
+        "corrosion": 0.44,
+        "crack": 0.755,
+        "surface_peeling": 0.733
+      }
+    },
+    {
+      "label": "int8 everywhere",
+      "size_mb": 10.1,
+      "mAP50": 0.664,
+      "mAP50_95": 0.238,
+      "per_class": {
+        "corrosion": 0.475,
+        "crack": 0.772,
+        "surface_peeling": 0.745
+      }
+    },
+    {
+      "label": "int8 backbone, fp32 head",
+      "size_mb": 12.5,
+      "mAP50": 0.656,
+      "mAP50_95": 0.228,
+      "per_class": {
+        "corrosion": 0.449,
+        "crack": 0.78,
+        "surface_peeling": 0.739
+      }
+    }
+  ]
+}
