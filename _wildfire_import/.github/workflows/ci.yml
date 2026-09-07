@@ -1,0 +1,72 @@
+# CI runs on a bare GitHub runner: no GPU, no ffmpeg, no CUDA, no ML stack.
+#
+# That is not a limitation being worked around, it is the property being
+# tested. Every heavy dependency in this project (ultralytics, torch, av,
+# cv2, aiortc, aiohttp) is imported inside the function that needs it, never
+# at module import time, so the pure logic -- the wire contract, the config
+# schema, the safety invariants, the N-of-M temporal filter, the incident-log
+# reader -- imports and tests anywhere. If someone moves one of those imports
+# to the top of a module, this workflow is what notices.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + tests (no GPU, no ffmpeg, no ML deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # Dev extras only: pytest, ruff, and the two core deps. Deliberately not
+      # `[stream]` or `[inference]` -- installing them here would hide exactly
+      # the regression this job exists to catch.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+
+      - name: Show what is NOT installed
+        run: |
+          python - <<'PY'
+          import importlib.util
+          absent = [m for m in ("torch", "ultralytics", "av", "cv2", "aiortc", "aiohttp")
+                    if importlib.util.find_spec(m) is None]
+          print("absent, as intended:", ", ".join(absent) or "(nothing -- the guard is not testing anything)")
+          PY
+
+      - name: Lint
+        run: python -m ruff check --output-format=github .
+
+      - name: Import the pure-logic modules with nothing heavy installed
+        run: |
+          python -c "
+          import station.core.types, station.core.config, station.core.safety
+          import station.inference.temporal, station.cli
+          from station.core.config import load_config
+          load_config('config.example.yaml')
+          print('core imports clean; config.example.yaml validates')
+          "
+
+      - name: Tests
+        run: python -m pytest

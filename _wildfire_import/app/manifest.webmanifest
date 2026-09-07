@@ -1,0 +1,19 @@
+{
+  "name": "Wildfire Watch — drone overlay",
+  "short_name": "Wildfire Watch",
+  "description": "Situational-awareness aid: drone video from the ground station with a detection overlay. Not a certified detector.",
+  "id": "/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#08090a",
+  "theme_color": "#0b0c0e",
+  "categories": ["utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

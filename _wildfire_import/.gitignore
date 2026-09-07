@@ -1,0 +1,61 @@
+# Bytecode and build products
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Model weights and training runs. These are large, they are binary, and they
+# are reproducible from training/ -- git is the wrong place for them. Keep the
+# weights hash in the incident log instead (ModelInfo.weights_sha), which is
+# what makes an old log replayable against the model that produced it.
+models/
+weights/
+runs/
+*.pt
+*.onnx
+*.engine
+*.torchscript
+
+# Datasets. Tens of gigabytes, licensed separately, and rebuilt by
+# training/prepare_datasets.py from the sources listed in docs/VALIDATION.md.
+data/
+datasets/
+*.zip
+*.tar
+*.tar.gz
+
+# Incident logs contain operational footage of real emergencies and the
+# locations they happened at. They are records, they may be evidence, and they
+# never belong in a public repository. Retention and handling: docs/SAFETY.md.
+incidents/
+
+# TLS material for the station. The private key must not leave the laptop; the
+# certificate is regenerated per network by `python -m station certs`.
+certs/
+*.pem
+*.key
+*.crt
+
+# Local configuration. config.example.yaml is the committed template; the
+# working copy holds this department's IPs and paths.
+config.yaml
+config.local.yaml
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store

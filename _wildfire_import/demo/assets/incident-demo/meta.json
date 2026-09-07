@@ -1,0 +1,53 @@
+{
+  "incident_id": "incident-demo",
+  "wire_version": 1,
+  "station_name": "demo station",
+  "source_uri": "demo/assets/wildfire_demo.mp4",
+  "started_at": "2026-09-06T18:34:31.243Z",
+  "ended_at": "2026-09-06T18:35:23.977Z",
+  "closed_cleanly": true,
+  "duration_s": 52.734,
+  "model": {
+    "name": "demo-colour-threshold",
+    "version": "0.0.0-not-a-model",
+    "classes": [
+      "fire",
+      "smoke"
+    ],
+    "conf_threshold": 0.34
+  },
+  "config": null,
+  "counters": {
+    "frames_logged": 500,
+    "frames_empty": 78,
+    "frames_with_detections": 422,
+    "detections_total": 844,
+    "per_class": {
+      "fire": 422,
+      "smoke": 422
+    },
+    "events_logged": 0,
+    "write_errors": 0,
+    "first_pts": 0.0,
+    "last_pts": 19.96,
+    "first_wall_time": "2026-09-06T18:34:31.354Z",
+    "last_wall_time": "2026-09-06T18:35:23.955Z",
+    "bytes_written": 227494
+  },
+  "counters_as_of": "2026-09-06T18:35:23.977Z",
+  "files": {
+    "detections": "detections.jsonl",
+    "events": null,
+    "video_dir": "video"
+  },
+  "video": null,
+  "writer": {
+    "host": "vm",
+    "pid": 19822,
+    "python": "3.11.15",
+    "flush_every": 1,
+    "healthy": true
+  },
+  "notes": [],
+  "reading_this_log": "detections.jsonl contains one record per inferred frame, including frames where the model returned nothing. An empty 'detections' list means only that this model returned nothing on that frame -- it is not a measurement of the scene, and it is not evidence that the scene was empty. Thin smoke on bright sky, smouldering without flame, fire under canopy and fire at night all produce empty results. Read the recorded video."
+}
