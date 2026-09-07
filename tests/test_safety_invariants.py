@@ -78,6 +78,11 @@ SKIP_DIRS = frozenset(
 #: findings note in this suite's docstring companion, ``test_allowed_contexts_
 #: covers_the_contract_files`` below.
 LOCAL_EXEMPTIONS: dict[str, str] = {
+    "docs/HANDOFF-wildfire.md": (
+        "the founding handoff quotes the banned phrasings while setting out why "
+        "they are banned ('No ALL CLEAR, no 0 fires detected'); it states the "
+        "rule rather than breaking it"
+    ),
     "tests/test_person_class.py": (
         "carries the banned phrasings as parametrised fixtures, asserting that "
         "each one is refused; the phrases are the test input, not operator text"
@@ -286,8 +291,15 @@ class TestThePatternSet:
 
     def test_product_descriptor_is_the_one_the_docs_use(self, repo_root: Path):
         assert PRODUCT_DESCRIPTOR == "situational-awareness aid"
-        readme = (repo_root / "README.md").read_text(encoding="utf-8").lower()
-        assert PRODUCT_DESCRIPTOR in readme, "the README must describe the system as the docs do"
+        # This repository hosts several products now, so the root README
+        # describes the platform and each product carries its own descriptor.
+        # The claim under test is that the wildfire station describes itself the
+        # way its own documentation does.
+        station_readme = repo_root / "docs" / "README-wildfire-station.md"
+        readme = station_readme.read_text(encoding="utf-8").lower()
+        assert PRODUCT_DESCRIPTOR in readme, (
+            f"{station_readme.name} must describe the system as the docs do"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -314,8 +326,8 @@ class TestCoverage:
             "app/css/style.css",
             "app/manifest.webmanifest",
             "tools/evaluate.py",
-            "training/prepare_datasets.py",
-            "training/train_kaggle.ipynb",
+            "training/wildfire/prepare_datasets.py",
+            "training/wildfire/train_kaggle.ipynb",
             "config.example.yaml",
             "tests/test_safety_invariants.py",
         ],

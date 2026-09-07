@@ -101,7 +101,32 @@ markers = [
 [tool.ruff]
 line-length = 110
 target-version = "py311"
-extend-exclude = ["data", "models", "incidents", "datasets", "runs"]
+extend-exclude = [
+    "data", "models", "incidents", "datasets", "runs",
+    # The inspection tooling predates this configuration and was written to its
+    # own conventions. Reformatting it inside the merge that brought the two
+    # codebases together would bury the merge in unrelated churn and make it
+    # unreviewable. Excluded deliberately and temporarily: adopt the rules per
+    # file as each is next touched, rather than in one sweep nobody can check.
+    "report_generator.py",
+    "tools/audit_dataset.py",
+    "tools/evaluate.py",
+    "tools/export_onnx.py",
+    "tools/export_variants.py",
+    "tools/false_positive_check.py",
+    "tools/find_outliers.py",
+    "tools/image_quality.py",
+    "tools/publish_results.py",
+    "tools/rebuild_turbine.py",
+    "tools/scene_count.py",
+    "tools/train_turbine.py",
+    "tests/make_fixtures.py",
+    "tests/test_export_contract.py",
+    "training/common",
+    "training/solar",
+    "training/turbine",
+    "training/gate",
+]
 
 [tool.ruff.lint]
 # E4 imports, E7 statements, E9 syntax/IO errors, F pyflakes, W whitespace.

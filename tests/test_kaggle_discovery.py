@@ -32,7 +32,7 @@ import pytest
 yaml = pytest.importorskip("yaml")
 
 REPO = Path(__file__).resolve().parent.parent
-NOTEBOOK = REPO / "training" / "train_kaggle.ipynb"
+NOTEBOOK = REPO / "training" / "wildfire" / "train_kaggle.ipynb"
 
 
 def _discovery_namespace() -> dict:
@@ -52,7 +52,7 @@ def _discovery_namespace() -> dict:
         body,
         flags=re.S,
     )
-    cfg = yaml.safe_load((REPO / "training" / "dataset_config.yaml").read_text())
+    cfg = yaml.safe_load((REPO / "training" / "wildfire" / "dataset_config.yaml").read_text())
     ns: dict = {
         "Path": Path, "re": re, "os": os, "sys": sys, "yaml": yaml,
         "REPO": REPO, "IS_KAGGLE": False, "WORK": Path("/tmp"),

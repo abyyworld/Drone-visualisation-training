@@ -321,7 +321,8 @@ def generate_report(
     if not total:
         raise SystemExit(
             f'{json_path} contains no analysed results '
-            f'({excluded} rejected or errored). Nothing to report.'
+            f'({excluded} rejected or errored), so there is no data to build a '
+            f'report from. This says nothing about the condition of the asset.'
         )
 
     severe_pct   = stats['severe']   / total * 100
