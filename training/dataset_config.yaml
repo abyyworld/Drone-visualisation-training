@@ -332,3 +332,33 @@ sources:
       Drone imagery, but urban and traffic-heavy. Weighted down: it teaches
       people-from-above at useful scales while carrying a scene prior that does
       not match open country. Map only its pedestrian/people categories.
+
+  # --- thermal, people from altitude ----------------------------------------
+  # Verified by download, not by reputation: 2,898 aerial thermal images,
+  # 12,312 person boxes, 60-130 m altitude, day and night, CC BY 4.0.
+  # 73% of its person boxes are under 0.1% of frame area, which is the regime
+  # that decides whether this class is worth anything at altitude -- most
+  # person datasets are dominated by large, close, upright people and flatter
+  # a model that would find nobody from a drone.
+  #
+  # It is THERMAL and contains no fire. Including it alongside RGB fire sources
+  # trains one model on two sensors, which does not work: keep it for a
+  # separate thermal model, or drop it if the airframe is RGB-only. See
+  # docs/DATASETS.md, which explains why thermal is the right sensor for this
+  # class and what that costs.
+  - name: hituav_thermal
+    path: "{data_root}/HIT-UAV"
+    format: coco
+    images: normal_json
+    annotations: normal_json/annotations/train.json
+    viewpoint: uav_thermal
+    sensor: thermal
+    classes: [person]
+    weight: 1.0
+    grouping: filename_family
+    licence: "CC BY 4.0 -- commercial use permitted with attribution (verified in repo LICENSE)"
+    notes: >
+      github.com/suojiashun/HIT-UAV-Infrared-Thermal-Dataset. Its COCO file keys
+      the box list "annotation" and filenames "filename", both non-standard;
+      prepare_datasets.py accepts the aliases and now refuses a file with no
+      recognisable box list rather than reading it as zero boxes.

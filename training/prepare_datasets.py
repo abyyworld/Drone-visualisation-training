@@ -882,6 +882,22 @@ def _scan_coco(spec: SourceSpec, classes: Sequence[str], drops: Counter[str]) ->
         raise PrepareError(f"source {spec.name!r}: COCO annotation file not found: {ann_path}")
 
     raw = json.loads(ann_path.read_text(encoding="utf-8"))
+
+    # Real COCO files in the wild deviate from the spec in small ways that fail
+    # silently rather than loudly. HIT-UAV keys its box list "annotation" and
+    # its filenames "filename"; read strictly and you get zero boxes, every
+    # image is filed as a genuine negative, and training proceeds happily on a
+    # dataset that has quietly become 2,898 pictures of nothing. Aliases are
+    # accepted, and an annotation list that is missing entirely is an error
+    # rather than an empty result.
+    ann_key = next((k for k in ("annotations", "annotation") if isinstance(raw.get(k), list)), None)
+    if ann_key is None:
+        raise PrepareError(
+            f"source {spec.name!r}: {ann_path} has no 'annotations' (or 'annotation') list. "
+            "Reading it as zero boxes would silently turn every image into a negative."
+        )
+    annotation_list = raw[ann_key]
+
     cat_to_class: dict[int, str | None] = {}
     for cat in raw.get("categories", ()):
         cat_to_class[int(cat["id"])] = _fold_class(spec, cat.get("name", ""), classes)
@@ -890,7 +906,7 @@ def _scan_coco(spec: SourceSpec, classes: Sequence[str], drops: Counter[str]) ->
     meta: dict[int, dict[str, Any]] = {}
     for img in raw.get("images", ()):
         meta[int(img["id"])] = img
-    for ann in raw.get("annotations", ()):
+    for ann in annotation_list:
         image_id = int(ann["image_id"])
         info = meta.get(image_id)
         if info is None:
@@ -927,7 +943,8 @@ def _scan_coco(spec: SourceSpec, classes: Sequence[str], drops: Counter[str]) ->
 
     out: list[Sample] = []
     for image_id, info in sorted(meta.items()):
-        file_name = str(info.get("file_name", ""))
+        # "filename" is the other common deviation (HIT-UAV again).
+        file_name = str(info.get("file_name") or info.get("filename") or "")
         image = on_disk.get(file_name) or on_disk.get(Path(file_name).name)
         if image is None:
             drops["image_listed_but_absent"] += 1
