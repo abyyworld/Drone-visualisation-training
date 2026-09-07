@@ -20,6 +20,7 @@ absence of fire.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -165,6 +166,19 @@ def main() -> None:
     model = ModelInfo(name="demo-colour-threshold", version="0.0.0-not-a-model",
                       conf_threshold=0.34)
 
+    # Synthetic footage must say so on every frame. The clip is a fixture: it
+    # exercises the pipeline and carries ground truth, but nothing measured on
+    # it says anything about real fire. A still from an unmarked render would
+    # be quoted as performance eventually -- so the marking travels with the
+    # pixels rather than living in a caption someone drops.
+    truth_path = Path(args.input).with_suffix(".truth.json")
+    synthetic = False
+    if truth_path.exists():
+        try:
+            synthetic = "synthetic" in json.loads(truth_path.read_text()).get("note", "").lower()
+        except (OSError, ValueError):
+            synthetic = False
+
     src = open_source(SourceConfig(type="file", uri=args.input))
     container = None
     stream = None
@@ -196,8 +210,14 @@ def main() -> None:
             img[0:34] = (0.25 * img[0:34]).astype(np.uint8)
             draw_text(img, f"T {frame.pts:6.2f}S   MODEL {model.name}", 8, 9, 3, (235, 235, 235))
             img[-34:] = (0.22 * img[-34:]).astype(np.uint8)
-            draw_text(img, "SITUATIONAL-AWARENESS AID - NOT A CERTIFIED SYSTEM",
-                      8, img.shape[0] - 23, 3, (225, 225, 225))
+            footer = "SITUATIONAL-AWARENESS AID - NOT A CERTIFIED SYSTEM"
+            draw_text(img, footer, 8, img.shape[0] - 23, 3, (225, 225, 225))
+            if synthetic:
+                label = "SYNTHETIC FOOTAGE - NOT REAL FIRE"
+                lw = len(label) * (GLYPH_W + 1) * 3 + 16
+                x0 = max(8, img.shape[1] - lw - 8)
+                img[44:78, x0 - 8:] = (0.2 * img[44:78, x0 - 8:]).astype(np.uint8)
+                draw_text(img, label, x0, 52, 3, (60, 170, 255))
 
             # Every frame is logged, including the ones with nothing on them.
             log.write(FrameDetections(frame_id=frame.frame_id, pts=frame.pts,

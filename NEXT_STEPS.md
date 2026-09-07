@@ -61,6 +61,14 @@ python -m station -c config.yaml run       # serves the PWA over local WiFi
 
 Add `--stub` to run with no model at all — that is how the whole path was verified here.
 
+**First open `https://<laptop-lan-ip>:8443/selftest.html` on the tablet and tap
+"Run the checks".** It answers, in about 30 seconds and on the actual device,
+the question this build could not: whether iOS cooperates behind a self-signed
+certificate. It negotiates a real WebRTC connection to the station and reports
+which of secure context, WebRTC, service worker, Wake Lock and storage work.
+Required checks failing means the certificate was not actually trusted; optional
+ones failing means run it as a browser tab, which is fully supported.
+
 Then open `https://<laptop-lan-ip>:8443` on the tablet. `station certs` prints the
 certificate fingerprint and the per-platform trust steps; compare the fingerprint with the
 one the tablet shows before trusting it. Expect a warning and accept it — that is normal for
@@ -89,6 +97,8 @@ downloading and training happen on your side.
 | **Boreal Forest Fire** | via the Sci Data 2025 paper | check licence | genuine UAV, boxes + segmentation |
 | **FASDD** | Zenodo / Science Data Bank | accept terms | bulk, and ~52k hard negatives |
 | **D-Fire** | GitHub `gaiasd/DFireDataset` | none | ground-level; weight it down |
+
+Exact click-by-click Kaggle steps are in **[docs/KAGGLE.md](docs/KAGGLE.md)**.
 
 **Then, in this order — do not skip the audit:**
 
