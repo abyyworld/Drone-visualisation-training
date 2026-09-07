@@ -186,6 +186,8 @@ export class OverlaySync {
     /** @type {number[]} */
     this._offsets = [];
     this._seedOffset = null;
+    /** Magnitude of an offset refused for want of corroboration. @type {number|null} */
+    this._rejectedOffsetS = null;
     this._seedStreamStartPts = null;
 
     /** @type {object|null} Most recent heartbeat, for the status bar. */
@@ -429,6 +431,34 @@ export class OverlaySync {
    *   where it came from, or null when neither samples nor a seed exist.
    */
   offsetEstimate() {
+    // An offset must be corroborated by something other than itself. It is
+    // computed as (payload.pts - currentTime), so a single sample is true by
+    // construction and tells you nothing about whether it is right: one absurd
+    // payload defines the offset, the correction hides the discrepancy, and the
+    // overlay reports itself perfectly aligned while every box sits over the
+    // wrong ground.
+    //
+    // Three things can corroborate it, and a near-zero offset is the subtle
+    // one: it asserts that the timelines already agree, so no correction is
+    // being trusted and there is nothing to get wrong. A large offset is a real
+    // claim about how far apart the clocks are, and that claim needs either a
+    // seed from stream_start_pts or a second sample that agrees.
+    const uncorroborated =
+      this._offsets.length < 2
+      && this._seedOffset === null
+      && this._offsets.length > 0
+      && Math.abs(/** @type {number} */ (median(this._offsets))) > this.maxOverlayAgeS;
+    if (uncorroborated) {
+      // Refusing here drops the caller to tier 3, which is the honest answer:
+      // the overlay is labelled unsynchronised rather than confidently wrong.
+      // Remember how big the discrepancy was, because select() has to act on
+      // it: tier 3 measures age from arrival and cannot see a payload whose
+      // pts is far from the video clock, so without this the boxes would be
+      // drawn anyway, merely with a different label.
+      this._rejectedOffsetS = /** @type {number} */ (median(this._offsets));
+      return null;
+    }
+    this._rejectedOffsetS = null;
     if (this._offsets.length >= this.minOffsetSamples) {
       return { value: /** @type {number} */ (median(this._offsets)), source: `median of ${this._offsets.length}` };
     }
@@ -529,6 +559,20 @@ export class OverlaySync {
         `best match is ${(-result.ageS).toFixed(2)} s ahead of the frame on screen; ` +
         'the detection and video timelines do not line up';
     }
+    // An offset large enough to matter that nothing corroborates. We know the
+    // payload's pts sits more than the overlay limit from the video clock, and
+    // we cannot tell a legitimate timeline difference from one bad sample --
+    // so the boxes are not drawn. In a real session stream_start_pts seeds the
+    // estimate and a second sample corroborates it, so this clears in moments;
+    // drawing confidently misplaced boxes in the meantime is the worse trade.
+    if (!result.stale && this._rejectedOffsetS !== null) {
+      result.stale = true;
+      result.staleKind = 'ahead';
+      result.staleReason =
+        `the detections sit ${Math.abs(this._rejectedOffsetS).toFixed(2)} s from the video clock ` +
+        'and nothing corroborates that offset yet; the timelines are not lined up';
+    }
+
     if (result.stale) {
       // Boxes are dropped here and not merely dimmed. Live video under boxes
       // computed from a scene that has already moved on is this system's most

@@ -142,36 +142,33 @@ highlight reel of what it happened to catch. Together with the recorded video
 this gives after-action review, and accumulates the real-incident footage that
 the false-negative validation in [VALIDATION.md](VALIDATION.md) needs.
 
-## Known gap: an uncorroborated offset can hide a misaligned overlay
+## An offset must be corroborated before it is trusted
 
-`tests/test_sync.js` carries one deliberately failing test,
-*"a payload far ahead of the frame on screen also stops the boxes"*.
+The tier-2 offset is computed as `payload.pts - video.currentTime`, so a single
+sample is true by construction and tells you nothing about whether it is
+*right*. One absurd payload would otherwise define the offset, the correction
+would hide the discrepancy, and `ageS` would come out at 0 — the overlay
+reporting itself perfectly synchronised while every box sat over the wrong
+ground. The `ahead` guard could not see it, because it measures age *after* the
+offset has been applied.
 
-The case: the tier-2 estimator takes its offset from the samples it has. Give it
-a single sample and the median *is* that sample, believed completely. A payload
-arriving 40 s from the frame on screen then defines a 40 s offset, the
-correction hides the discrepancy, and `ageS` comes out at 0 — the overlay
-reports itself perfectly synchronised while every box sits over the wrong
-ground. The `ahead` guard cannot see it, because the guard measures age *after*
-the offset has been applied.
+So a large offset is trusted only when something other than itself corroborates
+it. Three things can:
 
-The obvious fix — refuse to trust an offset built from one sample — is wrong as
-stated, because a 40 s difference between the station's media timeline and the
-tablet's `video.currentTime` is perfectly legitimate; that is exactly what
-`stream_start_pts` exists to seed. With one sample and no seed there is no
-information that separates a real timeline difference from one bad measurement.
+1. **`stream_start_pts`** from the first `status` message — the seed exists for
+   exactly this purpose.
+2. **A second sample** that agrees; the median of a pair moves when the second
+   contradicts the first.
+3. **A near-zero offset**, which is the subtle one: it asserts that the
+   timelines already agree, so no correction is being trusted and there is
+   nothing to get wrong.
 
-Two honest routes, neither a one-line change:
+Failing all three, the estimate is refused, the overlay drops to tier 3 and is
+labelled unsynchronised, and the boxes are not drawn — because we know the
+detections sit further from the video clock than the overlay limit allows and
+cannot tell a legitimate timeline difference from one bad measurement.
 
-1. **Always seed from `stream_start_pts`** and treat a first sample that
-   contradicts the seed by more than `max_overlay_age_s` as the outlier rather
-   than as the truth. This is the better fix; it needs the station to send
-   `stream_start_pts` reliably on the first status of every session.
-2. **Require corroboration before tier 2** — but the floor must not be applied
-   where a caller has deliberately configured `minOffsetSamples: 1`, so it needs
-   to be a separate "unverified" tier rather than a change to the existing gate.
-
-Left failing on purpose: the test states a real defect, and deleting it to get a
-green suite would remove the only record that this hole exists. A tier-2 overlay
-running on a single offset sample should be treated as unverified until this is
-closed.
+The cost is small and bounded. A station joining 28.8 s into its source with no
+seed suppresses boxes for exactly one payload — about 100 ms at 10 fps — before
+the second sample corroborates the offset. With the seed the station actually
+sends, there is no gap at all.
