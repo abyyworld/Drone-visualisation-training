@@ -48,6 +48,11 @@ weights/
 *.onnx
 *.engine
 *.torchscript
+# One exception, on purpose: archive/ holds the superseded turbine detector so the
+# repository shows the trained-model route that was tried and why it was dropped. It is
+# 10 MB, it is never loaded by anything, and archive/README.md says what it is. Nothing
+# new should land there without an entry in that file.
+!archive/**/*.onnx
 # Datasets. Tens of gigabytes, licensed separately, and rebuilt by
 # training/prepare_datasets.py from the sources listed in docs/VALIDATION.md.
 data/
@@ -117,3 +122,6 @@ docs/print-preview.png
 # quantised to about 10 MB for exactly that reason. Everything else stays ignored.
 !web/models/*.onnx
 !web/models/manifest.json
+# Written by tests/test_web.mjs on every run and uploaded as a CI artifact.
+# It is evidence of one run, not a document, so it does not belong in the tree.
+docs/web-app.png

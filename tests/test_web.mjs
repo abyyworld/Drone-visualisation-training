@@ -80,6 +80,17 @@ async function buildSite() {
 
   const manifest = JSON.parse(await readFile(join(ROOT, 'web', 'models', 'manifest.json'), 'utf8'));
   manifest.runtime = { ortBase: '/ort/' };
+
+  // The turbine entry in the shipped manifest is deliberately empty: it is waiting on a
+  // model, and its labels and weights described a dataset that has since been removed. The
+  // fixture .onnx has its own fixed three classes, so the test declares them here rather
+  // than reading them out of a file that legitimately changes with every deployment. What
+  // is under test is the decode-and-score arithmetic, not the manifest's current contents.
+  manifest.turbine = {
+    ...manifest.turbine,
+    labels: ['corrosion', 'crack', 'surface_peeling'],
+    severityWeights: { corrosion: 2.0, crack: 3.0, surface_peeling: 1.5 },
+  };
   await writeFile(join(SITE, 'models', 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
 
@@ -170,7 +181,7 @@ async function main() {
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'not_an_image.txt'));
     await page.waitForTimeout(300);
     equal('banner', (await page.locator('#status-banner').textContent()).trim(),
-      'Skipped 1 non-image file.');
+      'Skipped 1 file that is neither an image nor a video.');
     equal('no card created for it', await page.locator('.card').count(), 3);
 
     console.log('\nSummary and export');
@@ -200,6 +211,55 @@ async function main() {
     await page.locator('#clear').click();
     equal('cards removed', await page.locator('.card').count(), 0);
     check('export disabled again', await page.locator('#export-json').isDisabled());
+
+    // The engine picker changes where the images go, so the claim in the header has to
+    // change with it. A page that still says "runs in your browser" while uploading to a
+    // provider is not a cosmetic bug.
+    console.log('\nEngine picker');
+    check('starts on the on-device engine',
+      await page.locator('#engine-key-field').isHidden());
+    check('claims local processing by default',
+      (await page.locator('#privacy-pill').textContent()).includes('Runs in your browser'));
+
+    await page.locator('#engine-provider').selectOption('anthropic');
+    check('asks for a key', await page.locator('#engine-key-field').isVisible());
+    check('asks for a model', await page.locator('#engine-model-field').isVisible());
+    equal('names the right key', (await page.locator('#engine-key-label').textContent()).trim(),
+      'Anthropic API key');
+    check('stops claiming local processing',
+      (await page.locator('#privacy-pill').textContent()).includes('Anthropic'));
+    check('says the images leave the device',
+      (await page.locator('#engine-warning').textContent()).includes('sent to the provider'));
+    check('refuses to refresh models with no key',
+      await page.locator('#engine-refresh').isDisabled());
+
+    await page.locator('#engine-provider').selectOption('gemini');
+    equal('switching provider swaps the key label',
+      (await page.locator('#engine-key-label').textContent()).trim(), 'Google AI Studio API key');
+    check('switching provider clears the previous key',
+      (await page.locator('#engine-key').inputValue()) === '');
+
+    // Uploading with no key must say so, not fail silently or start a doomed request.
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
+    check('refuses to analyse without a key',
+      (await page.locator('#status-banner').textContent()).includes('Enter an API key'));
+    equal('and creates no card', await page.locator('.card').count(), 0);
+
+    await page.locator('#engine-provider').selectOption('local');
+    check('returning to local restores the privacy claim',
+      (await page.locator('#privacy-pill').textContent()).includes('Runs in your browser'));
+
+    console.log('\nInstallable app');
+    const manifestResponse = await page.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`);
+    check('manifest is served', manifestResponse.ok());
+    const appManifest = await manifestResponse.json();
+    equal('opens without browser chrome', appManifest.display, 'standalone');
+    for (const icon of appManifest.icons) {
+      const iconResponse = await page.request.get(`http://127.0.0.1:${port}/${icon.src}`);
+      check(`icon present: ${icon.src}`, iconResponse.ok());
+    }
+    const promptResponse = await page.request.get(`http://127.0.0.1:${port}/prompts/inspection.json`);
+    check('the shared prompt is served', promptResponse.ok());
 
     console.log('\nRuntime');
     check('no uncaught page errors', consoleErrors.length === 0, consoleErrors.join('\n          '));

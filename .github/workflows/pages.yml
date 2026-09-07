@@ -37,7 +37,49 @@ jobs:
       - name: Report which models are being published
         run: |
           echo "Models in web/models/:"
-          ls -lh web/models/*.onnx 2>/dev/null || echo "  none yet — the site will show its 'not deployed' banner"
+          ls -lh web/models/*.onnx 2>/dev/null || echo "  none yet - the site shows its 'not deployed' banner"
+
+      - name: Check the installable-app files are consistent
+        # The manifest, the service worker and the icons are what turn the page into an
+        # app with an icon on a tablet home screen. Any one of them missing or malformed
+        # produces no error at runtime - the install prompt simply never appears, which is
+        # a hard thing to debug from a wind farm. Fail here instead.
+        run: |
+          python3 - <<'CHECK'
+          import json, pathlib, sys
+
+          web = pathlib.Path("web")
+          manifest = json.loads((web / "manifest.webmanifest").read_text())
+
+          missing = [
+              icon["src"] for icon in manifest["icons"]
+              if not (web / icon["src"]).is_file()
+          ]
+          if missing:
+              sys.exit(f"manifest.webmanifest lists icons that are not in web/: {missing}")
+
+          if not any(i["sizes"] == "512x512" and "any" in i["purpose"] for i in manifest["icons"]):
+              sys.exit("An installable app needs a 512x512 icon with purpose 'any'.")
+          if not any("maskable" in i["purpose"] for i in manifest["icons"]):
+              sys.exit("Without a maskable icon, Android launchers crop the icon badly.")
+          if manifest.get("display") not in ("standalone", "fullscreen", "minimal-ui"):
+              sys.exit("display must be standalone for the app to open without browser chrome.")
+
+          # Every file the service worker pre-caches has to exist: cache.add() on a 404 is
+          # swallowed so the install still succeeds, and the app is then quietly not offline.
+          shell = (web / "sw.js").read_text().split("const SHELL = [")[1].split("];")[0]
+          absent = [
+              line.strip().strip("',")
+              for line in shell.splitlines()
+              if line.strip().startswith("'") and line.strip().strip("',") not in ("./",)
+              and not (web / line.strip().strip("',")).is_file()
+          ]
+          if absent:
+              sys.exit(f"sw.js pre-caches files that are not in web/: {absent}")
+
+          json.loads((web / "prompts" / "inspection.json").read_text())
+          print("Installable app files check out.")
+          CHECK
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

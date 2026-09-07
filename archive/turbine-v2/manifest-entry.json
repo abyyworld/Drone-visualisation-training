@@ -1,0 +1,21 @@
+{
+  "turbine": {
+    "file": "turbine.onnx",
+    "task": "detect",
+    "imgsz": 960,
+    "labels": [
+      "corrosion",
+      "crack",
+      "surface_peeling"
+    ],
+    "confThreshold": 0.25,
+    "iouThreshold": 0.45,
+    "severityWeights": {
+      "crack": 3.0,
+      "corrosion": 2.0,
+      "surface_peeling": 1.0
+    },
+    "displayName": "Wind turbine blade",
+    "notes": "No 'healthy' class by design: an image with no detections is the healthy result."
+  }
+}

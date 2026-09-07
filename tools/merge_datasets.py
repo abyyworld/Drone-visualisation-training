@@ -71,18 +71,27 @@ SYNONYMS = {
         "surface peeling", "paint peeling", "delamination", "corrosion", "rust",
         "abrasion", "wear", "surface eye", "injury", "damage", "damaged",
         "surface damage", "pitting", "gelcoat", "blister",
+        "discoloration", "discolouration", "browning", "yellowing", "corroded",
+        "eroded", "delaminated", "scratch", "scratches", "scuff", "chipped",
     ),
     "structural_damage": (
         "breakage", "broken", "break", "missing", "missing material",
         "missing surface material", "hole", "puncture", "structural",
         "structural damage", "severe", "severe damage", "tear", "torn",
         "missing teeth", "vg panel with missing teeth", "detached",
+        # Vocabulary a vision model reaches for that a Roboflow class list never contains.
+        # These are the words for the failure the trained detector missed entirely, so they
+        # have to map somewhere rather than being reported as unknown on every inspection.
+        "severed", "snapped", "shattered", "collapsed", "bent", "deformed",
+        "deformation", "buckled", "blade broken", "blade severed", "blade missing",
+        "missing blade", "structural failure", "catastrophic",
     ),
     "contamination": (
         "dirt", "dust", "dusty", "soil", "soiling", "soiled", "oil", "surface oil",
         "grease", "bird", "bird drop", "bird drops", "bird droppings", "bird dropping",
         "lightning", "lightning strike", "lightning receptor", "burn", "burnmark",
-        "burn mark", "surface attach", "debris", "stain", "snow",
+        "burn mark", "surface attach", "debris", "stain", "snow", "soiling dust",
+        "vegetation", "moss", "algae", "water", "standing water", "shading",
     ),
 }
 

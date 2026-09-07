@@ -262,3 +262,112 @@ body {
   .card__canvas { max-height: 220px; }
   body { background: #fff; }
 }
+
+/* --------------------------------------------------------------------------------------
+   Engine selection
+
+   Sits above the drop zone because it changes where the images go, and that is a decision
+   to make before uploading rather than a setting to discover afterwards.
+   -------------------------------------------------------------------------------------- */
+
+.engine__head { margin-bottom: 14px; }
+
+.engine__title {
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
+.engine__blurb {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted, #5b6470);
+  max-width: 68ch;
+}
+
+.engine__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.field--wide { grid-column: 1 / -1; }
+
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted, #5b6470);
+  margin-bottom: 5px;
+}
+
+.field__row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field__row select,
+.field__row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field select,
+.field input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--border, #ccd3da);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
+
+/* A key is long, opaque and gets checked character by character when it is rejected. */
+#engine-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+
+.field__hint {
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted, #5b6470);
+}
+
+.button--small { padding: 7px 12px; font-size: 0.82rem; white-space: nowrap; }
+
+.engine__warning {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #E67E22;
+  background: rgba(230, 126, 34, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-width: 78ch;
+}
+
+.engine__warning code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
+}
+
+/* The privacy pill is a claim about where the images go, so it has to change when they
+   start going somewhere else. Green for on-device, amber once a provider is selected. */
+.pill--offsite {
+  background: rgba(230, 126, 34, 0.14);
+  color: #8a4b00;
+}
+
+.detections--unlocated li { opacity: 0.85; }
+
+.detections__note {
+  display: block;
+  margin-left: 18px;
+  font-size: 0.8rem;
+  color: var(--muted, #5b6470);
+}

@@ -321,7 +321,8 @@ def generate_report(
     if not total:
         raise SystemExit(
             f'{json_path} contains no analysed results '
-            f'({excluded} rejected or errored). Nothing to report.'
+            f'({excluded} rejected or errored). A report cannot be built from it, and an '
+            f'empty one would read as a clean inspection of images that were never analysed.'
         )
 
     severe_pct   = stats['severe']   / total * 100

@@ -1,0 +1,35 @@
+{
+  "weights": "/kaggle/working/runs/turbine_v2/weights/best.pt",
+  "data": "/kaggle/working/turbine_v2/data.yaml",
+  "split": "test",
+  "imgsz": 960,
+  "aggregate": {
+    "precision": 0.7084630925155543,
+    "recall": 0.7922436411790502,
+    "mAP50": 0.7585407004688283,
+    "mAP50_95": 0.47847673656013556
+  },
+  "per_class": {
+    "corrosion": {
+      "precision": 0.6136229039139057,
+      "recall": 0.6875,
+      "mAP50": 0.556523349689478,
+      "mAP50_95": 0.30935797591172676,
+      "instances": 32
+    },
+    "crack": {
+      "precision": 0.880016357742403,
+      "recall": 0.9,
+      "mAP50": 0.9381904337760617,
+      "mAP50_95": 0.5702213779213009,
+      "instances": 100
+    },
+    "surface_peeling": {
+      "precision": 0.6317500158903541,
+      "recall": 0.7892309235371505,
+      "mAP50": 0.7809083179409451,
+      "mAP50_95": 0.5558508558473793,
+      "instances": 50
+    }
+  }
+}

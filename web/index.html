@@ -3,10 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Drone Inspection — Turbine &amp; Solar Defect Analysis</title>
-<meta name="description" content="Upload drone imagery of wind turbine blades or solar panels and get defect detection and severity scoring. Runs entirely in your browser — images are never uploaded.">
+<title>Drone Inspection - Turbine &amp; Solar Defect Analysis</title>
+<meta name="description" content="Upload drone imagery of wind turbine blades or solar panels and get defect detection and severity scoring. Runs entirely in your browser - images are never uploaded.">
 <link rel="stylesheet" href="css/app.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛩️</text></svg>">
+
+<!-- Installable on a tablet: "Add to home screen" gives it an icon and its own window,
+     with no app store and no APK to sign. See docs/INSTALL-tablet.md. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1F4E5C">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Drone Inspection">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="icons/icon-512.png" sizes="512x512" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 </head>
 <body>
 
@@ -18,7 +29,7 @@
       <p id="report-stamp" class="masthead__stamp" hidden></p>
     </div>
     <div class="masthead__badges">
-      <span class="pill pill--privacy" title="Inference runs locally via ONNX Runtime Web. No image is uploaded to any server.">
+      <span id="privacy-pill" class="pill pill--privacy" title="Inference runs locally via ONNX Runtime Web. No image is uploaded to any server.">
         Runs in your browser
       </span>
       <span class="pill" title="Execution provider in use">Backend: <strong id="backend">…</strong></span>
@@ -30,18 +41,80 @@
 
   <div id="status-banner" class="banner hidden" role="status"></div>
 
+  <section class="panel engine">
+    <div class="engine__head">
+      <h2 class="engine__title">Analysis engine</h2>
+      <p class="engine__blurb">
+        The on-device model is free, private and instant, but only finds the defect classes it
+        was trained on. A vision model called through an API has no fixed class list and will
+        describe damage the detector was never taught, at the cost of sending each image to
+        that provider and paying per image. Its boxes are approximate rather than pixel-tight.
+      </p>
+    </div>
+
+    <div class="engine__grid">
+      <div class="field">
+        <label for="engine-provider">Engine</label>
+        <select id="engine-provider">
+          <option value="local">On-device model (private, free)</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+
+      <div class="field" id="engine-model-field" hidden>
+        <label for="engine-model">Model</label>
+        <div class="field__row">
+          <select id="engine-model"></select>
+          <button id="engine-refresh" class="button button--ghost button--small" type="button"
+                  title="Ask the provider which models this key can reach">Refresh</button>
+        </div>
+        <p id="engine-model-hint" class="field__hint"></p>
+      </div>
+
+      <div class="field">
+        <label for="video-frames">Frames per video</label>
+        <input id="video-frames" type="number" min="1" max="60" value="24" step="1">
+        <p class="field__hint">
+          A clip is sampled, then blurred and near-identical views are dropped, so only
+          distinct in-focus frames are analysed. More frames means better coverage and,
+          on an API engine, a proportionally larger bill.
+        </p>
+      </div>
+
+      <div class="field field--wide" id="engine-key-field" hidden>
+        <label for="engine-key"><span id="engine-key-label">API key</span></label>
+        <div class="field__row">
+          <input id="engine-key" type="password" autocomplete="off" spellcheck="false"
+                 placeholder="Paste your key">
+          <button id="engine-key-toggle" class="button button--ghost button--small" type="button"
+                  aria-pressed="false">Show</button>
+        </div>
+        <p id="engine-key-hint" class="field__hint"></p>
+      </div>
+    </div>
+
+    <p id="engine-warning" class="engine__warning" hidden>
+      With an API engine selected, each image is sent to the provider you chose and is no
+      longer processed only on your device. The key is kept in this tab and is never saved to
+      disk or sent anywhere else, but a key pasted into a browser is visible to anyone using
+      this machine. For shared or automated use, run <code>tools/vlm_inspect.py</code> instead.
+    </p>
+  </section>
+
   <section class="panel">
     <div id="drop" class="drop" tabindex="0" role="button"
-         aria-label="Upload inspection images. Click, or drag files here.">
+         aria-label="Upload inspection images or video. Click, or drag files here.">
       <svg class="drop__icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 16V4m0 0L8 8m4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.75"
               stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor"
               stroke-width="1.75" stroke-linecap="round"/>
       </svg>
-      <p class="drop__title">Drop inspection images here</p>
-      <p class="drop__hint">or click to browse — JPEG, PNG or WebP, up to 100 at once</p>
-      <input id="file-input" type="file" accept="image/*" multiple hidden>
+      <p class="drop__title">Drop inspection images or video here</p>
+      <p class="drop__hint">or click to browse - JPEG, PNG, WebP, or an MP4/WebM clip the frames are pulled from</p>
+      <input id="file-input" type="file" accept="image/*,video/*" multiple hidden>
     </div>
 
     <div id="override-row" class="override hidden">
@@ -71,16 +144,25 @@
   <section id="empty-state" class="empty">
     <h2>What this does</h2>
     <p>
-      Every uploaded image is first checked by a domain classifier. Turbine blades and solar
-      panels are routed to the matching detector; anything else is refused rather than
-      guessed at. Detections are scored into a severity band and rolled up into an
-      inspection verdict you can export.
+      Upload photographs or a video clip. A clip is sampled and reduced to the distinct,
+      in-focus frames worth looking at, then every image is checked for what it shows.
+      Turbine blades and solar panels are analysed; anything else is refused rather than
+      guessed at. Findings are scored into a severity band and rolled up into an inspection
+      verdict you can export as JSON or print as a PDF report.
+    </p>
+    <p>
+      Two engines. The <strong>on-device model</strong> runs in this browser, costs nothing,
+      needs no connection once loaded, and never transmits an image - but it only finds the
+      defect classes it was trained on. A <strong>provider API</strong> has no fixed class
+      list and will describe damage the trained model was never taught, at the cost of
+      sending each image to that provider and paying per image. Its boxes are approximate.
+      Pick above.
     </p>
     <div class="scope">
       <article>
         <h3>Wind turbine blades</h3>
         <p>Detects <strong>corrosion</strong>, <strong>cracks</strong> and
-        <strong>surface peeling</strong>. There is no “healthy” class by design — an image
+        <strong>surface peeling</strong>. There is no “healthy” class by design - an image
         with no detections <em>is</em> the healthy result.</p>
       </article>
       <article>
@@ -91,7 +173,7 @@
         <p class="caution">
           Cannot detect hotspots, cell defects, bypass-diode failure or offline modules.
           Those are electrical faults visible only in thermal infrared, and no visible-light
-          model can find them — including this one.
+          model can find them - including this one.
         </p>
       </article>
     </div>
@@ -103,9 +185,10 @@
 
 <footer class="footer wrap">
   <p>
-    Inference runs locally with ONNX Runtime Web. Images are processed on your device and are
-    never transmitted. Results are a screening aid, not a certified structural assessment —
-    confirm findings before acting on them.
+    With the on-device engine, inference runs locally with ONNX Runtime Web and images are
+    never transmitted. With a provider API selected, each image is uploaded to that provider
+    and is subject to their terms and retention policy. Either way the results are a screening
+    aid, not a certified structural assessment - confirm findings before acting on them.
   </p>
 </footer>
 
