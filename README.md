@@ -281,14 +281,56 @@ this repo.
 
 `datasets/` is gitignored; regenerate it with `tools/rebuild_turbine.py`.
 
+## Results
+
+Turbine detector (`yolo11s` @ 960, 100 epochs) on the held-out test split, which passes all
+seven audit checks with 0% near-duplicate leakage:
+
+| class | instances | precision | recall | mAP50 | mAP50-95 |
+|---|---|---|---|---|---|
+| crack | 100 | 0.880 | 0.900 | **0.938** | 0.570 |
+| surface_peeling | 50 | 0.632 | 0.789 | **0.781** | 0.556 |
+| corrosion | 32 | 0.614 | 0.688 | **0.557** | 0.309 |
+| **all** | | 0.708 | 0.792 | **0.759** | 0.478 |
+
+`corrosion` has 32 test instances, near the threshold below which AP is dominated by
+sampling noise. Read it as "roughly 0.5", not 0.557.
+
+v1 scored 0.782 aggregate and was useless in the field. That number came from a split with
+32.5% near-duplicate leakage where filename family perfectly predicted the class, and where
+`healthy` was 62% of instances and trivially separable. 0.759 here is worth more than 0.782
+there, which is why `tools/audit_dataset.py` exists.
+
+### The check that matters
+
+Every metric above is measured on images that contain defects, so none of them can detect
+the failure that made v1 useless: boxing things that are not defects. `tools/false_positive_check.py`
+runs the deployed ONNX over healthy blade photographs, where every box is by construction a
+false positive:
+
+| confidence | healthy images with a box | rate |
+|---|---|---|
+| 0.25 (deployed) | 2 of 400 | **0.5%** |
+| 0.40 | 1 of 400 | 0.2% |
+| 0.50 | 0 of 400 | 0% |
+
+Verified against the opposite case through the same code path: 40 of 40 defect images
+produce detections, so the 0.5% is a real result rather than a decoder returning nothing.
+
+### What quantisation costs
+
+Nothing, measured. See `docs/export-variants-turbine.json` — full precision at 38 MB scores
+no better than int8 at 10 MB. The gap between `best.pt` (0.759) and any ONNX export (~0.66)
+is in the export path, not the weights, and is unresolved; the leading suspect is
+rectangular versus square letterboxing during evaluation.
+
 ## Known gaps
 
-- **No models are trained yet.** The notebooks are ready to run; `best.pt` is the v1 model and
-  should not be deployed. `web/models/` ships with only `manifest.json` for the same reason —
-  the first v2 export scored mAP50 0.194 (a run that early-stopped inside warmup), and a
-  detector that confidently boxes the wrong thing is worse than no detector. The app reports
-  each missing model as unavailable and stays usable. Drop the `.onnx` files in when a run is
-  worth deploying; `manifest.json` is already the deploy switch.
+- **Only the turbine detector exists.** `web/models/` holds `turbine.onnx`; there is no
+  `gate.onnx` and no `solar.onnx`. Without the gate the app cannot reject an out-of-domain
+  upload automatically, so it says so and asks the user to pick the inspection type. Both
+  missing models need solar imagery — the gate has to learn `solar` as a class — so one
+  dataset unlocks both. `best.pt` at the repo root is the v1 model and should not be deployed.
 - **Background negatives are out-of-domain.** They come from aerial wide shots, not the defect
   close-up domain, so they only partly teach false-positive suppression. In-domain healthy
   frames would be the stronger fix.
