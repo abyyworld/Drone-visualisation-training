@@ -173,7 +173,10 @@ console.log('\nCoasting is bounded by time, not by frames');
   // detections a second a laptop manages, and fourteen seconds at the 1.4 a tablet manages.
   // A spurious box sat on screen, dashed and drifting, for a quarter of a minute. Frames
   // were the wrong unit for a budget that is really about how stale a box may get.
-  const tracker = new Tracker();
+  // The budget is named here rather than inherited: these steps are 700 ms and the point
+  // is the mechanism, not the number the application ships. The shipped number has its own
+  // test below, because it has to clear something quite different.
+  const tracker = new Tracker({ maxCoastMs: 1500 });
   let clock = 1000000;
   tracker.update([person(50, 50)], clock);
   clock += 700;
@@ -263,7 +266,7 @@ console.log('\nSomeone who leaves and comes back');
   // their track. When they walk out the other side they used to be a new person, and the
   // total went up for someone already in it. Over a route that is not a count of people,
   // it is a count of reappearances.
-  const tracker = new Tracker();
+  const tracker = new Tracker({ maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -324,7 +327,7 @@ console.log('\nSeen from a different angle');
 
 console.log('\nSomeone else is somebody else');
 {
-  const tracker = new Tracker();
+  const tracker = new Tracker({ maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -344,7 +347,7 @@ console.log('\nSomeone else is somebody else');
 
 console.log('\nThe memory does not outlive its usefulness');
 {
-  const tracker = new Tracker({ reidWindowMs: 1000 });
+  const tracker = new Tracker({ reidWindowMs: 1000, maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -375,6 +378,50 @@ console.log('\nA person too small to describe is still tracked');
   tracker.update([{ label: 'person', confidence: 0.8, box: [21, 20, 26, 30], signature: null }], clock);
   check('tracked without a signature', tracker.open().length === 1);
   check('and counted', tracker.countSeen('person') === 1);
+}
+
+console.log('\nThe shipped coast outlasts a full round of close looks');
+{
+  // THE BUG THIS PINS
+  //     The live view takes one close look per detection cycle and works through the tiles
+  //     in turn, so any one part of the frame is examined again only once every
+  //     TILE_COLUMNS * TILE_ROWS cycles. From altitude a person is a few pixels across and
+  //     the wide pass does not see them at all, so the close look is the only thing that
+  //     ever does.
+  //
+  //     The coast budget was shorter than that round trip. Every one of those people was
+  //     therefore let go before their own tile came round again, and picked up as somebody
+  //     new the moment it did. The numbers on screen churned constantly and the total
+  //     climbed with every pass, which is what "the numbering is random" looks like from
+  //     the outside.
+  //
+  //     So the budget has to clear one full round of tiles at the slowest rate the tablet
+  //     actually manages, not at the rate the target period asks for.
+  const { TILE_COLUMNS, TILE_ROWS } = await import('../web/js/tiles.js');
+  const SLOWEST_CYCLE_MS = 500;
+  const roundTrip = TILE_COLUMNS * TILE_ROWS * SLOWEST_CYCLE_MS;
+
+  const shipped = new Tracker().maxCoastMs;
+  check('a track survives one full pass over the tiles', shipped >= roundTrip,
+    `coast ${shipped} ms against a ${roundTrip} ms round of tiles`);
+
+  // And the other half of the same fix: holding an identity is not the same as being on
+  // screen, so the readout must not report a coasting track as present.
+  const tracker = new Tracker();
+  let clock = 1000;
+  tracker.update([person(50, 50)], clock);
+  clock += 300;
+  tracker.update([person(52, 50)], clock);
+  check('someone just seen is in view', tracker.countOf('person') === 1);
+
+  clock += 2000;
+  tracker.update([], clock);
+  check('someone not seen for two seconds is not in view',
+    tracker.countOf('person') === 0, `${tracker.countOf('person')} reported`);
+  check('but is still held, so they keep their number',
+    tracker.tracks.length === 1, `${tracker.tracks.length} held`);
+  check('and are not counted a second time',
+    tracker.countSeen('person') === 1, `${tracker.countSeen('person')} counted`);
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);

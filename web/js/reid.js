@@ -71,7 +71,7 @@ const BAND_WEIGHTS = [0.12, 0.28, 0.15, 0.45];
  * count and an honest one, where a confident match on four pixels is neither.
  */
 const MIN_BOX_WIDTH = 6;
-const MIN_BOX_HEIGHT = 16;
+const MIN_BOX_HEIGHT = 8;
 
 /**
  * Build a colour signature for one box.

@@ -43,7 +43,16 @@ public final class Tracker {
      *
      * Kept in step with MAX_COAST_MS in web/js/track.js.
      */
-    private static final long MAX_COAST_MS = 1500;
+    private static final long MAX_COAST_MS = 4000;
+
+    /**
+     * How recently a track must have been seen to count as being in view now.
+     *
+     * Holding an identity and being visible are two different questions, and one number was
+     * answering both. The coast above is long because a person can go several seconds
+     * between looks; the readout is short because "in view" should mean in view.
+     */
+    private static final long IN_VIEW_MS = 1200;
 
     /**
      * How alike two colour signatures must be to be the same person coming back.
@@ -297,9 +306,10 @@ public final class Tracker {
 
     /** How many of a label are being followed right now. */
     public int countOf(String label) {
+        long now = System.currentTimeMillis();
         int n = 0;
         for (Track track : open()) {
-            if (track.label.equals(label)) {
+            if (track.label.equals(label) && now - track.lastSeenAt <= IN_VIEW_MS) {
                 n += 1;
             }
         }

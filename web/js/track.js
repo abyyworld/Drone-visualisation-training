@@ -57,7 +57,8 @@ const CONFIRM_AFTER = 2;
  * A second and a half is a person walking behind something and out the other side. Anything
  * longer is a box describing the past.
  */
-const MAX_COAST_MS = 1500;
+const MAX_COAST_MS = 4000;
+const IN_VIEW_MS = 1200;
 
 /**
  * How alike two colour signatures must be to be the same person coming back.
@@ -374,9 +375,18 @@ export class Tracker {
     return this.tracks.filter((t) => t.seen >= this.confirmAfter);
   }
 
-  /** How many of a class are being tracked right now. */
-  countOf(label) {
-    return this.tracks.filter((t) => t.label === label && t.seen >= this.confirmAfter).length;
+  /**
+   * How many of a class are in view right now.
+   *
+   * Being held and being visible are different questions, and one number used to answer
+   * both. A track coasts for seconds because a close look at any one part of the frame comes
+   * round only every few passes, and holding the identity across that gap is the whole point.
+   * Counting those as present would report a crowd that has already walked off.
+   */
+  countOf(label, now = this.now ?? Date.now()) {
+    return this.tracks.filter((t) => t.label === label
+      && t.seen >= this.confirmAfter
+      && now - t.lastSeenAt <= IN_VIEW_MS).length;
   }
 
   /**

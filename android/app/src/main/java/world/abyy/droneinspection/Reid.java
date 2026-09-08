@@ -44,7 +44,7 @@ final class Reid {
      * counts them again if they leave and return. A worse count, and an honest one.
      */
     private static final int MIN_BOX_WIDTH = 6;
-    private static final int MIN_BOX_HEIGHT = 16;
+    private static final int MIN_BOX_HEIGHT = 8;
 
     private Reid() {
     }
