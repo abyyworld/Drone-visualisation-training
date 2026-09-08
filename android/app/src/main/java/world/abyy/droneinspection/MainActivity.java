@@ -196,14 +196,20 @@ public class MainActivity extends AppCompatActivity {
                     pendingFileCallback.onReceiveValue(null);
                 }
                 pendingFileCallback = callback;
-                try {
-                    filePicker.launch(params.createIntent());
-                    return true;
-                } catch (Exception opening) {
-                    pendingFileCallback = null;
-                    Toast.makeText(MainActivity.this, R.string.no_picker, Toast.LENGTH_LONG).show();
-                    return false;
+
+                boolean many = params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
+                for (Intent attempt : pickers(many)) {
+                    try {
+                        filePicker.launch(attempt);
+                        return true;
+                    } catch (Exception unavailable) {
+                        // This device has nothing that answers that particular intent. Try
+                        // the next, which asks for less.
+                    }
                 }
+                pendingFileCallback = null;
+                Toast.makeText(MainActivity.this, R.string.no_picker, Toast.LENGTH_LONG).show();
+                return false;
             }
         });
 
@@ -238,6 +244,62 @@ public class MainActivity extends AppCompatActivity {
         } else {
             webView.restoreState(savedInstanceState);
         }
+    }
+
+
+    /**
+     * Ways to ask this device for a file, best first.
+     *
+     * WHY NOT FileChooserParams.createIntent()
+     *     Because on the controller this app is flown with, it opened a picker in which
+     *     nothing could be selected. The page asks for `image/*,video/*` and then a long
+     *     tail of bare extensions, so that a phone's own formats are offered rather than
+     *     only the ones this machine has a MIME type for. The WebView turns that accept
+     *     list into MIME types for the intent, and the extensions Android 9 cannot resolve
+     *     - heic and the action-camera ones among them - come through as entries that match
+     *     no file at all. The picker then filters everything away and there is nothing to
+     *     tap. It is not an error and nothing is logged.
+     *
+     *     So the intent is built here instead, from what this application actually accepts,
+     *     which is pictures and video and nothing else. The accept list on the page is left
+     *     alone: in a real browser it is useful, and it is still what decides which files
+     *     the page will take once they arrive.
+     *
+     *     The ladder exists because a rugged controller is not a phone. It may have no
+     *     gallery, and its file manager may answer one of these intents and not the others,
+     *     so each rung asks for less than the one above.
+     */
+    private java.util.List<Intent> pickers(boolean many) {
+        java.util.List<Intent> options = new java.util.ArrayList<>();
+
+        // Both families at once needs a wildcard type with the real list beside it; setting
+        // the type to image/* would hide every video.
+        String[] wanted = {"image/*", "video/*"};
+
+        Intent document = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        document.addCategory(Intent.CATEGORY_OPENABLE);
+        document.setType("*/*");
+        document.putExtra(Intent.EXTRA_MIME_TYPES, wanted);
+        document.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, many);
+        options.add(document);
+
+        Intent content = new Intent(Intent.ACTION_GET_CONTENT);
+        content.addCategory(Intent.CATEGORY_OPENABLE);
+        content.setType("*/*");
+        content.putExtra(Intent.EXTRA_MIME_TYPES, wanted);
+        content.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, many);
+        options.add(Intent.createChooser(content, getString(R.string.choose_files)));
+
+        // Last resort: everything, with no filtering at all. A device whose picker mishandles
+        // EXTRA_MIME_TYPES still shows the files, and the page rejects what it cannot read
+        // with a message rather than silently.
+        Intent anything = new Intent(Intent.ACTION_GET_CONTENT);
+        anything.addCategory(Intent.CATEGORY_OPENABLE);
+        anything.setType("*/*");
+        anything.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, many);
+        options.add(anything);
+
+        return options;
     }
 
     private void configure(WebSettings settings) {
