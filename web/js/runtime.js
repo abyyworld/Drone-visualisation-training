@@ -34,8 +34,15 @@ export function configureRuntime({ ortBase: base } = {}) {
 function loadOrt() {
   if (ortPromise) return ortPromise;
 
+  // Three bundles, best first, and which ones are even present depends on where this is
+  // running. The browser loads them from a CDN and gets the lot. The APK carries only the
+  // last, because each bundle brings its own WASM build and they are 12 to 25 MB each: the
+  // WebGPU one wants asyncify, the default one wants jsep, and the tablet has no WebGPU to
+  // use either with. So on the tablet the first two are simply not there, this falls
+  // through to the one that is, and the APK is nearly 60 MB smaller for it.
   ortPromise = import(/* @vite-ignore */ `${ortBase}ort.webgpu.min.mjs`)
     .catch(() => import(/* @vite-ignore */ `${ortBase}ort.min.mjs`))
+    .catch(() => import(/* @vite-ignore */ `${ortBase}ort.wasm.min.mjs`))
     .then((module) => {
       const ort = module.default ?? module;
       ort.env.wasm.wasmPaths = ortBase;

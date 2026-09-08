@@ -47,6 +47,13 @@ android {
         // minSdk is still worth having - an old tablet with a fresh WebView is fine.
         minSdk 24
         targetSdk 35
+
+        // The controller this flies on is ARM, as is every Android device this would ever
+        // be installed on. Shipping the x86 and x86_64 builds of the detector's native
+        // library as well added 13 MB to a file that is copied onto a tablet by hand.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
         versionCode project.hasProperty('versionCode') ? project.versionCode.toInteger() : 1
         versionName project.hasProperty('versionName') ? project.versionName : '1.0'
     }
@@ -171,10 +178,22 @@ tasks.register('stageWebApp', Copy) {
 tasks.register('stageOnnxRuntime', Copy) {
     description = 'Bundle onnxruntime-web so the on-device engine works with no connection'
     onlyIf { ortDist.isDirectory() }
+    // Three files, not the thirty-two the package ships.
+    //
+    // Each JavaScript bundle brings its own WebAssembly build and they are not small: the
+    // WebGPU bundle loads a 25 MB asyncify build, the default bundle a 24 MB jsep one, and
+    // the plain WebAssembly bundle a 12 MB one. Copying the directory wholesale put all
+    // three in the APK, 69 MB, of which the tablet could only ever use the last: an Android
+    // 9 WebView has no WebGPU, so the other two are 49 MB that is downloaded, installed and
+    // never opened.
+    //
+    // web/js/runtime.js asks for the three bundles in order and takes the first that
+    // loads, so leaving the other two out is all this needs to do. The browser build is
+    // untouched: it loads these from a CDN and still gets the accelerated path.
     from(ortDist) {
-        exclude '**/*.map'
-        exclude '**/*.d.ts'
-        exclude '**/*.node'
+        include 'ort.wasm.min.mjs'
+        include 'ort-wasm-simd-threaded.mjs'
+        include 'ort-wasm-simd-threaded.wasm'
     }
     into stagedAssets.map { it.dir('www/ort') }
 }
