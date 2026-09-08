@@ -44,13 +44,18 @@ trained defect models, which do not exist yet.
 
 So out of the box, with no key and no connection:
 
-- **Camera** tracks people and vehicles on the drone's feed, live, on the tablet
-- **Analyse** finds them in photographs and video, counts them, and produces the report
+- **Camera** tracks people and vehicles on the drone's feed, live, on the tablet, and marks
+  flame and smoke regions on the same frames
+- **Analyse** finds all of that in photographs and video, gives a floor on how many people
+  are in each frame, and produces the report
 
-With an API key added in Settings, the provider engines also look for fire, smoke, blade
-damage and soiling - the things the on-device model has no class for. Those run on an
-interval of a few seconds, not per frame, and the overlay shows them dimmer and says how old
-they are.
+Flame and smoke are marked as candidates rather than findings, because they are computed
+from colour and from how a region behaves over time rather than by a trained model. A region
+with a box on it is a region to look at.
+
+With an API key added in Settings, the provider engines also describe blade damage, corrosion
+and soiling - the things neither on-device engine has any class for. Those run on an interval
+of a few seconds, not per frame, and the overlay shows them dimmer and says how old they are.
 
 ### It is about 65 MB
 

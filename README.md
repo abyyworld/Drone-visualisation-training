@@ -9,22 +9,32 @@ icon.
 
 ## Three engines
 
-| | People & vehicles | Trained defect models | Provider API |
+| | On device | Trained defect models | Provider API |
 |---|---|---|---|
-| Where it runs | This device, MediaPipe | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
+| Where it runs | This device, MediaPipe plus a computed flame scan | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
 | Ready now | **Yes** | No, needs a dataset | With a key |
 | Cost | Nothing | Nothing | Per image |
 | Offline | Yes | Yes | No |
 | Images leave the device | Never | Never | Yes |
 | Speed | 5-15 per second | Similar | One every few seconds |
 | **Tracks across frames** | **Yes** | Possible | No, and never will |
-| Finds | person, car, truck, bus, bicycle | its trained classes | anything it can describe |
-| Cannot find | fire, smoke, cracks, corrosion | anything outside its classes | - |
+| Finds | person, car, truck, bus, bicycle, and flame and smoke regions | its trained classes | anything it can describe |
+| Cannot find | cracks, corrosion, soiling | anything outside its classes | - |
 
-**People & vehicles** is the default because it is the only one ready without a key or a
-dataset. It is a COCO-trained EfficientDet-Lite2 shipped with the app - see
+**On device** is the default because it is the only one ready without a key or a dataset.
+It is two engines at once. A COCO-trained EfficientDet-Lite2 finds people and vehicles - see
 [`web/models/DETECTOR.md`](web/models/DETECTOR.md) for what it covers, its limits at
 altitude, and why it is that model rather than a YOLO one (the licence).
+
+Flame and smoke are computed rather than detected, because there is no permissively licensed
+model for them to ship. Colour finds the candidates; time decides. Fire burns in place and
+churns inside its own outline, so the flame fraction of a patch changes on nearly every
+frame, while a red van crossing the shot changes it further but only twice and holds
+perfectly still in between. The test is how often a patch changes, not how far, which is
+what keeps a sunset, a tiled roof and a parked red car out of the results. What it produces
+is a region to look at, not a verdict, and a single photograph carries no motion at all, so
+a still is capped at 0.60 confidence and says why. See
+[`web/js/firescan.js`](web/js/firescan.js).
 
 ## Live tracking
 
