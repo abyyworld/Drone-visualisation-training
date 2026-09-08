@@ -23,7 +23,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -127,6 +126,8 @@ public final class NativeDetector {
     private final Set<Integer> personClasses;
     private final double confThreshold;
     private final double iouThreshold;
+    /** The file beside the model would not parse, so its class names came from here. */
+    private final boolean usingDefaults;
 
     private final int inputSize;
     /** True when the input is [1, 3, size, size] rather than [1, size, size, 3]. */
@@ -165,7 +166,7 @@ public final class NativeDetector {
     private NativeDetector(Interpreter cpu, @Nullable Interpreter accelerated,
                            @Nullable AutoCloseable acceleratedDelegate, String acceleratedName,
                            String[] labels, Set<Integer> personClasses,
-                           double confThreshold, double iouThreshold) {
+                           double confThreshold, double iouThreshold, boolean usingDefaults) {
         this.cpu = cpu;
         this.accelerated = accelerated;
         this.acceleratedDelegate = acceleratedDelegate;
@@ -174,6 +175,7 @@ public final class NativeDetector {
         this.personClasses = personClasses;
         this.confThreshold = confThreshold;
         this.iouThreshold = iouThreshold;
+        this.usingDefaults = usingDefaults;
         this.keep = personClasses;
 
         Tensor entry = cpu.getInputTensor(0);
@@ -233,9 +235,19 @@ public final class NativeDetector {
         keep = all;
     }
 
-    /** Which delegate is actually running, for the status line. */
+    /**
+     * What the detector is actually doing, for the status line.
+     *
+     * The delegate, the size it runs at, and whether the box numbers needed scaling. This
+     * reads like more than a status line needs, and it is there because two builds went out
+     * marking nobody and neither of them could say why. Whatever the next fault is, this
+     * puts the state that decides it on the screen.
+     */
     public String delegate() {
-        return delegateName;
+        return delegateName
+                + " " + inputSize + "px"
+                + (boxScale == 1f ? "" : " x" + (int) boxScale)
+                + (usingDefaults ? " (default classes)" : "");
     }
 
     /** Milliseconds the last frame took, for the status line and for pacing. */
@@ -250,36 +262,66 @@ public final class NativeDetector {
      */
     @Nullable
     public static NativeDetector open(Context context, StringBuilder failure) {
-        MappedByteBuffer model;
-        String[] labels;
-        Set<Integer> people;
-        double conf;
-        double iou;
+        ByteBuffer model;
         try {
             model = mapAsset(context, MODEL_ASSET);
-
-            JSONObject meta = readJson(context, META_ASSET);
-            JSONArray names = meta.getJSONArray("labels");
-            labels = new String[names.length()];
-            for (int i = 0; i < names.length(); i++) {
-                labels[i] = names.getString(i).toLowerCase(Locale.ROOT);
-            }
-            // VisDrone separates a person standing or walking from a person in any other
-            // pose. For this application those are one thing, and both are wanted.
-            JSONArray wanted = meta.getJSONArray("keepClasses");
-            people = new LinkedHashSet<>();
-            for (int i = 0; i < wanted.length(); i++) {
-                int id = wanted.getInt(i);
-                people.add(id);
-                if (id >= 0 && id < labels.length) {
-                    labels[id] = "person";
-                }
-            }
-            conf = meta.optDouble("confThreshold", 0.25);
-            iou = meta.optDouble("iouThreshold", 0.45);
         } catch (Exception problem) {
             failure.append(describe(problem));
             return null;
+        }
+
+        // Defaults that match the model this app ships with, used when the file beside it
+        // cannot be read.
+        //
+        // The metadata is a convenience: it names the classes and says which of them are
+        // people. Refusing to detect anything because a 282 byte JSON file would not parse
+        // is the wrong trade by a wide margin, and it is what used to happen. A detector
+        // running on defaults still marks people; one that never opened marks nothing and
+        // looks exactly like a street with nobody on it.
+        String[] labels = {"person", "person", "bicycle", "car", "van", "truck", "tricycle",
+                "awning-tricycle", "bus", "motor", "others"};
+        Set<Integer> people = Yolo.classes(0, 1);
+        double conf = 0.25;
+        double iou = 0.45;
+        boolean metadataFailed = false;
+        // Parsed into its own variables and only adopted once all of it worked. Assigning
+        // as it went would leave a half read file half applied: the classes to keep are read
+        // after the names, so a file that failed in between gave an empty keep set, and an
+        // empty keep set is a detector that runs perfectly and marks nobody.
+        try {
+            JSONObject meta = new JSONObject(new String(readAsset(context, META_ASSET), "UTF-8"));
+
+            JSONArray names = meta.getJSONArray("labels");
+            String[] readLabels = new String[names.length()];
+            for (int i = 0; i < names.length(); i++) {
+                readLabels[i] = names.getString(i).toLowerCase(Locale.ROOT);
+            }
+
+            // VisDrone separates a person standing or walking from a person in any other
+            // pose. For this application those are one thing, and both are wanted.
+            JSONArray wanted = meta.getJSONArray("keepClasses");
+            Set<Integer> readPeople = new LinkedHashSet<>();
+            for (int i = 0; i < wanted.length(); i++) {
+                int id = wanted.getInt(i);
+                if (id < 0 || id >= readLabels.length) {
+                    throw new IllegalArgumentException("keepClasses " + id + " is not a class");
+                }
+                readPeople.add(id);
+                readLabels[id] = "person";
+            }
+            if (readPeople.isEmpty()) {
+                throw new IllegalArgumentException("nothing would be kept, so nothing marked");
+            }
+
+            labels = readLabels;
+            people = readPeople;
+            conf = meta.optDouble("confThreshold", 0.25);
+            iou = meta.optDouble("iouThreshold", 0.45);
+        } catch (Exception unreadable) {
+            // Carry on with the defaults above. The status line says so, because a detector
+            // that had to guess its own class names is worth knowing about even though it
+            // still marks people.
+            metadataFailed = true;
         }
 
         Interpreter processor;
@@ -330,7 +372,7 @@ public final class NativeDetector {
         }
 
         NativeDetector detector = new NativeDetector(processor, candidate, candidateDelegate,
-                candidateName, labels, people, conf, iou);
+                candidateName, labels, people, conf, iou, metadataFailed);
         try {
             detector.calibrate();
         } catch (RuntimeException | Error problem) {
@@ -347,19 +389,46 @@ public final class NativeDetector {
                 ? problem.getClass().getSimpleName() : problem.getMessage());
     }
 
-    private static MappedByteBuffer mapAsset(Context context, String path) throws Exception {
+    /**
+     * The model, mapped if the APK stored it whole and copied if it did not.
+     *
+     * `openFd` is the cheap path and the one that works today, because build.gradle keeps
+     * tflite files uncompressed. It throws the moment that stops being true, so the fallback
+     * reads the bytes instead: three megabytes of heap against a detector that will not
+     * start is not a difficult trade.
+     */
+    private static ByteBuffer mapAsset(Context context, String path) throws Exception {
         try (AssetFileDescriptor descriptor = context.getAssets().openFd(path);
              FileInputStream stream = new FileInputStream(descriptor.getFileDescriptor())) {
             return stream.getChannel().map(FileChannel.MapMode.READ_ONLY,
                     descriptor.getStartOffset(), descriptor.getDeclaredLength());
+        } catch (java.io.IOException compressed) {
+            byte[] bytes = readAsset(context, path);
+            ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length)
+                    .order(ByteOrder.nativeOrder());
+            buffer.put(bytes);
+            buffer.rewind();
+            return buffer;
         }
     }
 
-    private static JSONObject readJson(Context context, String path) throws Exception {
+    /**
+     * Every byte of an asset, however it is stored.
+     *
+     * Not `available()` and one `read()`. This file is compressed inside the APK, where
+     * `available()` is not a length and `read` fills as much of the array as it feels like.
+     * A short read gives truncated JSON, which throws, which used to mean the detector
+     * refused to start and the screen marked nobody, for a reason nothing displayed.
+     */
+    private static byte[] readAsset(Context context, String path) throws Exception {
         try (InputStream stream = context.getAssets().open(path)) {
-            byte[] bytes = new byte[stream.available()];
-            int read = stream.read(bytes);
-            return new JSONObject(new String(bytes, 0, Math.max(0, read), "UTF-8"));
+            java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[16 * 1024];
+            int read;
+            while ((read = stream.read(chunk)) > 0) {
+                all.write(chunk, 0, read);
+            }
+            return all.toByteArray();
         }
     }
 
