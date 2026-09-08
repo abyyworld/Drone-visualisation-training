@@ -24,6 +24,15 @@ public final class Finding {
     public final String note;
     /** Set by the native detector, which has a calibrated score; unused by the API path. */
     public float confidence;
+
+    /**
+     * What this person looks like, for recognising them after they leave the frame.
+     *
+     * Set by the live path for people, left null for everything else and for anyone too
+     * small to describe. Null means "cannot be matched back", which is a worse count than a
+     * signature gives and an honest one. See Reid.
+     */
+    public float[] signature;
     public final float x0;
     public final float y0;
     public final float x1;

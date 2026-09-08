@@ -59,6 +59,18 @@ export function configureOnDevice(runtime = {}, modelSpec = {}) {
 }
 
 /**
+ * What was configured, for the worker.
+ *
+ * The worker builds its own detector, because a MediaPipe detector belongs to the thread
+ * that made it and cannot be handed across. It needs the same settings this module resolved
+ * from the manifest, so they are exposed rather than duplicated.
+ */
+export function onDeviceConfig() {
+  return { base, model: new URL(model, self.location.href).href, delegate,
+           scoreThreshold: spec.scoreThreshold ?? 0.35 };
+}
+
+/**
  * Roughly how long one frame takes, measured rather than assumed.
  *
  * The live view uses it to pick a sensible cadence instead of running flat out and starving

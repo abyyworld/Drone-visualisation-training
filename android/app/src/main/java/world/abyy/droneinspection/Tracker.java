@@ -44,6 +44,25 @@ public final class Tracker {
      * Kept in step with MAX_COAST_MS in web/js/track.js.
      */
     private static final long MAX_COAST_MS = 1500;
+
+    /**
+     * How alike two colour signatures must be to be the same person coming back.
+     *
+     * The same person in the same clothes under changing light lands around 0.7 to 0.9;
+     * two different people in different clothes land around 0.2 to 0.5. This sits inside
+     * that gap and nearer its lower half, deliberately: a missed match counts someone twice
+     * and inflates the total, a wrong match merges two people and deflates it. The count is
+     * already a floor, so deflating keeps it honest and inflating does not.
+     *
+     * Kept in step with REID_SIMILARITY in web/js/track.js.
+     */
+    private static final float REID_SIMILARITY = 0.62f;
+
+    /** How long someone stays recognisable after leaving the frame: one route leg. */
+    private static final long REID_WINDOW_MS = 5 * 60 * 1000L;
+
+    /** A cap, so a long flight over a crowd does not grow an unbounded gallery. */
+    private static final int REID_MAX_REMEMBERED = 240;
     private static final int CONFIRM_AFTER = 2;
     private static final int MAX_PATH = 60;
 
@@ -55,6 +74,10 @@ public final class Tracker {
         public float confidence;
         public int seen;
         public int missed;
+        /** What this person looks like, for recognising them after they leave. */
+        float[] signature;
+        /** True when this identity has already been added to the running total. */
+        boolean returned;
         /** When this track was last actually seen, rather than predicted. See MAX_COAST_MS. */
         long lastSeenAt;
         public float[] velocity = {0f, 0f};
@@ -76,6 +99,22 @@ public final class Tracker {
         }
     }
 
+    /** People seen and let go, so they are known when they come back. */
+    private static final class Remembered {
+        final int id;
+        final String label;
+        final float[] signature;
+        final long lastSeen;
+
+        Remembered(int id, String label, float[] signature, long lastSeen) {
+            this.id = id;
+            this.label = label;
+            this.signature = signature;
+            this.lastSeen = lastSeen;
+        }
+    }
+
+    private final List<Remembered> remembered = new ArrayList<>();
     private final List<Track> tracks = new ArrayList<>();
     private final Map<String, Integer> everSeen = new HashMap<>();
     private int nextId = 1;
@@ -120,6 +159,12 @@ public final class Tracker {
             pair.track.missed = 0;
             pair.track.seen += 1;
             pair.track.lastSeenAt = now;
+            float[] fresh = detections.get(pair.index).signature;
+            if (fresh != null) {
+                // Kept current rather than frozen at first sight: someone turning around, or
+                // the light changing as the drone moves, should update what they look like.
+                pair.track.signature = Reid.blend(pair.track.signature, fresh);
+            }
             // Smoothed, so one noisy frame does not send the coasting prediction sideways.
             pair.track.velocity = new float[]{
                     pair.track.velocity[0] * 0.6f + (observedCentre[0] - previous[0]) * 0.4f,
@@ -136,8 +181,25 @@ public final class Tracker {
                 continue;
             }
             Finding detection = detections.get(i);
-            tracks.add(new Track(nextId++, detection.label, boxOf(detection),
-                    detection.confidence, now));
+            // Before issuing a new number, ask whether this is someone already known. A
+            // track that closed because its subject walked behind something is not a
+            // different person when they walk out the other side, and giving them a second
+            // number is what turns a count of people into a count of reappearances.
+            Remembered known = recognise(detection, now);
+            Track track = new Track(known != null ? known.id : nextId++, detection.label,
+                    boxOf(detection), detection.confidence, now);
+            track.signature = detection.signature;
+            if (known != null) {
+                if (track.signature == null) {
+                    track.signature = known.signature;
+                }
+                // Carried across, and this is the whole point: someone already counted is
+                // not counted again when they come back.
+                track.counted = true;
+                track.returned = true;
+                remembered.remove(known);
+            }
+            tracks.add(track);
         }
 
         for (Track track : tracks) {
@@ -161,7 +223,15 @@ public final class Tracker {
         }
 
         // Both bounds, and the time one is the one that matters. See MAX_COAST_MS.
-        tracks.removeIf(t -> t.missed > MAX_MISSES || now - t.lastSeenAt > MAX_COAST_MS);
+        // Both bounds, and the time one is the one that matters. See MAX_COAST_MS. A track
+        // that is being let go is put into the gallery on its way out.
+        for (int i = tracks.size() - 1; i >= 0; i--) {
+            Track track = tracks.get(i);
+            if (track.missed > MAX_MISSES || now - track.lastSeenAt > MAX_COAST_MS) {
+                remember(track, now);
+                tracks.remove(i);
+            }
+        }
         return open();
     }
 
@@ -174,6 +244,48 @@ public final class Tracker {
             }
         }
         return confirmed;
+    }
+
+    /**
+     * Is this detection someone already seen and let go?
+     *
+     * Only ever consulted for a brand new track. A detection that matched an open track is
+     * that track, and no amount of colour similarity should overrule a box that is where
+     * the last one was.
+     */
+    private Remembered recognise(Finding detection, long now) {
+        if (detection.signature == null) {
+            return null;
+        }
+        Remembered best = null;
+        float bestScore = REID_SIMILARITY;
+        for (Remembered entry : remembered) {
+            if (!entry.label.equals(detection.label)) {
+                continue;
+            }
+            if (now - entry.lastSeen > REID_WINDOW_MS) {
+                continue;
+            }
+            float score = Reid.similarity(entry.signature, detection.signature);
+            if (score >= bestScore) {
+                bestScore = score;
+                best = entry;
+            }
+        }
+        return best;
+    }
+
+    /** Put a closing track into the gallery, so it can be recognised later. */
+    private void remember(Track track, long now) {
+        if (track.signature == null || !track.counted) {
+            return;
+        }
+        remembered.add(new Remembered(track.id, track.label, track.signature, now));
+        // Oldest out first: a gallery that grows without limit turns every new detection
+        // into a linear scan of the whole flight.
+        while (remembered.size() > REID_MAX_REMEMBERED) {
+            remembered.remove(0);
+        }
     }
 
     /** How many of a label are being followed right now. */
@@ -195,6 +307,7 @@ public final class Tracker {
 
     public void reset() {
         tracks.clear();
+        remembered.clear();
         everSeen.clear();
         nextId = 1;
     }

@@ -167,6 +167,8 @@ public class LiveActivity extends AppCompatActivity {
     private volatile long detectRequestedAt;
     /** Read on the work thread, set on the main one when the subject changes. */
     private volatile boolean scansForFire;
+    /** Reused pixel buffer for the appearance signatures, so each frame is one allocation. */
+    private int[] signatureScratch;
     private volatile int peopleInView;
     private volatile int peopleSeen;
     private volatile long detectionsRun;
@@ -232,6 +234,47 @@ public class LiveActivity extends AppCompatActivity {
     };
 
     /**
+     * Attach a colour signature to every person found.
+     *
+     * One read of the frame's pixels serves every box in it. Never allowed to throw:
+     * without a signature someone is still tracked and still counted, they are just counted
+     * again if they leave and come back, which is a worse number rather than no number.
+     */
+    private void signPeople(List<Finding> found, Bitmap frame) {
+        boolean anyone = false;
+        for (Finding finding : found) {
+            if ("person".equals(finding.label)) {
+                anyone = true;
+                break;
+            }
+        }
+        if (!anyone) {
+            return;
+        }
+        try {
+            int width = frame.getWidth();
+            int height = frame.getHeight();
+            if (signatureScratch == null || signatureScratch.length < width * height) {
+                signatureScratch = new int[width * height];
+            }
+            frame.getPixels(signatureScratch, 0, width, 0, 0, width, height);
+            for (Finding finding : found) {
+                if (!"person".equals(finding.label)) {
+                    continue;
+                }
+                // Already in this frame's pixels: MediaPipe's bounding boxes are, and the
+                // tracker consumes them unscaled. Only the provider's findings arrive
+                // normalised, and they never come through here.
+                finding.signature = Reid.describe(signatureScratch, width, height, new float[]{
+                        finding.x0, finding.y0, finding.x1, finding.y1,
+                });
+            }
+        } catch (RuntimeException | OutOfMemoryError ignored) {
+            // Tracked but not recognisable, which the tracker already handles.
+        }
+    }
+
+    /**
      * Detection, tracking and the flame scan, all on the work thread.
      *
      * The tracker is updated here and its counts are read here, so the main thread never
@@ -248,9 +291,13 @@ public class LiveActivity extends AppCompatActivity {
         NativeDetector current = detector;
         if (current != null) {
             try {
+                List<Finding> found = current.detect(frame);
+                // A colour signature per person, so someone who leaves the frame and comes
+                // back is recognised rather than counted a second time. See Reid.
+                signPeople(found, frame);
                 // The clock goes in explicitly: the tracker lets a box go once it is older
                 // than a second and a half, and it can only know that if it is told.
-                tracks = tracker.update(current.detect(frame), now);
+                tracks = tracker.update(found, now);
                 detectionsRun++;
             } catch (RuntimeException failure) {
                 failureText = getString(R.string.detector_stopped,

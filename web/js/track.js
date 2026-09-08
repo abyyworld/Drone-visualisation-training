@@ -27,6 +27,8 @@
  *     replace `associate` and nothing else.
  */
 
+import { similarity } from './reid.js';
+
 // Deliberately low. Detection runs a few times a second, not sixty, so a person walking
 // normally can move most of their own width between two looks - and at IoU 0.25 that was
 // enough to lose them and issue a new number, which is what "person #1, then #2, then #3
@@ -57,6 +59,31 @@ const CONFIRM_AFTER = 2;
  */
 const MAX_COAST_MS = 1500;
 
+/**
+ * How alike two colour signatures must be to be the same person coming back.
+ *
+ * Histogram intersection weighted across three bands, so this is on a scale where the same
+ * person in the same clothes under changing light lands around 0.7 to 0.9, and two
+ * different people in different clothes land around 0.2 to 0.5. Sixty-two is inside that
+ * gap and nearer the lower half of it, which is the deliberate direction: a missed match
+ * counts someone twice and inflates the total, and a wrong match merges two people and
+ * deflates it. The count is already a floor, so deflating it keeps it honest and inflating
+ * it does not.
+ */
+const REID_SIMILARITY = 0.62;
+
+/**
+ * How long someone stays recognisable after leaving the frame.
+ *
+ * Five minutes is a route leg: long enough to fly past a group, turn, and come back over
+ * the same people without counting them again. Beyond that a match on clothing colour
+ * alone is not worth much - the light has moved, and so have they.
+ */
+const REID_WINDOW_MS = 5 * 60 * 1000;
+
+/** A cap, so a long flight over a crowd does not grow an unbounded gallery. */
+const REID_MAX_REMEMBERED = 240;
+
 /** Intersection over union of two [x0, y0, x1, y1] boxes. */
 export function iou(a, b) {
   const x0 = Math.max(a[0], b[0]);
@@ -70,6 +97,19 @@ export function iou(a, b) {
   const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
   const union = areaA + areaB - overlap;
   return union <= 0 ? 0 : overlap / union;
+}
+
+/**
+ * Fold a fresh signature into the one held, weighted towards what is held.
+ *
+ * A running average rather than a replacement. One frame of someone half behind a railing
+ * is a bad description of them, and replacing outright would let that frame become their
+ * identity; averaging lets it contribute and be outvoted.
+ */
+function blend(held, fresh) {
+  const merged = new Float32Array(held.length);
+  for (let i = 0; i < held.length; i += 1) merged[i] = held[i] * 0.8 + fresh[i] * 0.2;
+  return merged;
 }
 
 function centre(box) {
@@ -123,11 +163,20 @@ export class Tracker {
     maxMisses = MAX_MISSES,
     confirmAfter = CONFIRM_AFTER,
     maxCoastMs = MAX_COAST_MS,
+    reidSimilarity = REID_SIMILARITY,
+    reidWindowMs = REID_WINDOW_MS,
   } = {}) {
     this.minIou = minIou;
     this.maxMisses = maxMisses;
     this.confirmAfter = confirmAfter;
     this.maxCoastMs = maxCoastMs;
+    this.reidSimilarity = reidSimilarity;
+    this.reidWindowMs = reidWindowMs;
+    /**
+     * People this tracker has seen and lost, so it knows them when they come back.
+     * Each entry is {id, label, signature, lastSeen, counted}.
+     */
+    this.remembered = [];
     this.tracks = [];
     this.nextId = 1;
     this.frame = 0;
@@ -175,6 +224,13 @@ export class Tracker {
       pair.track.seen += 1;
       pair.track.lastFrame = this.frame;
       pair.track.lastSeenAt = now;
+      if (detection.signature) {
+        // Kept current rather than frozen at first sight: someone turning around, or the
+        // light changing as the drone moves, should update what they look like now.
+        pair.track.signature = pair.track.signature
+          ? blend(pair.track.signature, detection.signature)
+          : detection.signature;
+      }
       // Smoothed, so one noisy frame does not send the coasting prediction sideways.
       const observed = [
         observedCentre[0] - previous[0],
@@ -190,15 +246,26 @@ export class Tracker {
 
     for (const [index, detection] of detections.entries()) {
       if (usedDetections.has(index)) continue;
+
+      // Before issuing a new number, ask whether this is someone already known. A track
+      // that closed because its subject walked behind something is not a different person
+      // when they walk out the other side, and giving them a second number is what turned
+      // a count of people into a count of reappearances.
+      const known = this.recognise(detection, now);
       this.tracks.push({
-        id: this.nextId++,
+        id: known ? known.id : this.nextId++,
         label: detection.label,
         confidence: detection.confidence,
         certainty: detection.certainty ?? null,
         box: detection.box,
         classId: detection.classId ?? 0,
+        signature: detection.signature ?? known?.signature ?? null,
         seen: 1,
         missed: 0,
+        // Carried across, and this is the whole point: someone already counted is not
+        // counted again when they come back.
+        counted: known ? known.counted : false,
+        returned: Boolean(known),
         firstFrame: this.frame,
         lastFrame: this.frame,
         lastSeenAt: now,
@@ -228,10 +295,63 @@ export class Tracker {
     }
 
     // Both bounds, and the time one is the one that matters. See MAX_COAST_MS.
-    this.tracks = this.tracks.filter(
-      (t) => t.missed <= this.maxMisses && now - t.lastSeenAt <= this.maxCoastMs,
-    );
+    const keeping = [];
+    for (const track of this.tracks) {
+      if (track.missed <= this.maxMisses && now - track.lastSeenAt <= this.maxCoastMs) {
+        keeping.push(track);
+      } else {
+        this.remember(track, now);
+      }
+    }
+    this.tracks = keeping;
     return this.open();
+  }
+
+  /**
+   * Is this detection someone the tracker has already seen and let go?
+   *
+   * Only ever consulted for a brand new track. A detection that matched an open track is
+   * that track, and no amount of colour similarity should be able to overrule a box that is
+   * where the last one was.
+   */
+  recognise(detection, now) {
+    if (!detection.signature) return null;
+
+    let best = null;
+    let bestScore = this.reidSimilarity;
+    for (const entry of this.remembered) {
+      if (entry.label !== detection.label) continue;
+      if (now - entry.lastSeen > this.reidWindowMs) continue;
+      const score = similarity(entry.signature, detection.signature);
+      if (score >= bestScore) {
+        bestScore = score;
+        best = entry;
+      }
+    }
+    if (best) {
+      // Taken out of the gallery: they are being tracked again, and leaving a copy behind
+      // would let a second person match the same identity while the first still holds it.
+      this.remembered = this.remembered.filter((entry) => entry !== best);
+    }
+    return best;
+  }
+
+  /** Put a closing track into the gallery, so it can be recognised later. */
+  remember(track, now) {
+    if (!track.signature || !track.counted) return;
+
+    this.remembered.push({
+      id: track.id,
+      label: track.label,
+      signature: track.signature,
+      lastSeen: now,
+      counted: true,
+    });
+    // Oldest out first. A gallery that grows without limit turns every new detection into
+    // a linear scan of the whole flight.
+    if (this.remembered.length > REID_MAX_REMEMBERED) {
+      this.remembered.splice(0, this.remembered.length - REID_MAX_REMEMBERED);
+    }
   }
 
   /**
@@ -264,6 +384,7 @@ export class Tracker {
 
   reset() {
     this.tracks = [];
+    this.remembered = [];
     this.nextId = 1;
     this.frame = 0;
     this.everSeen = new Map();

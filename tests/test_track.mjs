@@ -10,6 +10,7 @@
  */
 
 import { Tracker, iou } from '../web/js/track.js';
+import { describe, similarity } from '../web/js/reid.js';
 
 let failures = 0;
 let passes = 0;
@@ -205,6 +206,175 @@ console.log('\nA fast machine still gets its full coast');
     tracker.update([], clock);
   }
   check('ten missed frames at 8fps still holds the box', tracker.open().length === 1);
+}
+
+// ---------------------------------------------------------------------------------------
+// Remembering someone who left and came back
+// ---------------------------------------------------------------------------------------
+
+const RW = 64;
+const RH = 128;
+
+/** A frame with one person painted into it, in the colours given. */
+function personFrame(box, top, bottom, split = 0.6) {
+  const data = new Uint8ClampedArray(RW * RH * 4);
+  for (let y = 0; y < RH; y += 1) {
+    for (let x = 0; x < RW; x += 1) {
+      const i = (y * RW + x) * 4;
+      const inside = x >= box[0] && x < box[2] && y >= box[1] && y < box[3];
+      const upper = y < box[1] + (box[3] - box[1]) * split;
+      const c = inside ? (upper ? top : bottom) : [24, 60, 24];
+      data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+const RED_COAT = [200, 40, 40];
+const BLUE_JEANS = [40, 60, 170];
+const GREEN_COAT = [40, 170, 60];
+const GREY_TROUSERS = [140, 140, 140];
+
+function seen(tracker, box, top, bottom, clock) {
+  const data = personFrame(box, top, bottom);
+  const signature = describe(data, RW, RH, box);
+  return tracker.update(
+    [{ label: 'person', confidence: 0.9, box, signature }], clock,
+  );
+}
+
+console.log('\nSignatures');
+{
+  const box = [20, 20, 44, 110];
+  const red = describe(personFrame(box, RED_COAT, BLUE_JEANS), RW, RH, box);
+  const redAgain = describe(personFrame(box, RED_COAT, BLUE_JEANS), RW, RH, box);
+  const green = describe(personFrame(box, GREEN_COAT, GREY_TROUSERS), RW, RH, box);
+
+  check('the same person matches themselves', similarity(red, redAgain) > 0.95);
+  check('a different person does not', similarity(red, green) < 0.4,
+    `similarity ${similarity(red, green).toFixed(2)}`);
+  check('a box too small to describe returns nothing',
+    describe(personFrame(box, RED_COAT, BLUE_JEANS), RW, RH, [20, 20, 24, 28]) === null);
+}
+
+console.log('\nSomeone who leaves and comes back');
+{
+  // The bug this pins. Fly a route, someone passes behind a van, and the tracker closes
+  // their track. When they walk out the other side they used to be a new person, and the
+  // total went up for someone already in it. Over a route that is not a count of people,
+  // it is a count of reappearances.
+  const tracker = new Tracker();
+  let clock = 1000;
+  seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
+  clock += 300;
+  seen(tracker, [22, 20, 46, 110], RED_COAT, BLUE_JEANS, clock);
+  check('they are counted once', tracker.countSeen('person') === 1);
+  const id = tracker.open()[0].id;
+
+  // Behind the van, long enough for the track to be let go.
+  for (let i = 0; i < 4; i += 1) {
+    clock += 700;
+    tracker.update([], clock);
+  }
+  check('and the box is released while they are hidden', tracker.open().length === 0);
+
+  // Out the other side, somewhere else in the frame entirely.
+  clock += 700;
+  seen(tracker, [50, 20, 74, 110], RED_COAT, BLUE_JEANS, clock);
+  clock += 300;
+  seen(tracker, [52, 20, 76, 110], RED_COAT, BLUE_JEANS, clock);
+
+  check('they get their old number back', tracker.open()[0].id === id,
+    `id ${tracker.open()[0]?.id} was ${id}`);
+  check('and are still counted once, not twice', tracker.countSeen('person') === 1,
+    `count ${tracker.countSeen('person')}`);
+}
+
+console.log('\nSeen from a different angle');
+{
+  // The drone case, and the reason the signature has a whole-box band. Fly past someone and
+  // the same clothing lands in different bands: what was torso from the side is shoulders
+  // from above. A signature built only from where colours sit vertically would call that a
+  // different person and count them twice.
+  const box = [20, 20, 44, 110];
+  const sideOn = describe(personFrame(box, RED_COAT, BLUE_JEANS), RW, RH, box);
+  // The same two colours, swapped top for bottom: the most hostile version of a viewpoint
+  // change this can face.
+  const flipped = describe(personFrame(box, BLUE_JEANS, RED_COAT), RW, RH, box);
+  const other = describe(personFrame(box, GREEN_COAT, GREY_TROUSERS), RW, RH, box);
+
+  // A realistic change of angle: the same person from higher up, so the coat fills more of
+  // the box and the trousers less. The proportions shift, the colours do not.
+  const fromAbove = describe(personFrame(box, RED_COAT, BLUE_JEANS, 0.85), RW, RH, box);
+  check('the same person from a different height still matches',
+    similarity(sideOn, fromAbove) > 0.62,
+    `similarity ${similarity(sideOn, fromAbove).toFixed(2)}`);
+
+  // A complete top-for-bottom inversion is the adversarial extreme rather than a viewing
+  // angle, and it is genuinely ambiguous: it could be someone else wearing the reverse
+  // outfit. What must hold is that it degrades towards "not sure" rather than towards a
+  // confident wrong answer in either direction.
+  check('a full colour inversion is not claimed as a match',
+    similarity(sideOn, flipped) < 0.62,
+    `similarity ${similarity(sideOn, flipped).toFixed(2)}`);
+  check('but is still clearly nearer than a different person',
+    similarity(sideOn, flipped) > similarity(sideOn, other) + 0.1,
+    `${similarity(sideOn, flipped).toFixed(2)} vs ${similarity(sideOn, other).toFixed(2)}`);
+}
+
+console.log('\nSomeone else is somebody else');
+{
+  const tracker = new Tracker();
+  let clock = 1000;
+  seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
+  clock += 300;
+  seen(tracker, [22, 20, 46, 110], RED_COAT, BLUE_JEANS, clock);
+  for (let i = 0; i < 4; i += 1) {
+    clock += 700;
+    tracker.update([], clock);
+  }
+  clock += 700;
+  seen(tracker, [50, 20, 74, 110], GREEN_COAT, GREY_TROUSERS, clock);
+  clock += 300;
+  seen(tracker, [52, 20, 76, 110], GREEN_COAT, GREY_TROUSERS, clock);
+
+  check('a different person is a second person', tracker.countSeen('person') === 2,
+    `count ${tracker.countSeen('person')}`);
+}
+
+console.log('\nThe memory does not outlive its usefulness');
+{
+  const tracker = new Tracker({ reidWindowMs: 1000 });
+  let clock = 1000;
+  seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
+  clock += 300;
+  seen(tracker, [22, 20, 46, 110], RED_COAT, BLUE_JEANS, clock);
+  for (let i = 0; i < 4; i += 1) {
+    clock += 700;
+    tracker.update([], clock);
+  }
+  // Well past the window this tracker was built with.
+  clock += 60_000;
+  seen(tracker, [50, 20, 74, 110], RED_COAT, BLUE_JEANS, clock);
+  clock += 300;
+  seen(tracker, [52, 20, 76, 110], RED_COAT, BLUE_JEANS, clock);
+  check('an old enough memory is not used', tracker.countSeen('person') === 2,
+    `count ${tracker.countSeen('person')}`);
+}
+
+console.log('\nA person too small to describe is still tracked');
+{
+  // From altitude a person is a handful of pixels and there is nothing to recognise them
+  // by. They must still be followed and still be counted; they simply cannot be matched
+  // back, which counts them again if they leave and return. That is the honest failure.
+  const tracker = new Tracker();
+  let clock = 1000;
+  const tiny = [20, 20, 25, 30];
+  tracker.update([{ label: 'person', confidence: 0.8, box: tiny, signature: null }], clock);
+  clock += 300;
+  tracker.update([{ label: 'person', confidence: 0.8, box: [21, 20, 26, 30], signature: null }], clock);
+  check('tracked without a signature', tracker.open().length === 1);
+  check('and counted', tracker.countSeen('person') === 1);
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);
