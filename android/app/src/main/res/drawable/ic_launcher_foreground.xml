@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The launcher icon's foreground layer.
+
+    A vector rather than five bitmaps: an adaptive icon is masked to whatever shape the
+    launcher wants - circle, squircle, teardrop - and scaled to whatever that launcher is,
+    so a bitmap is either soft on a large display or heavy on a small one. A path is exact
+    at every size and weighs a few hundred bytes.
+
+    WHAT IT DRAWS, AND WHY THIS AND NOT A DRONE
+        Four corner brackets around a lens. Brackets are what this application does: it puts
+        a box around the thing it has found. A drone silhouette would say what the picture
+        came from rather than what the app is, and at 48dp on a home screen a quadcopter is
+        four grey smudges. Brackets survive being small, which is the only test an icon has
+        to pass.
+
+    THE SAFE ZONE
+        The canvas is 108 by 108, and a launcher may crop anything outside the middle 72.
+        Every stroke below stays inside 26 to 82, so nothing is clipped by any mask.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Top left bracket -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,44 L28,32 A4,4 0 0,1 32,28 L44,28 L44,34 L34,34 L34,44 Z" />
+    <!-- Top right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M80,44 L80,32 A4,4 0 0,0 76,28 L64,28 L64,34 L74,34 L74,44 Z" />
+    <!-- Bottom left -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,64 L28,76 A4,4 0 0,0 32,80 L44,80 L44,74 L34,74 L34,64 Z" />
+    <!-- Bottom right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M80,64 L80,76 A4,4 0 0,1 76,80 L64,80 L64,74 L74,74 L74,64 Z" />
+
+    <!-- The lens: what is inside the box. Warm, because the one thing on this screen an
+         operator must never miss is drawn in the same colour. -->
+    <path
+        android:fillColor="#FF5A1F"
+        android:pathData="M54,42 A12,12 0 1,1 53.99,42 Z" />
+    <path
+        android:fillColor="#1F4E5C"
+        android:pathData="M54,48 A6,6 0 1,1 53.99,48 Z" />
+</vector>
