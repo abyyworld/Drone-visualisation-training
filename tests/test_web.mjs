@@ -117,6 +117,23 @@ async function buildSite() {
     severityWeights: { corrosion: 2.0, crack: 3.0, surface_peeling: 1.5 },
   };
 
+  // Solar points at a real shipped model too now, and the fixture .onnx has its own six
+  // classes at the fixture size. Pinned like the others; keepClasses dropped, since the
+  // real entry leaves out the class meaning nothing is wrong and would filter the
+  // fixture's classes away with it.
+  manifest.solar = {
+    ...manifest.solar,
+    file: 'solar.onnx',
+    imgsz: 960,
+    keepClasses: undefined,
+    labels: ['soiling', 'bird_droppings', 'crack', 'discoloration', 'vegetation',
+      'missing_module'],
+    severityWeights: {
+      missing_module: 4.0, crack: 3.0, discoloration: 2.0,
+      bird_droppings: 1.5, vegetation: 1.0, soiling: 1.0,
+    },
+  };
+
   // Crowd is the one entry that now points at a real shipped model, and this suite is not
   // the place to exercise it: the fixture .onnx has four classes of its own at the fixture
   // size, and the scoring arithmetic above is written against those. So the file, the

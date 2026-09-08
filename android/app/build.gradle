@@ -160,6 +160,19 @@ tasks.register('stageWebApp', Copy) {
     description = 'Copy the web app into the APK assets'
     from(webRoot) {
         exclude 'sw.js'
+
+        // The subject models the tablet does not use, left out of the APK.
+        //
+        // The tablet's job is the live camera: people, and flame and smoke, and both of
+        // those run natively rather than through this copy of the web app. Panel defects
+        // and blade damage are desk work, done on a laptop against footage already flown,
+        // where the model comes from the site rather than out of a 43 MB file carried
+        // around on a controller.
+        //
+        // Bundling them anyway would have put the APK back over 140 MB, which is where it
+        // was before it was cut to 85. The browser build is untouched and still has all of
+        // them.
+        exclude 'models/solar-320*'
     }
     into stagedAssets.map { it.dir('www') }
 }

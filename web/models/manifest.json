@@ -40,30 +40,36 @@
     "zeroDetectionNote": ""
   },
   "solar": {
-    "file": "solar.onnx",
+    "file": "solar-320.onnx",
     "task": "detect",
-    "imgsz": 960,
+    "imgsz": 320,
     "labels": [
-      "soiling",
-      "bird_droppings",
-      "crack",
-      "discoloration",
-      "vegetation",
-      "missing_module"
+      "bird drop",
+      "defective",
+      "dust",
+      "non defective",
+      "physical damage",
+      "snow"
     ],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
     "severityWeights": {
-      "missing_module": 4.0,
-      "crack": 3.0,
-      "discoloration": 2.0,
-      "bird_droppings": 1.5,
-      "vegetation": 1.0,
-      "soiling": 1.0
+      "physical damage": 4.0,
+      "defective": 3.0,
+      "bird drop": 1.5,
+      "snow": 1.0,
+      "dust": 1.0
     },
     "displayName": "Solar panel",
-    "notes": "RGB only. Cannot detect hotspots, cell defects, bypass-diode failure or offline modules - those are electrical faults visible only in thermal infrared.",
-    "zeroDetectionNote": "Found none of the visible-light defect classes. RGB cannot show hotspots, cell defects, bypass-diode failure or offline modules; those need thermal infrared."
+    "notes": "Fetched already trained rather than trained here. It knows bird droppings, dust, snow, physical damage and a general defective class, and it also knows what an undamaged panel looks like, which is dropped before anything is drawn so a healthy panel is not boxed as a finding. RGB only, so it cannot show hotspots, cell defects, bypass-diode failure or an offline module: those are electrical faults visible only in thermal infrared, and no amount of daylight resolution reaches them.",
+    "zeroDetectionNote": "None of the visible-light defect classes were found in this frame. RGB cannot show hotspots, cell defects, bypass-diode failure or an offline module, so a frame with nothing marked says nothing about those.",
+    "keepClasses": [
+      0,
+      1,
+      2,
+      4,
+      5
+    ]
   },
   "crowd": {
     "file": "person-320.onnx",
