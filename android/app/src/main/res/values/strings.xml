@@ -3,6 +3,7 @@
     <string name="app_name">Drone Inspection</string>
     <string name="no_browser">No app on this tablet can open that link.</string>
     <string name="and_the_log">\nTally in %1$s: %2$d different people.</string>
+    <string name="saved_to">saved to %1$s</string>
     <string name="log_failed">The flight log could not be written: %1$s. The recording is unaffected.</string>
     <string name="choose_files">Choose pictures or video</string>
     <string name="no_picker">No file manager on this tablet can pick a file. Install one, or use the browser version of the app.</string>
@@ -20,9 +21,9 @@
     <string name="take_photo">Photo</string>
     <string name="stop_recording_first">Stop the recording first, so the file is finished.</string>
     <string name="no_video_yet">No picture from the drone yet.</string>
-    <string name="recording_saved">Saved %1$s. Analyse it from the menu.</string>
+    <string name="recording_saved">Saved %1$s\nin %2$s</string>
     <string name="recording_failed">The recording stopped: %1$s</string>
-    <string name="snapshot_saved">Saved %1$s. Analyse it from the menu.</string>
+    <string name="snapshot_saved">Saved %1$s\nin %2$s</string>
     <string name="snapshot_failed">Could not save the photograph: %1$s</string>
     <string name="stream_failed">No video from %1$s. Check the controller is linked and the address is right. %2$s</string>
     <string name="no_key_no_boxes">no API key, so nothing is being analysed</string>

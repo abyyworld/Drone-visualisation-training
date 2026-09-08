@@ -270,6 +270,15 @@ public class LiveActivity extends AppCompatActivity {
      */
     private volatile FlightLog flightLog;
 
+    /**
+     * Where the last thing written went, kept on the status line.
+     *
+     * A toast is gone in four seconds and a path is the one part of it worth reading twice.
+     * Telling an operator to "analyse it from the menu" answered a question nobody asked:
+     * the question is where the file is, so that it can be copied off the tablet.
+     */
+    private String lastSaved = "";
+
     /** Save an annotated still each time the total passes another of these. */
     private static final int EVIDENCE_EVERY = 10;
 
@@ -1350,8 +1359,10 @@ public class LiveActivity extends AppCompatActivity {
             if (problem != null) {
                 lastError = getString(R.string.recording_failed, problem);
             } else {
+                lastSaved = getString(R.string.saved_to, file.getParent());
                 Toast.makeText(this,
-                        getString(R.string.recording_saved, file.getName()) + savedTally,
+                        getString(R.string.recording_saved, file.getName(), file.getParent())
+                                + savedTally,
                         Toast.LENGTH_LONG).show();
             }
             refreshStatus();
@@ -1399,9 +1410,14 @@ public class LiveActivity extends AppCompatActivity {
                     frame.compress(Bitmap.CompressFormat.JPEG, 92, out);
                 }
                 if (announce) {
-                    handler.post(() -> Toast.makeText(this,
-                            getString(R.string.snapshot_saved, file.getName()),
-                            Toast.LENGTH_LONG).show());
+                    handler.post(() -> {
+                        lastSaved = getString(R.string.saved_to, file.getParent());
+                        Toast.makeText(this,
+                                getString(R.string.snapshot_saved,
+                                        file.getName(), file.getParent()),
+                                Toast.LENGTH_LONG).show();
+                        refreshStatus();
+                    });
                 }
             } catch (IOException | RuntimeException writing) {
                 if (announce) {
@@ -1455,6 +1471,10 @@ public class LiveActivity extends AppCompatActivity {
             // asks the tracker anything, because the tracker is being written to over there.
             line.append("  ·  ").append(getString(R.string.people_readout,
                     peopleInView, peopleSeen));
+        }
+
+        if (!lastSaved.isEmpty()) {
+            line.append("  ·  ").append(lastSaved);
         }
 
         // Flame and smoke, when there is any. Regions, not fires: one fire seen as two
