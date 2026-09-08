@@ -36,16 +36,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      # CPU torch only. There is no training here and no GPU on this runner; the export is
-      # a graph conversion plus a few hundred calibration images.
-      - name: Install the toolchain
+      # Two environments, not one, and this is not fussiness.
+      #
+      # The ONNX export needs a current `onnx`, which needs ml_dtypes 0.5 or newer. The
+      # TFLite export needs TensorFlow, which pins ml_dtypes to 0.4. Installed together the
+      # second wins and the first dies with "module 'ml_dtypes' has no attribute
+      # 'float4_e2m1fn'", which is what happened on the first run. They cannot share a
+      # environment, so they are not asked to.
+      - name: Install the ONNX toolchain
         run: |
-          python -m pip install --upgrade pip
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+          python -m venv .venv-onnx
+          .venv-onnx/bin/pip install --upgrade pip
+          .venv-onnx/bin/pip install --extra-index-url https://download.pytorch.org/whl/cpu \
             torch torchvision
-          pip install ultralytics onnx onnxruntime "numpy<2"
-          pip install tensorflow==2.17.0 onnx2tf onnx_graphsurgeon sng4onnx ai-edge-litert || \
-            echo "::warning::TFLite export dependencies incomplete; ONNX will still be produced"
+          .venv-onnx/bin/pip install ultralytics onnx onnxslim onnxruntime
+
+      - name: Install the TFLite toolchain
+        continue-on-error: true
+        run: |
+          python -m venv .venv-tflite
+          .venv-tflite/bin/pip install --upgrade pip
+          .venv-tflite/bin/pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            torch torchvision
+          .venv-tflite/bin/pip install ultralytics tensorflow onnx2tf onnx_graphsurgeon \
+            sng4onnx ai-edge-litert onnxslim
 
       # Tried in order, best first. The VisDrone ones are trained on the exact problem:
       # people seen from a drone. The COCO fallbacks are not, but are still a better small
@@ -94,47 +108,62 @@ jobs:
           raise SystemExit("none of the candidates could be downloaded")
           PY
 
-      - name: Convert
+      - name: Export ONNX, for the browser
         run: |
-          python - <<'PY'
-          import pathlib, shutil
+          .venv-onnx/bin/python - <<'PY'
+          import json, pathlib, shutil
           from ultralytics import YOLO
 
           model = YOLO("candidate.pt")
           names = model.names
           print("classes:", names, flush=True)
 
-          person = [i for i, n in names.items()
+          people = [i for i, n in names.items()
                     if str(n).lower() in ("person", "pedestrian", "people")]
-          if not person:
+          if not people:
               raise SystemExit(f"none of this model's classes are people: {names}")
-          print("person-like classes:", person, flush=True)
+          print("person-like classes:", people, flush=True)
 
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
-
-          # ONNX first: it needs only torch, so it is the one that will exist even if the
-          # TFLite toolchain, which is a long chain of converters, falls over.
           onnx = model.export(format="onnx", imgsz=320, simplify=True, opset=12)
           shutil.copy(onnx, out / "person-320.onnx")
-          print("wrote", out / "person-320.onnx", flush=True)
 
-          try:
-              # int8, because that is what the Hexagon DSP on the controller runs. The
-              # calibration images come from ultralytics' own tiny sample set: a few
-              # hundred are enough to fix the quantisation ranges.
-              tflite = model.export(format="tflite", imgsz=320, int8=True, data="coco8.yaml")
-              shutil.copy(tflite, out / "person-320-int8.tflite")
-              print("wrote", out / "person-320-int8.tflite", flush=True)
-          except Exception as problem:
-              print(f"::warning::TFLite export failed: {problem}")
+          # Written next to the model rather than typed into the manifest by hand: the
+          # class list and the input size are facts about the file, and a manifest that
+          # disagrees with its model is a silent wrong answer.
+          (out / "person-320.json").write_text(json.dumps({
+              "imgsz": 320,
+              "labels": [str(names[i]) for i in sorted(names)],
+              "keepClasses": people,
+              "confThreshold": 0.25,
+              "iouThreshold": 0.45,
+          }, indent=2) + "\n")
+          print("wrote", out / "person-320.onnx", flush=True)
+          PY
+
+      - name: Export TFLite int8, for the tablet
+        continue-on-error: true
+        run: |
+          .venv-tflite/bin/python - <<'PY'
+          import pathlib, shutil
+          from ultralytics import YOLO
+
+          # int8, because that is what a Hexagon DSP runs. The calibration images come from
+          # ultralytics' own tiny sample set; a few hundred fix the quantisation ranges.
+          model = YOLO("candidate.pt")
+          tflite = model.export(format="tflite", imgsz=320, int8=True, data="coco8.yaml")
+          out = pathlib.Path("web/models")
+          out.mkdir(parents=True, exist_ok=True)
+          shutil.copy(tflite, out / "person-320-int8.tflite")
+          print("wrote", out / "person-320-int8.tflite", flush=True)
           PY
 
       # A model that exports cleanly and finds nobody is worse than no model at all, so it
       # is run on a photograph of a person before it is allowed anywhere near the app.
       - name: Check it finds a person
         run: |
-          python - <<'PY'
+          .venv-onnx/bin/python - <<'PY'
           import urllib.request, pathlib
           from ultralytics import YOLO
 
