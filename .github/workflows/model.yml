@@ -87,7 +87,7 @@ jobs:
           CANDIDATE: ${{ inputs.candidate }}
         run: |
           python - <<'PY'
-          import os, pathlib, urllib.request
+          import json, os, pathlib, urllib.parse, urllib.request
 
           # Published weights, best first, per subject. Nothing here is trained: somebody
           # has already done each of these and put the result up, and a runner can reach
@@ -115,9 +115,66 @@ jobs:
               ],
           }
 
+          # What to search for when the list above comes up empty.
+          #
+          # The list is names somebody wrote down, and names rot: every fire and smoke URL
+          # guessed for this returned 401, which on that host means the repository does not
+          # exist. Rather than guess better, ask. The runner can reach the index this
+          # project's own environment cannot, so it looks the models up by what they do.
+          SEARCH = {
+              "person": ["visdrone yolo", "aerial person detection yolo"],
+              "wildfire": ["fire smoke yolov8", "fire detection yolo",
+                           "wildfire smoke yolo", "fire smoke detection"],
+          }
+
+          def published(terms, limit=8):
+              """Model repositories matching a search, and the weights inside each."""
+              found = []
+              for term in terms:
+                  query = urllib.parse.quote(term)
+                  index = f"https://huggingface.co/api/models?search={query}&limit={limit}"
+                  try:
+                      request = urllib.request.Request(index,
+                                                       headers={"User-Agent": "curl/8"})
+                      with urllib.request.urlopen(request, timeout=60) as response:
+                          listing = json.load(response)
+                  except Exception as problem:
+                      print(f"  could not search for {term!r}: {problem}", flush=True)
+                      continue
+
+                  for entry in listing:
+                      name = entry.get("modelId") or entry.get("id")
+                      if not name:
+                          continue
+                      try:
+                          detail = f"https://huggingface.co/api/models/{name}"
+                          request = urllib.request.Request(detail,
+                                                           headers={"User-Agent": "curl/8"})
+                          with urllib.request.urlopen(request, timeout=60) as response:
+                              files = json.load(response).get("siblings", [])
+                      except Exception:
+                          continue
+                      # Ultralytics checkpoints only. A .pt that is not one fails the export
+                      # a step later, which is caught, but skipping the obvious misses first
+                      # keeps the log readable.
+                      weights = [f["rfilename"] for f in files
+                                 if str(f.get("rfilename", "")).endswith(".pt")]
+                      for weight in weights:
+                          url = f"https://huggingface.co/{name}/resolve/main/{weight}"
+                          if url not in found:
+                              found.append(url)
+              return found
+
           subject = os.environ.get("SUBJECT", "person").strip() or "person"
           named = os.environ.get("CANDIDATE", "").strip()
-          candidates = [named] if named else BY_SUBJECT[subject]
+          if named:
+              candidates = [named]
+          else:
+              candidates = list(BY_SUBJECT[subject])
+              print(f"searching for more {subject} weights...", flush=True)
+              candidates += [u for u in published(SEARCH.get(subject, []))
+                             if u not in candidates]
+          print(f"{len(candidates)} candidate(s) to try", flush=True)
 
           for url in candidates:
               try:
