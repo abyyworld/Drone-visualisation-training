@@ -45,6 +45,9 @@ const PALETTE_ALPHA_COASTED = 0.45;
  */
 const SIGNATURE_WIDTH = 320;
 
+/** The recording's own frame rate. The display draws faster; the file does not need to. */
+const RECORD_INTERVAL_MS = 1000 / 30;
+
 const MIN_GAP_MS = 60;
 const MAX_GAP_MS = 400;
 
@@ -92,6 +95,10 @@ export class LiveView {
     this.startedAt = 0;
     this.recorder = null;
     this.recorded = [];
+    this.composite = null;
+    this.compositeContext = null;
+    this.recordTrack = null;
+    this.lastRecordedAt = 0;
   }
 
   /**
@@ -217,6 +224,7 @@ export class LiveView {
     }
 
     this.draw();
+    this.paintComposite(performance.now());
     this.report();
   }
 
@@ -541,38 +549,115 @@ export class LiveView {
   startRecording() {
     if (this.recorder || !this.stream) return;
 
-    const composite = document.createElement('canvas');
-    composite.width = this.canvas.width;
-    composite.height = this.canvas.height;
-    const ctx = composite.getContext('2d');
-
-    const paint = () => {
-      if (!this.recorder) return;
-      ctx.drawImage(this.video, 0, 0, composite.width, composite.height);
-      ctx.drawImage(this.canvas, 0, 0);
-      requestAnimationFrame(paint);
-    };
+    this.composite = document.createElement('canvas');
+    this.composite.width = this.canvas.width;
+    this.composite.height = this.canvas.height;
+    this.compositeContext = this.composite.getContext('2d', { alpha: false });
 
     const type = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
       .find((t) => MediaRecorder.isTypeSupported(t));
     if (!type) throw new Error('This browser cannot record video.');
 
+    // A stream this code feeds by hand, rather than one that samples the canvas on a clock
+    // of its own. captureStream(30) polls whatever is on the canvas thirty times a second
+    // whether or not it has changed, so a frame that arrives late is missed and a frame
+    // that has not changed is encoded twice. requestFrame() puts exactly one frame in, at
+    // the moment it was drawn.
+    const stream = this.composite.captureStream(0);
+    this.recordTrack = stream.getVideoTracks()[0];
+    if (typeof this.recordTrack?.requestFrame !== 'function') {
+      // An older browser without manual frames. Fall back to the polled stream rather than
+      // refusing to record.
+      this.recordTrack = null;
+      this.recorded = [];
+      this.recorder = new MediaRecorder(this.composite.captureStream(30), { mimeType: type });
+      this.recorder.ondataavailable = (event) => {
+        if (event.data.size) this.recorded.push(event.data);
+      };
+      this.recorder.start();
+      return;
+    }
+
     this.recorded = [];
-    this.recorder = new MediaRecorder(composite.captureStream(30), { mimeType: type });
+    this.lastRecordedAt = 0;
+    this.recorder = new MediaRecorder(stream, {
+      mimeType: type,
+      // Named rather than left to the browser: the default for a captured canvas is low
+      // enough that a crowd turns to mush, which is the one thing a review recording of a
+      // crowd must not do.
+      videoBitsPerSecond: 6_000_000,
+    });
     this.recorder.ondataavailable = (event) => {
       if (event.data.size) this.recorded.push(event.data);
     };
-    this.recorder.start(1000);
-    paint();
+    // No timeslice, and this is the fix for a stutter once a second. start(1000) asks the
+    // encoder to close off and hand over a chunk every second, and that flush lands on the
+    // main thread in the middle of drawing. One blob at the end costs nothing while
+    // recording.
+    this.recorder.start();
   }
 
-  /** @returns {Blob|null} the annotated recording */
+  /**
+   * Compose one frame for the recording, from the same animation frame that draws the
+   * screen.
+   *
+   * Called from loop(), rather than from a second requestAnimationFrame of its own. Two
+   * loops both waking on every frame is twice the scheduling and two chances to be late,
+   * for one picture.
+   */
+  paintComposite(now) {
+    if (!this.recorder || !this.composite) return;
+    if (this.composite.width !== this.canvas.width
+      || this.composite.height !== this.canvas.height) {
+      this.composite.width = this.canvas.width;
+      this.composite.height = this.canvas.height;
+    }
+    // Held to the recording's frame rate rather than the display's: encoding sixty frames
+    // a second of a thirty frame camera is work for no picture.
+    if (now - this.lastRecordedAt < RECORD_INTERVAL_MS) return;
+    this.lastRecordedAt = now;
+
+    this.compositeContext.drawImage(
+      this.video, 0, 0, this.composite.width, this.composite.height,
+    );
+    this.compositeContext.drawImage(this.canvas, 0, 0);
+    this.recordTrack?.requestFrame();
+  }
+
+  /**
+   * Finish the recording and hand back the file.
+   *
+   * A promise, and it has to be. Without a timeslice the encoder holds everything until it
+   * is stopped, and the data arrives in a `dataavailable` event *after* stop() returns.
+   * Building the blob synchronously, as this used to, would have handed back an empty file
+   * the moment the per-second flush was removed.
+   *
+   * @returns {Promise<Blob|null>} the annotated recording
+   */
   stopRecording() {
-    if (!this.recorder) return null;
+    if (!this.recorder) return Promise.resolve(null);
+
     const recorder = this.recorder;
     this.recorder = null;
-    if (recorder.state !== 'inactive') recorder.stop();
-    return new Blob(this.recorded, { type: recorder.mimeType });
+    this.recordTrack = null;
+    this.composite = null;
+    this.compositeContext = null;
+
+    if (recorder.state === 'inactive') {
+      return Promise.resolve(new Blob(this.recorded, { type: recorder.mimeType }));
+    }
+    return new Promise((resolve) => {
+      // A ceiling, so a browser that never fires the event cannot leave the button stuck
+      // and the flight's recording unreachable.
+      const timer = setTimeout(
+        () => resolve(new Blob(this.recorded, { type: recorder.mimeType })), 4000,
+      );
+      recorder.onstop = () => {
+        clearTimeout(timer);
+        resolve(new Blob(this.recorded, { type: recorder.mimeType }));
+      };
+      recorder.stop();
+    });
   }
 }
 

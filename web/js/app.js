@@ -239,8 +239,10 @@ function wireLive() {
     }
   });
 
-  el['live-stop'].addEventListener('click', () => {
-    const recording = view.stopRecording();
+  el['live-stop'].addEventListener('click', async () => {
+    // Awaited before the camera is torn down. The encoder hands the file over in an event
+    // after it is stopped, and stopping the stream first would cut that short.
+    const recording = await view.stopRecording();
     view.stop();
     if (recording?.size) saveLiveRecording(recording);
     el['live-stage'].hidden = true;
@@ -253,10 +255,13 @@ function wireLive() {
     renderLiveStatus('Camera stopped.');
   });
 
-  el['live-record'].addEventListener('click', () => {
+  el['live-record'].addEventListener('click', async () => {
     if (el['live-record'].classList.contains('button--recording')) {
-      const recording = view.stopRecording();
       el['live-record'].classList.remove('button--recording');
+      el['live-record'].textContent = 'Saving';
+      el['live-record'].disabled = true;
+      const recording = await view.stopRecording();
+      el['live-record'].disabled = false;
       el['live-record'].textContent = 'Record';
       if (recording?.size) saveLiveRecording(recording);
       return;
