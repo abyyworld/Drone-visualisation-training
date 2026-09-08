@@ -134,9 +134,17 @@ async function buildSite() {
     },
   };
 
+  // Wildfire now points at a real shipped model too, and this suite is not where that is
+  // exercised: the fixture .onnx has its own three classes at the fixture size. Pinned the
+  // same way crowd is, and keepClasses dropped, since the real entry keeps one class and
+  // would filter the fixture's away to nothing.
   manifest.wildfire = {
     ...manifest.wildfire,
+    file: 'wildfire.onnx',
+    imgsz: 960,
+    keepClasses: undefined,
     labels: ['fire', 'smoke', 'person'],
+    severityWeights: { fire: 3.0, smoke: 1.5, person: 5.0 },
   };
   await writeFile(join(SITE, 'models', 'manifest.json'), JSON.stringify(manifest, null, 2));
 }

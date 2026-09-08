@@ -107,13 +107,16 @@
     "zeroDetectionNote": "No figure in this frame passed the threshold. That is a null result about one frame at one moment, not a reading about the place: at altitude a person can be too few pixels across to mark, and someone under a tree, a canopy or a vehicle cannot be seen from above at all."
   },
   "wildfire": {
-    "file": "wildfire.onnx",
+    "file": "wildfire-320.onnx",
     "task": "detect",
-    "imgsz": 960,
-    "labels": [],
+    "imgsz": 320,
+    "labels": [
+      "fire or smoke"
+    ],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
     "severityWeights": {
+      "fire or smoke": 3.0,
       "person": 5.0,
       "structure_at_risk": 4.0,
       "vehicle": 3.0,
@@ -129,8 +132,11 @@
       "terrain": 1.0
     },
     "displayName": "Wildfire",
-    "notes": "One frame from one angle. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
-    "zeroDetectionNote": "Nothing in the list above was found in this frame. That describes this frame and nothing else - not the ground under the smoke, not what is inside the treeline, and not whether anyone is there."
+    "notes": "A detector trained on fire and smoke, which is a stronger thing than the colour and movement scan the live view runs, and a blunter one: it has a single class and cannot say which of the two it is looking at. The live view still separates them, from how a region behaves over time, and still runs when this is not loaded. One frame from one angle either way. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "zeroDetectionNote": "Nothing was marked in this frame. That describes this frame and nothing else: not the ground under the smoke, not what is inside the treeline, and not whether anyone is there. A fire too small or too far to hold a region is not marked, and neither is one the smoke above it is hiding.",
+    "keepClasses": [
+      0
+    ]
   },
   "ondevice": {
     "file": "detector.tflite",
