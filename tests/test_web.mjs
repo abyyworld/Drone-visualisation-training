@@ -473,8 +473,8 @@ async function main() {
     const countText = await page.locator('#live-count-readout').textContent();
     check('it separates who is in view from who has been seen',
       /in view/.test(countText) && /seen so far/.test(countText), countText);
-    check('and says the number is a floor rather than a measurement',
-      /fewer than the people there/.test(countText), countText);
+    check('the live count says it is a floor, not a measurement',
+      /floor/i.test(countText) && /missed/i.test(countText), countText);
 
     // Trails are the "snake sketches": useful for studying a flow, a scribble otherwise.
     check('trails are off unless asked for',

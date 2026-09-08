@@ -56,9 +56,19 @@ let delegate = 'CPU';
 let scoreThreshold = 0.35;
 let lastInferenceMs = 0;
 
-const KEEP = new Set([
+/**
+ * What is worth reporting, and it depends on what is being looked at.
+ *
+ * Crowd mode wants people. A car in a crowd shot is not what is being counted, it is
+ * another box to draw, another track to follow, another signature to compare and another
+ * chance to be wrong about somebody standing next to it. Dropping it is both the right
+ * answer and less work.
+ */
+const KEEP_ALL = new Set([
   'person', 'bicycle', 'car', 'motorcycle', 'bus', 'truck', 'boat', 'train', 'airplane',
 ]);
+const KEEP_PEOPLE = new Set(['person']);
+let keep = KEEP_ALL;
 
 /** A canvas for the signatures, reused across frames. */
 let signatureCanvas = null;
@@ -124,8 +134,9 @@ async function load() {
   return detector;
 }
 
-async function handleFrame({ bitmap, scanFire, wantSignatures, tiled }) {
+async function handleFrame({ bitmap, scanFire, wantSignatures, tiled, peopleOnly }) {
   await load();
+  keep = peopleOnly ? KEEP_PEOPLE : KEEP_ALL;
 
   const started = performance.now();
 
@@ -177,7 +188,7 @@ function collect(result) {
     const category = detection.categories?.[0];
     if (!category) continue;
     const label = String(category.categoryName ?? '').toLowerCase();
-    if (!KEEP.has(label)) continue;
+    if (!keep.has(label)) continue;
     const { originX, originY, width, height } = detection.boundingBox;
     found.push({
       label,

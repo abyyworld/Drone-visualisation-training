@@ -38,7 +38,7 @@
  *     deleted on activate, so a stale shell cannot outlive a release.
  */
 
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v20';
 const SHELL_CACHE = `inspection-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `inspection-assets-${CACHE_VERSION}`;
 

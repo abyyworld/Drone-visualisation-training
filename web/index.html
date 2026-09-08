@@ -58,7 +58,7 @@
       <select id="live-camera" class="live__camera" hidden aria-label="Camera"></select>
 
       <select id="live-subject" class="live__camera" aria-label="What the camera is looking at">
-        <option value="crowd">Crowd: people and vehicles</option>
+        <option value="crowd">Crowd: people only</option>
         <option value="wildfire">Wildfire: people, flame and smoke</option>
         <option value="turbine">Wind turbine: people and vehicles</option>
         <option value="solar">Solar: people and vehicles</option>
@@ -84,7 +84,8 @@
 
     <p id="live-status" class="live__status" role="status"></p>
     <p class="field__hint">
-      People are tracked whatever the subject is set to. <strong>Wildfire</strong> also
+      <strong>Crowd</strong> looks for people and nothing else - no vehicles - which is
+      both what you want counted and less work per frame. <strong>Wildfire</strong> also
       scans for flame and smoke, and only it does: a flat grey region that loses its
       texture is smoke outdoors and a painted wall indoors, and only you can say which.
     </p>

@@ -56,9 +56,26 @@ public final class NativeDetector {
     private static final String MODEL_ASSET = "www/models/detector.tflite";
 
     /** Worth reporting from a drone. The other COCO classes are furniture and food. */
-    private static final Set<String> KEEP = new HashSet<>(Arrays.asList(
+    private static final Set<String> KEEP_ALL = new HashSet<>(Arrays.asList(
             "person", "bicycle", "car", "motorcycle", "bus", "truck", "boat", "train",
             "airplane"));
+
+    /**
+     * Crowd mode counts people, so crowd mode looks for people.
+     *
+     * A car in a crowd shot is not what is being counted. It is another box to draw,
+     * another track to follow, another signature to compare, and another chance to be wrong
+     * about whoever is standing beside it. Dropping it is both the right answer and less
+     * work per frame.
+     */
+    private static final Set<String> KEEP_PEOPLE = new HashSet<>(Arrays.asList("person"));
+
+    private volatile Set<String> keep = KEEP_ALL;
+
+    /** Look for people only, or for people and vehicles. */
+    public void setPeopleOnly(boolean peopleOnly) {
+        keep = peopleOnly ? KEEP_PEOPLE : KEEP_ALL;
+    }
 
     /**
      * How many real frames the GPU has to get right before it is trusted with the job.
@@ -305,7 +322,7 @@ public final class NativeDetector {
             Category top = categories.get(0);
             String label = top.categoryName() == null
                     ? "" : top.categoryName().toLowerCase(java.util.Locale.ROOT);
-            if (!KEEP.contains(label)) {
+            if (!keep.contains(label)) {
                 continue;
             }
             RectF box = detection.boundingBox();

@@ -676,6 +676,14 @@ public class LiveActivity extends AppCompatActivity {
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
         scansForFire = "wildfire".equals(Settings.domain(this));
+
+        // Crowd mode counts people, so it looks for people. A car in a crowd shot is
+        // another box, another track, and another chance to be wrong about whoever is
+        // standing beside it.
+        NativeDetector current = detector;
+        if (current != null) {
+            current.setPeopleOnly("crowd".equals(Settings.domain(this)));
+        }
         handler.post(detectTick);
         // The provider still runs, on its slow interval, for what the on-device model
         // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.
