@@ -179,7 +179,12 @@ happening again.
 ## Before the first flight
 
 Open **Camera -> Settings** and set the **video stream** address. The default is
-`rtsp://192.168.144.25:8554/main.264`, which is SIYI's documented MK15 default, but confirm
+`rtsp://192.168.144.25:8554/main.264`, which is SIYI's documented MK15 default and what the
+app is set to out of the box. It is the main stream at 1920x1080, and the resolution matters
+for more than how it looks: with a crowd or a fire selected, the app cuts each frame into
+six pieces and detects one of them at close to its native resolution, which is what finds
+people who are only a few pixels tall in the whole frame. A sub-stream would take that away.
+Confirm
 yours: a wrong address looks exactly like a drone that is switched off. From a laptop on the
 same link:
 

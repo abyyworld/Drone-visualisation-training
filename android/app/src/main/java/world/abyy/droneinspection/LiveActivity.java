@@ -96,6 +96,24 @@ public class LiveActivity extends AppCompatActivity {
     private static final int DETECT_LONG_EDGE = 640;
 
     /**
+     * The frame size to fetch when a tile is going to be looked at closely.
+     *
+     * Tiling exists to put more real pixels of a distant person in front of the model. Read
+     * the frame back at 640 first and there are no more real pixels to give it: a sixth of
+     * a 640-wide frame is 213 across, which the model then stretches to 448, and stretching
+     * invents nothing. The person is bigger and no clearer.
+     *
+     * SIYI's main stream is 1920x1080. Read back at 1280 and a sixth of it is 427 across,
+     * which is what the model wants anyway, so the crop reaches it at very nearly one to
+     * one. That is the difference between a person arriving as nine real pixels and as
+     * twenty-seven.
+     *
+     * It costs four times the readback, which is why that readback is taken in strips
+     * across several frames rather than in one blocking call. See GlPipeline.
+     */
+    private static final int TILED_LONG_EDGE = 1280;
+
+    /**
      * Floor on the gap between detections, so a fast tablet leaves the decoder some room.
      * The real gap is the length of the last detection, which is longer than this on
      * everything except a very quick device.
@@ -208,7 +226,7 @@ public class LiveActivity extends AppCompatActivity {
             if (!detectBusy) {
                 detectBusy = true;
                 detectRequestedAt = System.currentTimeMillis();
-                requestFrame(DETECT_LONG_EDGE, frame -> {
+                requestFrame(tilingWanted() ? TILED_LONG_EDGE : DETECT_LONG_EDGE, frame -> {
                     Handler worker = work;
                     if (worker == null || !worker.post(() -> analyseFrame(frame))) {
                         frame.recycle();
@@ -224,6 +242,18 @@ public class LiveActivity extends AppCompatActivity {
             handler.postDelayed(this, MIN_DETECT_GAP_MS);
         }
     };
+
+    /**
+     * Is there anything small enough in this subject to be worth a close look?
+     *
+     * A crowd is people who are a handful of pixels each, and a fire front has people at it.
+     * A turbine or a panel fills the frame, and detecting a sixth of it at high resolution
+     * finds nothing the whole frame did not.
+     */
+    private boolean tilingWanted() {
+        String domain = Settings.domain(this);
+        return "crowd".equals(domain) || "wildfire".equals(domain);
+    }
 
     /** Undo a detection that was asked for and never arrived. See detectTick. */
     private final Runnable releaseDetect = new Runnable() {
@@ -296,7 +326,7 @@ public class LiveActivity extends AppCompatActivity {
                 // Tiled when there is something small to find: a crowd, or a fire front
                 // with people at it. A turbine or a panel fills the frame and gains
                 // nothing from a close look at a sixth of it. See Tiles.
-                List<Finding> found = scansForFire || "crowd".equals(Settings.domain(LiveActivity.this))
+                List<Finding> found = tilingWanted()
                         ? current.detectTiled(frame, tileTurn++)
                         : current.detect(frame);
                 // A colour signature per person, so someone who leaves the frame and comes
