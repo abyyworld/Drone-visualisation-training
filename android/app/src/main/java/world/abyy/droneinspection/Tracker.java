@@ -79,7 +79,21 @@ public final class Tracker {
      * is affordable even on a two-gigabyte controller.
      */
     private static final int REID_MAX_REMEMBERED = 2000;
-    private static final int CONFIRM_AFTER = 2;
+    /**
+     * Sightings before a track is given a number and added to the total.
+     *
+     * Raised from two, on evidence. Measured against VisDrone's own labels, about three
+     * boxes in ten do not land on a labelled person: street furniture, mostly, which from
+     * above is a small dark blob like everything else. At two sightings any of those that
+     * survived a second look was issued a number and added to the total, so the total
+     * climbed on things that were not people and the numbers on screen churned.
+     *
+     * Four is a second and a bit of agreeing with itself. It does not fix the false boxes,
+     * which is a limit of the model rather than of the tracking, but it stops them being
+     * counted as people, and the cost is that somebody who crosses the frame very fast is
+     * drawn a moment later.
+     */
+    private static final int CONFIRM_AFTER = 4;
     private static final int MAX_PATH = 60;
 
     /** One thing being followed. */

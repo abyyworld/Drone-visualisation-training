@@ -33,6 +33,22 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+      So a flight lands somewhere an operator can actually find it.
+
+      Recordings used to go to the app's own directory, which is correct, private, removed
+      with the app, and buried six levels down under Android/data where a file manager on a
+      handheld will not show it. The files existed and could not be reached, which makes
+      saving them pointless.
+
+      They now go to a folder of their own at the top of the tablet's storage. That needs
+      this permission, and only up to Android 9: from Android 10 the same write is done
+      through the media store with no permission at all. The controller this flies on is
+      Android 9.
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

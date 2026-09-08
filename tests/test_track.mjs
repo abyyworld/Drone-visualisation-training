@@ -31,7 +31,7 @@ check('half overlap', Math.abs(iou([0, 0, 10, 10], [5, 0, 15, 10]) - (50 / 150))
 check('a zero-area box cannot overlap', iou([5, 5, 5, 5], [0, 0, 10, 10]) === 0);
 
 console.log('\nIdentity across frames');
-let tracker = new Tracker();
+let tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(100, 100)]);
 let open = tracker.update([person(104, 100)]);
 check('a moving thing keeps one id', open.length === 1);
@@ -44,13 +44,13 @@ check('its path is recorded', open[0].path.length > 5);
 check('and its velocity points the way it went', open[0].velocity[0] > 0);
 
 console.log('\nConfirmation');
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 let first = tracker.update([person(10, 10)]);
 check('a thing seen once is not drawn yet', first.length === 0);
 check('a thing seen twice is', tracker.update([person(11, 10)]).length === 1);
 
 console.log('\nCoasting through a missed frame');
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(200, 200)]);
 tracker.update([person(206, 200)]);
 const coasted = tracker.update([]);
@@ -61,7 +61,7 @@ check('and recovers its identity when the thing reappears',
   tracker.update([person(218, 200)])[0].id === coasted[0].id);
 
 console.log('\nLetting go');
-tracker = new Tracker({ maxMisses: 3 });
+tracker = new Tracker({ confirmAfter: 2, maxMisses: 3 });
 tracker.update([person(0, 0)]);
 tracker.update([person(1, 0)]);
 for (let i = 0; i < 3; i += 1) tracker.update([]);
@@ -70,14 +70,14 @@ for (let i = 0; i < 5; i += 1) tracker.update([]);
 check('a thing that left is eventually forgotten', tracker.open().length === 0);
 
 console.log('\nTwo things at once');
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(0, 0), person(500, 0)]);
 open = tracker.update([person(4, 0), person(504, 0)]);
 check('two things get two ids', new Set(open.map((t) => t.id)).size === 2);
 check('and neither is lost', open.length === 2);
 
 // The one that matters: things must not swap identity as they pass.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(0, 0), person(300, 0)]);
 const before = tracker.update([person(10, 0), person(290, 0)]);
 const left = before.find((t) => t.box[0] < 150);
@@ -88,7 +88,7 @@ check('identities stay with their own box as two things approach',
   && after.find((t) => t.box[0] >= 150).id === right.id);
 
 console.log('\nClasses do not blend');
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([{ label: 'person', confidence: 0.9, box: box(50, 50) }]);
 open = tracker.update([{ label: 'car', confidence: 0.9, box: box(50, 50) }]);
 // Same place, different class: a car is not the person becoming a car, it is a new thing.
@@ -99,7 +99,7 @@ console.log('\nMoving faster than the detector looks');
 // The reported bug: standing in front of a camera and moving produced person #1, then #2,
 // then #3. Detection runs a few times a second, so between two looks a person can move
 // most of their own width - and the boxes then do not overlap at all. IoU alone loses them.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 const stride = 44;   // slightly more than a box width, which is what walking looks like at 5fps
 let ids = new Set();
 for (let step = 0; step < 12; step += 1) {
@@ -110,7 +110,7 @@ check('a person walking keeps one identity across a whole pass',
   ids.size === 1, `${ids.size} ids issued`);
 
 // Vertically too, and diagonally, which is what happens when someone walks toward a camera.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 ids = new Set();
 for (let step = 0; step < 12; step += 1) {
   const size = 40 + step * 4;   // getting closer, so getting bigger
@@ -125,7 +125,7 @@ check('and one walking toward the camera, growing as they come',
 
 // The guard that stops the looser matching adopting the wrong person: someone far away is
 // a much smaller box, and must not inherit a nearby track.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(100, 100)]);
 tracker.update([person(104, 100)]);
 const distant = tracker.update([{ label: 'person', confidence: 0.8, box: box(150, 100, 8, 16) }]);
@@ -133,7 +133,7 @@ check('a much smaller box is not adopted by a nearby track',
   tracker.tracks.length === 2, `${tracker.tracks.length} tracks`);
 
 console.log('\nCounting');
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 for (let i = 0; i < 3; i += 1) {
   tracker.update([person(0, 0), person(200, 0), person(400, 0)]);
 }
@@ -147,7 +147,7 @@ for (let i = 0; i < 5; i += 1) tracker.update([person(0, 0), person(200, 0), per
 check('and does not climb while they stand still', tracker.countSeen('person') === 3);
 
 // Someone leaves and a different person arrives elsewhere: two distinct people seen.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 for (let i = 0; i < 3; i += 1) tracker.update([person(0, 0)]);
 for (let i = 0; i < 30; i += 1) tracker.update([]);          // they leave
 for (let i = 0; i < 3; i += 1) tracker.update([person(900, 400)]);
@@ -156,7 +156,7 @@ check('someone leaving and someone else arriving is two, not one',
 check('while only one is in view now', tracker.countOf('person') === 1);
 
 // A one-frame flicker is not a person.
-tracker = new Tracker();
+tracker = new Tracker({ confirmAfter: 2 });
 tracker.update([person(600, 600)]);
 tracker.update([]);
 check('a single-frame blip is never counted', tracker.countSeen('person') === 0);
@@ -176,7 +176,7 @@ console.log('\nCoasting is bounded by time, not by frames');
   // The budget is named here rather than inherited: these steps are 700 ms and the point
   // is the mechanism, not the number the application ships. The shipped number has its own
   // test below, because it has to clear something quite different.
-  const tracker = new Tracker({ maxCoastMs: 1500 });
+  const tracker = new Tracker({ confirmAfter: 2, maxCoastMs: 1500 });
   let clock = 1000000;
   tracker.update([person(50, 50)], clock);
   clock += 700;
@@ -197,7 +197,7 @@ console.log('\nCoasting is bounded by time, not by frames');
 
 console.log('\nA fast machine still gets its full coast');
 {
-  const tracker = new Tracker();
+  const tracker = new Tracker({ confirmAfter: 2 });
   let clock = 2000000;
   tracker.update([person(50, 50)], clock);
   clock += 120;
@@ -266,7 +266,7 @@ console.log('\nSomeone who leaves and comes back');
   // their track. When they walk out the other side they used to be a new person, and the
   // total went up for someone already in it. Over a route that is not a count of people,
   // it is a count of reappearances.
-  const tracker = new Tracker({ maxCoastMs: 1500 });
+  const tracker = new Tracker({ confirmAfter: 2, maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -327,7 +327,7 @@ console.log('\nSeen from a different angle');
 
 console.log('\nSomeone else is somebody else');
 {
-  const tracker = new Tracker({ maxCoastMs: 1500 });
+  const tracker = new Tracker({ confirmAfter: 2, maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -347,7 +347,7 @@ console.log('\nSomeone else is somebody else');
 
 console.log('\nThe memory does not outlive its usefulness');
 {
-  const tracker = new Tracker({ reidWindowMs: 1000, maxCoastMs: 1500 });
+  const tracker = new Tracker({ confirmAfter: 2, reidWindowMs: 1000, maxCoastMs: 1500 });
   let clock = 1000;
   seen(tracker, [20, 20, 44, 110], RED_COAT, BLUE_JEANS, clock);
   clock += 300;
@@ -370,7 +370,7 @@ console.log('\nA person too small to describe is still tracked');
   // From altitude a person is a handful of pixels and there is nothing to recognise them
   // by. They must still be followed and still be counted; they simply cannot be matched
   // back, which counts them again if they leave and return. That is the honest failure.
-  const tracker = new Tracker();
+  const tracker = new Tracker({ confirmAfter: 2 });
   let clock = 1000;
   const tiny = [20, 20, 25, 30];
   tracker.update([{ label: 'person', confidence: 0.8, box: tiny, signature: null }], clock);
@@ -407,7 +407,7 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
 
   // And the other half of the same fix: holding an identity is not the same as being on
   // screen, so the readout must not report a coasting track as present.
-  const tracker = new Tracker();
+  const tracker = new Tracker({ confirmAfter: 2 });
   let clock = 1000;
   tracker.update([person(50, 50)], clock);
   clock += 300;
@@ -422,6 +422,24 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
     tracker.tracks.length === 1, `${tracker.tracks.length} held`);
   check('and are not counted a second time',
     tracker.countSeen('person') === 1, `${tracker.countSeen('person')} counted`);
+
+  // And what the shipped defaults do with something that only looks like a person twice.
+  // Measured against VisDrone's labels, about three boxes in ten land on no labelled person
+  // at all, mostly street furniture, which from above is a small dark blob like everything
+  // else. Those used to be issued a number and added to the total on their second sighting.
+  const strict = new Tracker();
+  let t = 5000;
+  strict.update([person(300, 300)], t);
+  t += 200;
+  strict.update([person(301, 300)], t);
+  check('something seen twice is not yet called a person',
+    strict.countSeen('person') === 0, `${strict.countSeen('person')} counted`);
+  for (let i = 0; i < 2; i += 1) {
+    t += 200;
+    strict.update([person(302 + i, 300)], t);
+  }
+  check('something that keeps agreeing with itself is',
+    strict.countSeen('person') === 1, `${strict.countSeen('person')} counted`);
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);

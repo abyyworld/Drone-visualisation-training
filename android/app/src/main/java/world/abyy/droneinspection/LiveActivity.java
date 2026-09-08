@@ -1,11 +1,13 @@
 package world.abyy.droneinspection;
 
+import android.Manifest;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.app.PictureInPictureParams;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,7 +32,10 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
@@ -278,6 +283,16 @@ public class LiveActivity extends AppCompatActivity {
      * the question is where the file is, so that it can be copied off the tablet.
      */
     private String lastSaved = "";
+
+    /**
+     * Permission to put a flight where it can be found.
+     *
+     * Nothing depends on the answer. Refused, the files go to the app's own directory as
+     * before and are still there for the analysis screen; they are simply harder to reach
+     * with a file manager. A refusal must never stop somebody flying.
+     */
+    private final ActivityResultLauncher<String> storagePermission = registerForActivityResult(
+            new ActivityResultContracts.RequestPermission(), granted -> refreshStatus());
 
     /** Save an annotated still each time the total passes another of these. */
     private static final int EVIDENCE_EVERY = 10;
@@ -536,8 +551,11 @@ public class LiveActivity extends AppCompatActivity {
                 evidenceAt = peopleSeen - (peopleSeen % EVIDENCE_EVERY);
                 evidenceSaved++;
                 int at = peopleSeen;
-                handler.post(() -> saveFrame(new File(outputDirectory(),
-                        "flight-" + timestamp() + "-" + at + "-people.jpg"), false));
+                handler.post(() -> {
+                    File still = new File(outputDirectory(),
+                            "flight-" + timestamp() + "-" + at + "-people.jpg");
+                    saveFrame(still, false);
+                });
             }
         }
 
@@ -689,6 +707,12 @@ public class LiveActivity extends AppCompatActivity {
 
         // The detector that ships with the app. It runs on every frame it can manage and
         // is what makes this screen live rather than a slideshow of provider answers.
+        // Asked for once, on opening the screen, so that the first recording lands somewhere
+        // findable rather than discovering the problem after the flight.
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P && !canWriteSharedStorage()) {
+            storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
+
         StringBuilder failure = new StringBuilder();
         detector = NativeDetector.open(this, failure);
         if (detector == null) {
@@ -1340,6 +1364,7 @@ public class LiveActivity extends AppCompatActivity {
         String tally = "";
         if (log != null) {
             log.close();
+            publish(log.file());
             // Named in the toast because a file nobody knows about is a file nobody opens.
             tally = getString(R.string.and_the_log, log.file().getName(), log.highestSeen());
         }
@@ -1359,6 +1384,7 @@ public class LiveActivity extends AppCompatActivity {
             if (problem != null) {
                 lastError = getString(R.string.recording_failed, problem);
             } else {
+                publish(file);
                 lastSaved = getString(R.string.saved_to, file.getParent());
                 Toast.makeText(this,
                         getString(R.string.recording_saved, file.getName(), file.getParent())
@@ -1411,6 +1437,7 @@ public class LiveActivity extends AppCompatActivity {
                 }
                 if (announce) {
                     handler.post(() -> {
+                        publish(file);
                         lastSaved = getString(R.string.saved_to, file.getParent());
                         Toast.makeText(this,
                                 getString(R.string.snapshot_saved,
@@ -1518,14 +1545,29 @@ public class LiveActivity extends AppCompatActivity {
         overlay.setStatus(findings.isEmpty() ? "" : findings.size() + " marked by the provider");
     }
 
+    /** The folder a flight's files go in, at the top of the tablet's storage. */
+    private static final String FOLDER = "DroneInspection";
+
     /**
-     * Where recordings and snapshots go.
+     * Where recordings, stills and tallies go.
      *
-     * The app's own Movies directory: visible to the tablet's file manager and to the
-     * analysis screen's file picker, which is the whole point of saving them, and removed
-     * with the app rather than left behind on shared storage.
+     * WHY NOT THE APP'S OWN DIRECTORY ANY MORE
+     *     Because nobody could find them. getExternalFilesDir is the tidy answer: private,
+     *     needs no permission, and removed with the app. It is also six levels down inside
+     *     Android/data, which a file manager on a handheld either hides or makes very hard
+     *     to reach. Files that exist and cannot be opened are the same as no files.
+     *
+     *     So a flight goes to /storage/emulated/0/DroneInspection, which is one tap from
+     *     the top of internal storage and sits beside DCIM and Download. The app's own
+     *     directory is still the fallback, for a device that will not allow the write.
      */
     private File outputDirectory() {
+        if (canWriteSharedStorage()) {
+            File shared = new File(Environment.getExternalStorageDirectory(), FOLDER);
+            if (shared.isDirectory() || shared.mkdirs()) {
+                return shared;
+            }
+        }
         File directory = getExternalFilesDir(Environment.DIRECTORY_MOVIES);
         if (directory == null) {
             directory = getFilesDir();
@@ -1534,6 +1576,37 @@ public class LiveActivity extends AppCompatActivity {
             return getFilesDir();
         }
         return directory;
+    }
+
+    /**
+     * Whether the shared folder is available to write to.
+     *
+     * Android 10 closed direct writes to shared storage, so from there this returns false
+     * and files go back to the app's own directory. The controller this is flown with is
+     * Android 9, where the permission below is all it takes.
+     */
+    private boolean canWriteSharedStorage() {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return false;
+        }
+        return ContextCompat.checkSelfPermission(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Tell the tablet a file has appeared, so it shows up without a reboot.
+     *
+     * A file written directly to shared storage is invisible to the gallery and to most
+     * file managers until the media scanner has seen it, which is its own small trap: the
+     * file is there, the folder looks empty, and it looks exactly like the save failed.
+     */
+    private void publish(File file) {
+        try {
+            MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()},
+                    null, null);
+        } catch (RuntimeException ignored) {
+            // Worst case the file appears after the next reboot. Not worth a message.
+        }
     }
 
     private static String timestamp() {

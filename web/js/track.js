@@ -43,7 +43,21 @@ const MAX_SIZE_RATIO = 2.2;
 
 // About four seconds at a few detections a second. Long enough to walk behind something.
 const MAX_MISSES = 20;
-const CONFIRM_AFTER = 2;
+/**
+ * Sightings before a track is given a number and added to the total.
+ *
+ * Raised from two, on evidence. Measured against VisDrone's own labels, about three
+ * boxes in ten do not land on a labelled person: street furniture, mostly, which from
+ * above is a small dark blob like everything else. At two sightings any of those that
+ * survived a second look was issued a number and added to the total, so the total
+ * climbed on things that were not people and the numbers on screen churned.
+ *
+ * Four is a second and a bit of agreeing with itself. It does not fix the false boxes,
+ * which is a limit of the model rather than of the tracking, but it stops them being
+ * counted as people, and the cost is that somebody who crosses the frame very fast is
+ * drawn a moment later.
+ */
+const CONFIRM_AFTER = 4;
 
 /**
  * How long a track may coast, in milliseconds, before it is let go.
