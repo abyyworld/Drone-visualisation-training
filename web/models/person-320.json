@@ -1,0 +1,22 @@
+{
+  "imgsz": 320,
+  "labels": [
+    "pedestrian",
+    "people",
+    "bicycle",
+    "car",
+    "van",
+    "truck",
+    "tricycle",
+    "awning-tricycle",
+    "bus",
+    "motor",
+    "others"
+  ],
+  "keepClasses": [
+    0,
+    1
+  ],
+  "confThreshold": 0.25,
+  "iouThreshold": 0.45
+}
