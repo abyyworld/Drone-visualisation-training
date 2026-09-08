@@ -55,6 +55,9 @@ public final class BoxRecorder {
     private static final int I_FRAME_INTERVAL_SECONDS = 1;
     private static final int TIMEOUT_US = 10_000;
 
+    /** How often the encoder's output is taken even if nothing asks. See drainSteadily. */
+    private static final long DRAIN_INTERVAL_MS = 50;
+
     private final HandlerThread thread = new HandlerThread("box-recorder");
     private final Handler handler;
     private final int width;
@@ -75,6 +78,7 @@ public final class BoxRecorder {
     private boolean muxerStarted;
     private long startedAtNanos;
     private volatile boolean running;
+    private volatile boolean drainQueued;
     private volatile String failure;
 
     // EGL
@@ -178,6 +182,9 @@ public final class BoxRecorder {
             }
             running = true;
             startedAtNanos = System.nanoTime();
+            if (!composes) {
+                handler.postDelayed(drainSteadily, DRAIN_INTERVAL_MS);
+            }
         } catch (Exception opening) {
             failure = describe(opening);
             releaseQuietly();
@@ -202,7 +209,20 @@ public final class BoxRecorder {
      * has to be ready for the next video frame.
      */
     public void drainNow() {
-        handler.post(() -> {
+        // Coalesced. The render thread presents a frame and asks for a drain every time;
+        // if one is already queued, a second message adds nothing but a wake-up, and the
+        // drain already loops until the encoder has nothing left.
+        if (drainQueued) {
+            return;
+        }
+        drainQueued = true;
+        handler.post(drainOnce);
+    }
+
+    private final Runnable drainOnce = new Runnable() {
+        @Override
+        public void run() {
+            drainQueued = false;
             if (!running) {
                 return;
             }
@@ -212,8 +232,34 @@ public final class BoxRecorder {
                 failure = describe(encoding);
                 running = false;
             }
-        });
-    }
+        }
+    };
+
+    /**
+     * A steady drain, independent of anything asking for one.
+     *
+     * The encoder has a fixed number of input buffers. When its output is not taken they
+     * fill, and the next eglSwapBuffers onto its surface blocks the thread rendering the
+     * video until one frees up. Relying only on a message per presented frame means a
+     * moment of slow storage becomes a stall on the render thread, which is a held picture
+     * in the file. This keeps taking output whether or not anyone asked.
+     */
+    private final Runnable drainSteadily = new Runnable() {
+        @Override
+        public void run() {
+            if (!running) {
+                return;
+            }
+            try {
+                drain(false);
+            } catch (Exception encoding) {
+                failure = describe(encoding);
+                running = false;
+                return;
+            }
+            handler.postDelayed(this, DRAIN_INTERVAL_MS);
+        }
+    };
 
     /**
      * Hand over one composed frame.
@@ -250,6 +296,7 @@ public final class BoxRecorder {
 
     /** Finish the file. The callback runs on this recorder's thread. */
     public void stop(Runnable onFinished) {
+        handler.removeCallbacks(drainSteadily);
         handler.post(() -> {
             try {
                 if (running) {

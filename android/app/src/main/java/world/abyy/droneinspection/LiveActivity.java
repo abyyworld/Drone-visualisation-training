@@ -83,6 +83,9 @@ public class LiveActivity extends AppCompatActivity {
     /** A snapshot is a still to be looked at closely, so it is taken at full resolution. */
     private static final int SNAPSHOT_LONG_EDGE = 4096;
 
+    /** The overlay layer's ceiling. See pushOverlay() for why it is below the video's. */
+    private static final int OVERLAY_MAX_EDGE = 1280;
+
     /**
      * What the frame is scaled to before detection.
      *
@@ -679,8 +682,18 @@ public class LiveActivity extends AppCompatActivity {
             return;
         }
         try {
-            Bitmap layer = Bitmap.createBitmap(recordWidth, recordHeight, Bitmap.Config.ARGB_8888);
-            overlay.drawInto(new Canvas(layer), recordWidth, recordHeight);
+            // Not at the recording's own resolution, deliberately. At 1920x1080 that layer
+            // is 8 MB, drawn on the main thread and uploaded to the GPU on the render
+            // thread, several times a second - and the render thread is the one presenting
+            // frames to the encoder, so every upload is a hitch in the file. The layer holds
+            // outlines and short labels, which survive being scaled up by the GPU; at 1280
+            // it is a third of the bytes and the boxes look the same.
+            float scale = Math.min(1f, OVERLAY_MAX_EDGE / (float) Math.max(recordWidth, recordHeight));
+            int width = Math.max(2, Math.round(recordWidth * scale));
+            int height = Math.max(2, Math.round(recordHeight * scale));
+
+            Bitmap layer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            overlay.drawInto(new Canvas(layer), width, height);
             pipeline.setOverlay(layer);
         } catch (OutOfMemoryError tooBig) {
             // The recording keeps its picture and loses its boxes, which is far better than

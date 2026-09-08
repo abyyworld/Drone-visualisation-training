@@ -67,6 +67,26 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     /** Most requests than this waiting means the consumer is behind; the oldest go. */
     private static final int MAX_PENDING = 3;
 
+    /**
+     * How many pixels may be read back from the GPU in one go.
+     *
+     * glReadPixels is a hard synchronisation: it stops the render thread until the GPU has
+     * caught up and the bytes are in memory. That thread is the one presenting frames to
+     * the encoder, and the encoder stamps frames with the wall clock, so every millisecond
+     * spent here is a millisecond of held picture in the file.
+     *
+     * A detection frame at 640 across is about 900 kB and passes in a few milliseconds. The
+     * provider's frame is 1568 across, five and a half megabytes, and a snapshot can be four
+     * thousand across. Read whole, those are tens of milliseconds each, and the one on a two
+     * second timer is a visible pause in the recording every two seconds - which is what was
+     * left after moving the work off the main thread. It had not gone; it had moved here.
+     *
+     * So a large read is taken in horizontal strips, one per rendered frame. The offscreen
+     * buffer holds the image while that happens, so every strip is of the same moment. It
+     * takes a few frames longer to arrive and it never stalls the encoder.
+     */
+    private static final int READ_CHUNK_PIXELS = 200_000;
+
     private static final String VERTEX = ""
             + "attribute vec4 aPosition;\n"
             + "attribute vec4 aTexCoord;\n"
@@ -148,6 +168,8 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private int frameWidth;
     private int frameHeight;
     private ByteBuffer readback;
+
+    private Read pending;
 
     private int displayWidth;
     private int displayHeight;
@@ -435,18 +457,33 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         }
     }
 
-    /** The model's frame: rendered small, offscreen, and read back. */
+    /**
+     * The model's frame: rendered small, offscreen, and read back a strip at a time.
+     *
+     * One call does at most one strip, so the render thread comes back to presenting frames
+     * between them. A detection frame is one strip and arrives immediately; a snapshot is
+     * many and arrives a few frames later, which nobody can perceive in a still.
+     */
     private void serveOneRequest() {
-        Request request = requests.pollFirst();
-        if (request == null) {
-            return;
+        if (pending == null) {
+            Request request = requests.pollFirst();
+            if (request == null) {
+                return;
+            }
+            if (!beginRead(request)) {
+                return;
+            }
         }
+        continueRead();
+    }
+
+    /** Render the requested moment into the offscreen buffer and set up the strips. */
+    private boolean beginRead(Request request) {
         int longEdge = Math.max(16, request.longEdge);
         float scale = Math.min(1f, longEdge / (float) Math.max(videoWidth, videoHeight));
         int width = Math.max(2, Math.round(videoWidth * scale));
         int height = Math.max(2, Math.round(videoHeight * scale));
 
-        Bitmap frame = null;
         try {
             makeCurrent(displaySurface);
             ensureFrameBuffer(width, height);
@@ -456,24 +493,40 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
             // The flipped quad, because glReadPixels starts at the bottom row and an
             // unflipped render therefore comes back upside down.
             drawExternal(quadFlipped, textureMatrix);
-
-            readback.rewind();
-            GLES20.glReadPixels(0, 0, width, height,
-                    GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, readback);
-            readback.rewind();
-
-            frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            frame.copyPixelsFromBuffer(readback);
-        } catch (Exception | Error reading) {
-            if (frame != null) {
-                frame.recycle();
-                frame = null;
-            }
+        } catch (Exception | Error rendering) {
+            return false;
         } finally {
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
         }
-        if (frame != null) {
-            request.consumer.onFrame(frame);
+
+        pending = new Read(request.consumer, width, height,
+                Math.max(1, READ_CHUNK_PIXELS / Math.max(1, width)));
+        return true;
+    }
+
+    /** Take the next strip, and deliver the frame once the last one is in. */
+    private void continueRead() {
+        Read read = pending;
+        try {
+            int rows = Math.min(read.rowsPerPass, read.height - read.rowsDone);
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
+            readback.position(read.rowsDone * read.width * 4);
+            GLES20.glReadPixels(0, read.rowsDone, read.width, rows,
+                    GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, readback);
+            read.rowsDone += rows;
+
+            if (read.rowsDone < read.height) {
+                return;
+            }
+            readback.rewind();
+            Bitmap frame = Bitmap.createBitmap(read.width, read.height, Bitmap.Config.ARGB_8888);
+            frame.copyPixelsFromBuffer(readback);
+            pending = null;
+            read.consumer.onFrame(frame);
+        } catch (Exception | Error reading) {
+            pending = null;
+        } finally {
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
         }
     }
 
@@ -591,6 +644,9 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         if (frameBuffer != 0 && width == frameWidth && height == frameHeight) {
             return;
         }
+        // Never while a read is in progress: the strips would come from two different
+        // buffers and the frame would be half of one moment and half of another.
+        pending = null;
         deleteFrameBuffer();
 
         int[] handles = new int[1];
@@ -687,6 +743,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private void releaseQuietly() {
         alive = false;
         started = false;
+        pending = null;
         try {
             deleteFrameBuffer();
         } catch (Exception | Error ignored) {
@@ -717,6 +774,22 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
             }
             EGL14.eglTerminate(eglDisplay);
             eglDisplay = EGL14.EGL_NO_DISPLAY;
+        }
+    }
+
+    /** A readback in progress, spread over several frames. */
+    private static final class Read {
+        final FrameConsumer consumer;
+        final int width;
+        final int height;
+        final int rowsPerPass;
+        int rowsDone;
+
+        Read(FrameConsumer consumer, int width, int height, int rowsPerPass) {
+            this.consumer = consumer;
+            this.width = width;
+            this.height = height;
+            this.rowsPerPass = rowsPerPass;
         }
     }
 
