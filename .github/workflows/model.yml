@@ -238,8 +238,24 @@ jobs:
             echo "nothing changed"
             exit 0
           fi
+
+          # This job takes minutes and the branch moves while it runs, so a plain push is
+          # rejected for being behind - which is what happened, after every export had
+          # succeeded. Rebase onto whatever landed meanwhile and try again; the only file
+          # this job touches is the model, so there is nothing for a rebase to conflict
+          # with.
+          git pull --rebase --autostash origin main || true
           git commit -m "Convert ${{ steps.fetch.outputs.source }} for the app
 
           Fetched and converted on the runner, which can reach the model hosts this
           project's own environment cannot. Aerial weights: ${{ steps.fetch.outputs.aerial }}."
-          git push
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push rejected, rebasing and retrying"
+            git pull --rebase --autostash origin main || true
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push the converted model after three attempts"
+          exit 1
