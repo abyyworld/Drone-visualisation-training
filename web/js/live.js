@@ -369,7 +369,7 @@ export class LiveView {
           // Tiling is what finds the people who are only a few pixels tall, which is most
           // of a crowd from any altitude. It costs one extra detection per pass.
           tiled: this.tiled,
-          // Crowd mode counts people. A car is another box, another track and another
+          // Crowd mode is about people. A car is another box, another track and another
           // chance to be wrong about whoever is standing beside it.
           peopleOnly: this.subject === 'crowd',
         }, [bitmap]);
