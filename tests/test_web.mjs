@@ -406,6 +406,30 @@ async function main() {
     check('the card says what it cannot see',
       (await found.locator('.card__note').textContent()).includes('COCO'));
 
+    // A subject this engine cannot speak to must be refused, not answered.
+    //
+    // THE BUG THIS PINS
+    //     Asking for a wind turbine fell through to the crowd vocabulary, because that was
+    //     the fallback for any subject this engine does not cover. A photograph of a blade
+    //     snapped clean through came back reading "no pressure pattern scored in this
+    //     frame", score 0.00, badged green, and counted under Clear. The green is the
+    //     dangerous part: this engine has no opinion at all about a blade, and an engine
+    //     with no opinion must not return the word for nothing being wrong.
+    await page.locator('#domain-override').selectOption('turbine');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
+    const refused = await cardFor(page, 'turbine_red.png');
+    await refused.locator('.card__message').waitFor({ timeout: 60000 });
+    check('the card is marked refused rather than assessed',
+      (await refused.getAttribute('class')).includes('card--rejected'));
+    const said = await refused.textContent();
+    check('a subject with no model is refused rather than scored',
+      !/score 0\.00/.test(said), said.slice(0, 200));
+    check('and says a model for it is not deployed',
+      /no.{0,20}model|needs a trained model/i.test(said), said.slice(0, 200));
+    check('and does not borrow the crowd vocabulary',
+      !/pressure pattern/i.test(said), said.slice(0, 200));
+    await page.locator('#domain-override').selectOption('auto');
+
     // The delegate matters more than it looks. On GPU this detector returns an empty list
     // on that same photograph - no error, just nothing - which is indistinguishable from a
     // frame with nobody in it. This check is what would catch a well-meaning switch back.

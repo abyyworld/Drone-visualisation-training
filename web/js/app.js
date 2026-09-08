@@ -673,7 +673,37 @@ function fireNote(region) {
  * subject is whatever the operator selected, because a person is a person at a fire and in
  * a crowd alike.
  */
+/** What the operator called the subject, for a message about that subject. */
+function subjectName(key) {
+  return state.manifest?.[key]?.displayName ?? key;
+}
+
 async function analyseOnDevice(image, base) {
+  // Refused before anything is run, when this engine cannot speak to the subject asked
+  // about.
+  //
+  // THE BUG THIS IS
+  //     Asking for a wind turbine used to fall through to the crowd vocabulary, because
+  //     that was the fallback whenever the requested subject was not one this engine
+  //     covers. A photograph of a blade snapped clean through therefore came back reading
+  //     "no pressure pattern scored in this frame", score 0.00, badged green, and counted
+  //     under Clear.
+  //
+  //     Every part of that is false and the green is the dangerous part. This engine looks
+  //     for people, vehicles, flame colour and smoke. It has no opinion whatever about a
+  //     blade, and an engine with no opinion must say so rather than return the word for
+  //     nothing being wrong.
+  const requested = el['domain-override'].value;
+  if (requested !== 'auto' && !onDeviceHandles(requested)) {
+    return {
+      ...base, image, status: 'rejected', gate: null,
+      message: `${subjectName(requested)} needs a trained model, and none is deployed. `
+        + 'This engine finds people, vehicles, flame colour and smoke, so it cannot tell '
+        + 'you anything about the condition of one. Use a provider key for this subject, '
+        + 'or pick a subject this engine covers.',
+    };
+  }
+
   let detections = await detectOnDevice(image, (label) => setProgress(50, label));
 
   if (base.track) {
@@ -700,8 +730,7 @@ async function analyseOnDevice(image, base) {
   // number would say something about it that is not true.
   for (const region of scanForFire(image, base.track)) detections.push(region);
 
-  const requested = el['domain-override'].value;
-  const domain = onDeviceHandles(requested) && requested !== 'auto' ? requested : 'crowd';
+  const domain = requested !== 'auto' ? requested : 'crowd';
   const spec = state.manifest?.ondevice ?? {};
   const { score, severity } = assess(detections, spec.severityWeights ?? {});
 
