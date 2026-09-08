@@ -97,3 +97,66 @@ def test_the_head_carries_one_channel_per_label(spec):
         f"the head carries {channels} channels, so four plus {channels - 4} classes, "
         f"but person-320.json lists {len(spec['labels'])} labels"
     )
+
+
+def box_scale(head, anchors, channels, size, per_anchor=False):
+    """The rule in NativeDetector.calibrate(), written once so the two cannot drift."""
+    largest = max(
+        head[anchor * channels + c] if per_anchor else head[c * anchors + anchor]
+        for anchor in range(anchors) for c in (0, 1)
+    )
+    return size if largest <= size / 8 else 1
+
+
+def _probe(session_or_interpreter, size, tflite):
+    """One flat grey frame, which is what the app calibrates on."""
+    import numpy as np
+
+    grey = np.full((1, 3, size, size), 114 / 255, dtype=np.float32)
+    if tflite:
+        entry = session_or_interpreter.get_input_details()[0]
+        session_or_interpreter.set_tensor(entry["index"], grey.astype(entry["dtype"]))
+        session_or_interpreter.invoke()
+        exit_ = session_or_interpreter.get_output_details()[0]
+        return session_or_interpreter.get_tensor(exit_["index"])[0]
+    name = session_or_interpreter.get_inputs()[0].name
+    return session_or_interpreter.run(None, {name: grey})[0][0]
+
+
+def test_the_two_exports_disagree_about_box_units_and_both_are_handled():
+    """
+    The same weights, exported twice, do not use the same units for a box.
+
+    The ONNX gives centres and sizes in pixels of the model's own square; the TFLite
+    converter divides them by that square and gives fractions. Nothing in either file says
+    so and the shapes are identical, so reading one as the other is not an error: every box
+    comes out a fraction of a pixel across in the corner, the screen shows nothing, and the
+    detector cheerfully reports a hundred people. That shipped once.
+
+    The app measures it rather than assuming it. This checks the measurement lands on the
+    right answer for both files, which is the part that would break silently.
+    """
+    ort = pytest.importorskip("onnxruntime")
+    litert = pytest.importorskip("ai_edge_litert.interpreter")
+    if not (ONNX.exists() and TFLITE.exists()):
+        pytest.skip("both exports are needed to compare them")
+
+    spec = json.loads(SPEC.read_text())
+    size = spec["imgsz"]
+    channels = 4 + len(spec["labels"])
+
+    session = ort.InferenceSession(str(ONNX), providers=["CPUExecutionProvider"])
+    onnx_head = _probe(session, size, tflite=False)
+    anchors = onnx_head.shape[1]
+    assert box_scale(onnx_head.reshape(-1), anchors, channels, size) == 1, (
+        "the ONNX export used to give boxes in pixels; it no longer does, and the web app "
+        "reads it as pixels"
+    )
+
+    interpreter = litert.Interpreter(model_path=str(TFLITE))
+    interpreter.allocate_tensors()
+    tflite_head = _probe(interpreter, size, tflite=True)
+    assert box_scale(tflite_head.reshape(-1), anchors, channels, size) == size, (
+        "the TFLite export used to give boxes as fractions of the model square; it no "
+        "longer does, and the tablet would multiply them by 320 a second time"
+    )

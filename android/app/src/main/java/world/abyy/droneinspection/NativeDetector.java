@@ -152,6 +152,12 @@ public final class NativeDetector {
     private final float[] head;
     private final Rect target = new Rect();
 
+    /**
+     * What the box numbers are in: 1 for pixels of the model's own square, or the square's
+     * size when they arrive as fractions of it. Measured at startup, never assumed.
+     */
+    private float boxScale = 1f;
+
     private volatile Set<Integer> keep;
     private volatile long lastInferenceMs;
     private volatile String delegateName = "CPU";
@@ -323,8 +329,16 @@ public final class NativeDetector {
             }
         }
 
-        return new NativeDetector(processor, candidate, candidateDelegate, candidateName,
-                labels, people, conf, iou);
+        NativeDetector detector = new NativeDetector(processor, candidate, candidateDelegate,
+                candidateName, labels, people, conf, iou);
+        try {
+            detector.calibrate();
+        } catch (RuntimeException | Error problem) {
+            detector.close();
+            failure.append(describe(problem));
+            return null;
+        }
+        return detector;
     }
 
     private static String describe(Throwable problem) {
@@ -484,7 +498,7 @@ public final class NativeDetector {
         return (byte) Math.max(floor, Math.min(ceiling, value));
     }
 
-    /** Read the output back into floats, undoing quantisation if there was any. */
+    /** Read the output back into floats, undoing quantisation and the box units. */
     private void readOutput() {
         output.rewind();
         if (outputType == DataType.FLOAT32) {
@@ -501,6 +515,62 @@ public final class NativeDetector {
             }
         }
         output.rewind();
+        scaleBoxes();
+    }
+
+    /**
+     * Put the four box channels into the model square's pixels, whatever they arrived in.
+     *
+     * The same weights exported two ways do not agree about this. The ONNX gives centres and
+     * sizes in pixels of the 320 square; the TFLite converter divides them all by 320 and
+     * gives fractions. Nothing about the file says which, the shapes are identical, and
+     * reading fractions as pixels is not an error: every box comes out a fraction of a pixel
+     * across, in the top left corner, and the screen shows nothing at all while the detector
+     * reports finding a hundred people.
+     */
+    private void scaleBoxes() {
+        if (boxScale == 1f) {
+            return;
+        }
+        if (outputPerAnchor) {
+            for (int anchor = 0; anchor < outputAnchors; anchor++) {
+                int row = anchor * outputChannels;
+                for (int c = 0; c < 4; c++) {
+                    head[row + c] *= boxScale;
+                }
+            }
+        } else {
+            for (int i = 0; i < 4 * outputAnchors; i++) {
+                head[i] *= boxScale;
+            }
+        }
+    }
+
+    /**
+     * Work out those units, once, by asking the model.
+     *
+     * The box centres come from the anchor grid rather than from the picture, so they span
+     * the model's whole square no matter what it is shown. On this model a flat grey frame
+     * gives centres reaching 316 when they are pixels and 0.99 when they are fractions, so
+     * the two are two orders of magnitude apart and a middle threshold cannot be wrong by
+     * accident. Measuring beats believing the file extension.
+     */
+    private void calibrate() {
+        java.util.Arrays.fill(pixels, PAD);
+        fillInput();
+        output.rewind();
+        cpu.run(input, output);
+        readOutput();
+
+        float largest = 0;
+        for (int anchor = 0; anchor < outputAnchors; anchor++) {
+            for (int c = 0; c < 2; c++) {
+                float value = outputPerAnchor
+                        ? head[anchor * outputChannels + c] : head[c * outputAnchors + anchor];
+                largest = Math.max(largest, value);
+            }
+        }
+        boxScale = largest <= inputSize / 8f ? inputSize : 1f;
     }
 
     /**
