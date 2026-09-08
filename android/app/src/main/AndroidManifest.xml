@@ -21,6 +21,18 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!--
+      A recording has to survive the pilot switching to the flight software or the screen
+      timing out. Without a foreground service Android stops the activity and, before long,
+      kills the process, and the recording ends silently - which nobody discovers until they
+      land. POST_NOTIFICATIONS is what puts the "recording" line in the shade on Android 13
+      and later; refused, the recording still runs and there is simply no line.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -63,5 +75,13 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density" />
+
+        <!-- Holds the process up while a recording is running and the app is not on
+             screen. See RecordingService for why this is unavoidable. -->
+        <service
+            android:name=".RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
 </manifest>

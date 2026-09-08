@@ -44,6 +44,12 @@
     <!-- Regions, and the word candidate, because colour and motion cannot produce more
          than that. What it marks is for an operator to look at, not a verdict. -->
     <string name="fire_readout">candidates: %1$d flame, %2$d smoke</string>
+
+    <!-- The foreground-service notification: what it says while recording in the background. -->
+    <string name="recording_channel">Recording</string>
+    <string name="recording_channel_description">Shown while a flight is being recorded, so a recording running with the app off screen is never invisible.</string>
+    <string name="recording_notification_title">Recording the drone\'s feed</string>
+    <string name="recording_notification_text">Boxes are being drawn into the file. Tap to go back and stop it.</string>
     <!-- Shown when the GPU video path could not be used and the slower one took over. The
          screen still works; the operator should know it is working the slow way. -->
     <string name="video_path_fallback">The GPU video path is unavailable on this device, so the slower one is in use: %1$s</string>

@@ -152,6 +152,17 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private EGLSurface displaySurface = EGL14.EGL_NO_SURFACE;
     private EGLSurface encoderSurface = EGL14.EGL_NO_SURFACE;
 
+    /**
+     * A one-pixel surface that exists only to be current when nothing else can be.
+     *
+     * A GL context has to be made current against *some* surface before any call is legal.
+     * While the app is on screen that is the window; when the app is backgrounded the
+     * window is destroyed, and without this the context would have nowhere to be current
+     * and the recording would stop the moment the pilot switched to their flight software.
+     * That is the whole reason background recording works.
+     */
+    private EGLSurface idleSurface = EGL14.EGL_NO_SURFACE;
+
     private SurfaceTexture videoTexture;
     private volatile Surface videoInput;
     private int videoTextureId;
@@ -320,7 +331,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
                 // The context is already current on this thread, but say so anyway: an
                 // upload against no current context is a silent no-op that shows up later
                 // as an overlay that never appears in the file.
-                makeCurrent(displaySurface);
+                makeCurrent(current());
                 if (overlayTextureId == 0) {
                     overlayTextureId = createTexture(GLES20.GL_TEXTURE_2D);
                 }
@@ -375,7 +386,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
             return;
         }
         try {
-            makeCurrent(displaySurface);
+            makeCurrent(current());
             videoTexture.updateTexImage();
             videoTexture.getTransformMatrix(textureMatrix);
 
@@ -390,7 +401,9 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
 
     /** The screen: the video letterboxed into whatever shape the view is. */
     private void drawToDisplay() {
-        if (displayWidth <= 0 || displayHeight <= 0) {
+        // No window: the app is in the background. The encoder pass below still runs, which
+        // is the point - a recording does not stop because nobody is looking at it.
+        if (displaySurface == EGL14.EGL_NO_SURFACE || displayWidth <= 0 || displayHeight <= 0) {
             return;
         }
         makeCurrent(displaySurface);
@@ -485,7 +498,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         int height = Math.max(2, Math.round(videoHeight * scale));
 
         try {
-            makeCurrent(displaySurface);
+            makeCurrent(current());
             ensureFrameBuffer(width, height);
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
             GLES20.glDisable(GLES20.GL_BLEND);
@@ -604,10 +617,78 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     }
 
     private void openSurface(Surface display, int width, int height) {
+        idleSurface = EGL14.eglCreatePbufferSurface(eglDisplay, eglConfig,
+                new int[]{EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE}, 0);
+        if (idleSurface == null || idleSurface == EGL14.EGL_NO_SURFACE) {
+            throw new IllegalStateException("eglCreatePbufferSurface failed");
+        }
         displaySurface = createWindowSurface(display);
         displayWidth = width;
         displayHeight = height;
-        makeCurrent(displaySurface);
+        makeCurrent(current());
+    }
+
+    /** Whatever this context can legally be current against right now. */
+    private EGLSurface current() {
+        return displaySurface != EGL14.EGL_NO_SURFACE ? displaySurface : idleSurface;
+    }
+
+    /**
+     * The screen has gone: the app was backgrounded, or the surface was recreated.
+     *
+     * Everything except the window is kept - the context, the decoder's texture, the
+     * encoder's surface - so a recording in progress carries straight on with no screen to
+     * draw to. Tearing the pipeline down here, which is what used to happen, left the
+     * encoder open with nothing feeding it: the file kept running and held one frozen
+     * picture for as long as the app was away.
+     */
+    void detachDisplay() {
+        final Object done = new Object();
+        synchronized (done) {
+            gl.post(() -> {
+                if (displaySurface != EGL14.EGL_NO_SURFACE) {
+                    EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE,
+                            EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+                    EGL14.eglDestroySurface(eglDisplay, displaySurface);
+                    displaySurface = EGL14.EGL_NO_SURFACE;
+                }
+                displayWidth = 0;
+                displayHeight = 0;
+                synchronized (done) {
+                    done.notifyAll();
+                }
+            });
+            try {
+                // Waited for, because the caller is surfaceDestroyed() and Android requires
+                // that nothing is still drawing to that surface when it returns.
+                done.wait(2000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /** The screen is back. */
+    void attachDisplay(Surface display, int width, int height) {
+        gl.post(() -> {
+            try {
+                if (displaySurface != EGL14.EGL_NO_SURFACE) {
+                    EGL14.eglDestroySurface(eglDisplay, displaySurface);
+                }
+                displaySurface = createWindowSurface(display);
+                displayWidth = width;
+                displayHeight = height;
+                makeCurrent(displaySurface);
+            } catch (Exception | Error opening) {
+                displaySurface = EGL14.EGL_NO_SURFACE;
+                fail("the screen could not be reattached: " + opening.getMessage());
+            }
+        });
+    }
+
+    /** Is the pipeline up, with or without a screen to draw on? */
+    boolean isAlive() {
+        return alive;
     }
 
     private EGLSurface createWindowSurface(Surface surface) {
@@ -767,6 +848,10 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
             if (displaySurface != EGL14.EGL_NO_SURFACE) {
                 EGL14.eglDestroySurface(eglDisplay, displaySurface);
                 displaySurface = EGL14.EGL_NO_SURFACE;
+            }
+            if (idleSurface != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(eglDisplay, idleSurface);
+                idleSurface = EGL14.EGL_NO_SURFACE;
             }
             if (eglContext != EGL14.EGL_NO_CONTEXT) {
                 EGL14.eglDestroyContext(eglDisplay, eglContext);

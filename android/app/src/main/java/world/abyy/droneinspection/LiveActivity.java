@@ -3,7 +3,9 @@ package world.abyy.droneinspection;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -440,6 +442,18 @@ public class LiveActivity extends AppCompatActivity {
         // A controller screen that sleeps mid-flight is worse than useless.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        // Asked for once, up front, rather than at the moment someone presses record.
+        //
+        // Refusing it does not stop a recording: the service still runs and the file is
+        // still written. What is lost is the line in the notification shade saying so, and
+        // an app that records with nothing anywhere to show it is the thing that rule
+        // exists to prevent - so it is worth asking before it matters.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
+
         videoSurface = findViewById(R.id.video_surface);
         video = findViewById(R.id.video);
         overlay = findViewById(R.id.overlay);
@@ -447,6 +461,15 @@ public class LiveActivity extends AppCompatActivity {
         videoSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                if (glPipeline != null && glPipeline.isAlive()) {
+                    // Coming back from the background with a recording still running: the
+                    // pipeline never went away, it just had no screen.
+                    glPipeline.attachDisplay(holder.getSurface(),
+                            videoSurface.getWidth(), videoSurface.getHeight());
+                    surfaceReady = true;
+                    refreshStatus();
+                    return;
+                }
                 openPipeline(holder.getSurface());
             }
 
@@ -459,6 +482,14 @@ public class LiveActivity extends AppCompatActivity {
 
             @Override
             public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                if (isRecording() && glPipeline != null) {
+                    // Only the window goes. The context, the decoder's texture and the
+                    // encoder's surface all stay, so the recording carries on with nobody
+                    // watching it - which is the whole point of recording during a flight.
+                    glPipeline.detachDisplay();
+                    surfaceReady = false;
+                    return;
+                }
                 closePipeline();
             }
         });
@@ -527,6 +558,11 @@ public class LiveActivity extends AppCompatActivity {
         // that is not known until the SurfaceView has one. Whichever happens second starts
         // it; see openPipeline().
         wantStream = true;
+        if (isRecording() && player != null) {
+            // Came back to a recording that never stopped. Everything is still running.
+            refreshStatus();
+            return;
+        }
         if (surfaceReady) {
             openStream();
         }
@@ -560,6 +596,23 @@ public class LiveActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
+
+        // A recording carries on when the app leaves the screen, and nothing below happens.
+        //
+        // This used to release the player and stop the detector while deliberately leaving
+        // the recorder running, which is the worst of both: the file kept running with no
+        // frames arriving, so it held one frozen picture for however long the pilot was in
+        // their flight software, and the boxes stopped moving because the detector had been
+        // shut down. The recording could not be recovered either, because the pipeline was
+        // torn down with the surface and never reattached to the encoder.
+        //
+        // RecordingService is what makes staying alive legal: without a foreground service
+        // Android stops this activity and then kills the process, and the recording ends
+        // silently with nobody finding out until they land.
+        if (isRecording()) {
+            return;
+        }
+
         wantStream = false;
         handler.removeCallbacks(analysisTick);
         handler.removeCallbacks(detectTick);
@@ -904,6 +957,9 @@ public class LiveActivity extends AppCompatActivity {
 
         recordButton.setText(R.string.stop_recording);
         backButton.setVisibility(View.GONE);
+        // From here the process is allowed to keep running with nothing on screen. See
+        // RecordingService.
+        RecordingService.start(this);
         pushOverlay();
         refreshStatus();
     }
@@ -928,10 +984,14 @@ public class LiveActivity extends AppCompatActivity {
 
         recordButton.setText(R.string.stop_recording);
         backButton.setVisibility(View.GONE);
+        RecordingService.start(this);
         refreshStatus();
     }
 
     private void stopRecording() {
+        // Released first: the moment the recording ends, this process has no business
+        // holding a notification or being exempt from being stopped.
+        RecordingService.stop(this);
         handler.removeCallbacks(recordTick);
         GlPipeline pipeline = glPipeline;
         if (pipeline != null) {

@@ -52,7 +52,9 @@ trained defect models, which do not exist yet.
 So out of the box, with no key and no connection:
 
 - **Camera** tracks people and vehicles on the drone's feed, live, on the tablet, and marks
-  flame and smoke regions on the same frames
+  flame and smoke regions on the same frames. A recording carries on when you switch to the
+  flight software or the screen times out: a line appears in the notification shade for as
+  long as it is running, and tapping it comes straight back
 - **Analyse** finds all of that in photographs and video, gives a floor on how many people
   are in each frame, and produces the report
 
