@@ -481,7 +481,9 @@ public class LiveActivity extends AppCompatActivity {
     private final Runnable analysisTick = new Runnable() {
         @Override
         public void run() {
-            captureAndAnalyse();
+            if (providerWorthRunning()) {
+                captureAndAnalyse();
+            }
             handler.postDelayed(this, Math.max(1, Settings.intervalSeconds(LiveActivity.this)) * 1000L);
         }
     };
@@ -609,6 +611,11 @@ public class LiveActivity extends AppCompatActivity {
             lastError = failure.toString();
         }
 
+        // Built only when it will be used. A WebView is tens of megabytes of a
+        // two-gigabyte device, and in crowd mode with no key it does nothing whatsoever.
+        if (!providerWorthRunning()) {
+            analyser = null;
+        } else {
         analyser = new LiveAnalyser(this, new LiveAnalyser.Listener() {
             @Override
             public void onReady() {
@@ -630,6 +637,7 @@ public class LiveActivity extends AppCompatActivity {
                 refreshStatus();
             }
         });
+        }
     }
 
     @Override
@@ -1046,6 +1054,22 @@ public class LiveActivity extends AppCompatActivity {
         int width = Math.max(2, Math.round(video.getWidth() * scale));
         int height = Math.max(2, Math.round(video.getHeight() * scale));
         return video.getBitmap(width, height);
+    }
+
+    /**
+     * Is the slow provider pass worth running at all right now?
+     *
+     * In crowd mode it is not. Counting people is done on the device, frame by frame, and
+     * a provider adds nothing to it: it cannot track, it cannot count across a flight, and
+     * its answer is seconds old before it arrives. What it does add is a spike every two
+     * seconds - a full-resolution frame pulled off the GPU, compressed and handed to a
+     * WebView - on a sealed handheld that is already thermally limited.
+     *
+     * It earns its place on a turbine or a panel, where it describes damage no detector
+     * here has a class for. Not here.
+     */
+    private boolean providerWorthRunning() {
+        return Settings.canAnalyse() && !"crowd".equals(Settings.domain(this));
     }
 
     private void captureAndAnalyse() {
