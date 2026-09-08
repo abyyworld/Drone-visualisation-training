@@ -3,15 +3,19 @@ package world.abyy.droneinspection;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.app.PictureInPictureParams;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.PowerManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Rational;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -98,22 +102,18 @@ public class LiveActivity extends AppCompatActivity {
     private static final int DETECT_LONG_EDGE = 640;
 
     /**
-     * The frame size to fetch when a tile is going to be looked at closely.
+     * The size a region is fetched at for its close look.
      *
-     * Tiling exists to put more real pixels of a distant person in front of the model. Read
-     * the frame back at 640 first and there are no more real pixels to give it: a sixth of
-     * a 640-wide frame is 213 across, which the model then stretches to 448, and stretching
-     * invents nothing. The person is bigger and no clearer.
+     * A sixth of a 1920-wide frame is about 750 pixels across, so asking for 640 of it is
+     * very nearly one to one and the model sees real detail rather than an upscale.
      *
-     * SIYI's main stream is 1920x1080. Read back at 1280 and a sixth of it is 427 across,
-     * which is what the model wants anyway, so the crop reaches it at very nearly one to
-     * one. That is the difference between a person arriving as nine real pixels and as
-     * twenty-seven.
-     *
-     * It costs four times the readback, which is why that readback is taken in strips
-     * across several frames rather than in one blocking call. See GlPipeline.
+     * This used to work by reading the whole frame back at 1280 and cropping a sixth out of
+     * it in Java, which cost the whole frame's bytes to use a sixth of them and left the
+     * crop at 427 pixels of a picture already downscaled once. Two small reads - the whole
+     * frame at 640 and one region at 640 - are less than half the bytes and the region is
+     * sharper. See GlPipeline.requestRegion.
      */
-    private static final int TILED_LONG_EDGE = 1280;
+    private static final int TILE_LONG_EDGE = 640;
 
     /**
      * Floor on the gap between detections, so a fast tablet leaves the decoder some room.
@@ -121,6 +121,32 @@ public class LiveActivity extends AppCompatActivity {
      * everything except a very quick device.
      */
     private static final long MIN_DETECT_GAP_MS = 40;
+
+    /**
+     * How often a detection cycle is allowed to START, however fast the device is.
+     *
+     * THE TABLET WAS COOKING, AND THIS IS WHY
+     *     The loop used to begin the next cycle the moment the last one finished. On a
+     *     controller that is a hundred per cent duty cycle on the CPU, for as long as the
+     *     screen is open, and the MK15 is a sealed handheld with no fan. It gets hot, and
+     *     then Android throttles it, and the throttled cycles take longer - so the delay
+     *     that started as a heat problem looks like a software one and gets worse the
+     *     longer you fly.
+     *
+     *     Five detections a second is not a compromise here. The tracker predicts between
+     *     detections and the screen draws at its own rate, so the boxes move smoothly at
+     *     any detection rate; what the rate actually decides is how quickly a *new* person
+     *     is picked up, and a fifth of a second is faster than anyone can walk into frame
+     *     and matter. Running four times that only spends the thermal budget that would
+     *     otherwise keep the rate steady for the whole flight.
+     */
+    private static final long TARGET_PERIOD_MS = 200;
+
+    /**
+     * The share of the time detection may occupy. The rest is left for the video, the
+     * encoder, and for the device to shed heat.
+     */
+    private static final float DUTY_CYCLE = 0.6f;
 
     /**
      * How long a requested frame may be outstanding before detection gives up on it.
@@ -185,6 +211,17 @@ public class LiveActivity extends AppCompatActivity {
     private volatile NativeDetector detector;
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
+    /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */
+    private volatile long cycleStartedAt;
+    private volatile long nextCycleAt;
+    /**
+     * A multiplier on the cycle period, raised when Android says the device is too hot.
+     * One while it is comfortable; larger while it is not.
+     */
+    private volatile float thermalEase = 1f;
+    private volatile boolean hot;
+    private PowerManager.OnThermalStatusChangedListener thermalListener;
+    private Button pipButton;
     /** Read on the work thread, set on the main one when the subject changes. */
     private volatile boolean scansForFire;
     /** Reused pixel buffer for the appearance signatures, so each frame is one allocation. */
@@ -225,25 +262,89 @@ public class LiveActivity extends AppCompatActivity {
     private final Runnable detectTick = new Runnable() {
         @Override
         public void run() {
-            if (!detectBusy) {
+            long now = SystemClock.uptimeMillis();
+            if (!detectBusy && now >= nextCycleAt) {
                 detectBusy = true;
+                cycleStartedAt = now;
                 detectRequestedAt = System.currentTimeMillis();
-                requestFrame(tilingWanted() ? TILED_LONG_EDGE : DETECT_LONG_EDGE, frame -> {
-                    Handler worker = work;
-                    if (worker == null || !worker.post(() -> analyseFrame(frame))) {
-                        frame.recycle();
-                        detectBusy = false;
-                    }
-                });
-                // On the GPU path the frame arrives later, on the pipeline's thread. If it
-                // never does - the stream has not started, or has stopped - the flag would
-                // pin detection off forever, so it is released on the next tick that finds
-                // nothing in flight.
+                // The whole frame, small. This is the pass that keeps every track alive,
+                // and it is deliberately cheap: it only has to find what is large enough to
+                // survive a downscale.
+                requestFrame(DETECT_LONG_EDGE, frame -> onWholeFrame(frame));
                 handler.postDelayed(releaseDetect, DETECT_TIMEOUT_MS);
             }
             handler.postDelayed(this, MIN_DETECT_GAP_MS);
         }
     };
+
+    /**
+     * The whole frame has arrived. Detect in it, then ask for one region up close.
+     *
+     * Called on the pipeline's thread. The detection is handed to the work thread and the
+     * region is asked for straight away, so the two arrive a video frame or two apart -
+     * close enough that a distant person, which is what the region pass is for, has moved a
+     * pixel or so between them.
+     */
+    private void onWholeFrame(Bitmap frame) {
+        Handler worker = work;
+        if (worker == null || !worker.post(() -> {
+            NativeDetector current = detector;
+            List<Finding> found = current == null
+                    ? new ArrayList<>() : safeDetect(current, frame);
+
+            if (!tilingWanted() || glPipeline == null || !usingGl) {
+                // Kept until here: the flame scan and the appearance signatures both need
+                // the pixels, and finishCycle is what recycles them.
+                finishCycle(found, frame);
+                return;
+            }
+            // A region of the frame, rendered at its own resolution rather than cropped out
+            // of a big readback. See GlPipeline.requestRegion.
+            float[] region = Tiles.region(tileTurn++, videoPixelWidth, videoPixelHeight);
+            glPipeline.requestRegion(
+                    region[0] / videoPixelWidth, region[1] / videoPixelHeight,
+                    (region[0] + region[2]) / videoPixelWidth,
+                    (region[1] + region[3]) / videoPixelHeight,
+                    TILE_LONG_EDGE,
+                    tile -> onRegion(tile, region, found, frame));
+        })) {
+            frame.recycle();
+            detectBusy = false;
+        }
+    }
+
+    /** The close look has arrived. Merge it with the whole frame and finish the cycle. */
+    private void onRegion(Bitmap tile, float[] region, List<Finding> whole, Bitmap frame) {
+        Handler worker = work;
+        if (worker == null || !worker.post(() -> {
+            NativeDetector current = detector;
+            List<Finding> merged = whole;
+            if (current != null) {
+                try {
+                    merged = Tiles.merge(whole, current.detectRegion(tile, region));
+                } catch (RuntimeException ignored) {
+                    // The whole-frame findings still stand; only the close look is lost.
+                }
+            }
+            tile.recycle();
+            finishCycle(merged, frame);
+        })) {
+            tile.recycle();
+            frame.recycle();
+            detectBusy = false;
+        }
+    }
+
+    private List<Finding> safeDetect(NativeDetector current, Bitmap frame) {
+        try {
+            return current.detect(frame);
+        } catch (RuntimeException failure) {
+            lastError = getString(R.string.detector_stopped, String.valueOf(failure.getMessage()));
+            current.close();
+            detector = null;
+            return new ArrayList<>();
+        }
+    }
 
     /**
      * Is there anything small enough in this subject to be worth a close look?
@@ -309,74 +410,48 @@ public class LiveActivity extends AppCompatActivity {
     }
 
     /**
-     * Detection, tracking and the flame scan, all on the work thread.
+     * Everything after detection: tracking, the flame scan, the signatures, and the boxes.
      *
-     * The tracker is updated here and its counts are read here, so the main thread never
-     * asks it anything. What crosses back is a finished list of boxes and two integers.
+     * On the work thread. The tracker is updated here and its counts read here, so the main
+     * thread never asks it anything; what crosses back is a finished list of boxes and two
+     * integers. Takes ownership of the frame and recycles it.
      */
-    private void analyseFrame(Bitmap frame) {
-        List<Tracker.Track> tracks = null;
-        List<FireScan.Region> fire;
+    private void finishCycle(List<Finding> found, Bitmap frame) {
         long now = System.currentTimeMillis();
-        String failureText = null;
-        int frameWidth = frame.getWidth();
-        int frameHeight = frame.getHeight();
+        int frameWidth = frame != null ? frame.getWidth() : videoPixelWidth;
+        int frameHeight = frame != null ? frame.getHeight() : videoPixelHeight;
 
-        NativeDetector current = detector;
-        if (current != null) {
-            try {
-                // Tiled when there is something small to find: a crowd, or a fire front
-                // with people at it. A turbine or a panel fills the frame and gains
-                // nothing from a close look at a sixth of it. See Tiles.
-                List<Finding> found = tilingWanted()
-                        ? current.detectTiled(frame, tileTurn++)
-                        : current.detect(frame);
-                // A colour signature per person, so someone who leaves the frame and comes
-                // back is recognised rather than counted a second time. See Reid.
-                signPeople(found, frame);
-                // The clock goes in explicitly: the tracker lets a box go once it is older
-                // than a second and a half, and it can only know that if it is told.
-                tracks = tracker.update(found, now);
-                detectionsRun++;
-            } catch (RuntimeException failure) {
-                failureText = getString(R.string.detector_stopped,
-                        String.valueOf(failure.getMessage()));
-                current.close();
-                detector = null;
-            }
+        // A colour signature per person, so someone who leaves the frame and comes back is
+        // recognised rather than counted a second time. See Reid.
+        if (frame != null) {
+            signPeople(found, frame);
         }
 
-        // Its own catch, and outside the detector's null check on purpose. The two engines
-        // are independent: if the model fails to load or dies, the flame and smoke scan
-        // carries on, because it needs no model.
-        // Only when the operator says they are looking for fire.
-        //
-        // The scan looks for a flat, desaturated region that loses its texture as things
-        // move across it. Outdoors that describes smoke. Indoors it describes a painted
-        // wall with someone walking past it, and on a webcam pointed at an office it
-        // marked exactly that, at 82 percent. The pixels cannot tell those apart. The
-        // person holding the controller can, and the subject setting is them saying so.
-        if (scansForFire) {
+        List<Tracker.Track> tracks = tracker.update(found, now);
+        detectionsRun++;
+
+        List<FireScan.Region> fire = new ArrayList<>();
+        // Only when the operator says they are looking for fire. The scan looks for a flat,
+        // desaturated region that loses its texture as things move across it: outdoors that
+        // is smoke, indoors it is a painted wall with someone walking past. The pixels
+        // cannot tell those apart; the person holding the controller can.
+        if (scansForFire && frame != null) {
             try {
-                // The tracked boxes go in with the frame: a smoke region mostly covered by
-                // something already being followed has its missing texture explained.
                 List<float[]> occluders = new ArrayList<>();
-                if (tracks != null) {
-                    for (Tracker.Track track : tracks) {
-                        occluders.add(new float[]{
-                                track.box[0] / frameWidth, track.box[1] / frameHeight,
-                                track.box[2] / frameWidth, track.box[3] / frameHeight,
-                        });
-                    }
+                for (Tracker.Track track : tracks) {
+                    occluders.add(new float[]{
+                            track.box[0] / frameWidth, track.box[1] / frameHeight,
+                            track.box[2] / frameWidth, track.box[3] / frameHeight,
+                    });
                 }
                 fire = fireScan.scan(frame, occluders);
             } catch (RuntimeException | OutOfMemoryError ignored) {
                 fire = new ArrayList<>();
             }
-        } else {
-            fire = new ArrayList<>();
         }
-        frame.recycle();
+        if (frame != null) {
+            frame.recycle();
+        }
 
         peopleInView = tracker.countOf("person");
         peopleSeen = tracker.countSeen("person");
@@ -384,18 +459,20 @@ public class LiveActivity extends AppCompatActivity {
 
         final List<Tracker.Track> finalTracks = tracks;
         final List<FireScan.Region> finalFire = fire;
-        final String finalFailure = failureText;
+        // When the next cycle may start: never sooner than the target period, and never
+        // sooner than the duty cycle allows given what this one actually cost. A device
+        // that has been throttled to half speed therefore runs at half the rate rather than
+        // at a hundred per cent of a slower CPU, which is how it climbs back out.
+        long took = SystemClock.uptimeMillis() - cycleStartedAt;
+        long period = Math.round(TARGET_PERIOD_MS * thermalEase);
+        nextCycleAt = SystemClock.uptimeMillis()
+                + Math.max(0, Math.max(period, Math.round(took / DUTY_CYCLE)) - took);
+
         handler.post(() -> {
-            if (finalFailure != null) {
-                lastError = finalFailure;
-            }
-            if (finalTracks != null) {
-                overlay.setTracks(finalTracks, frameWidth, frameHeight);
-            }
+            overlay.setTracks(finalTracks, frameWidth, frameHeight);
             overlay.setFire(finalFire);
             detectBusy = false;
-            // The recording's overlay is a texture, and it is only re-uploaded when the
-            // boxes change, which is here.
+            // The recording's overlay is a texture, re-uploaded only when the boxes change.
             pushOverlay();
             refreshStatus();
         });
@@ -441,6 +518,8 @@ public class LiveActivity extends AppCompatActivity {
 
         // A controller screen that sleeps mid-flight is worse than useless.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        watchTemperature();
 
         // Asked for once, up front, rather than at the moment someone presses record.
         //
@@ -498,6 +577,8 @@ public class LiveActivity extends AppCompatActivity {
         snapshotButton = findViewById(R.id.snapshot);
         backButton = findViewById(R.id.back);
 
+        pipButton = findViewById(R.id.pip);
+        pipButton.setOnClickListener(v -> enterSmallWindow());
         recordButton.setOnClickListener(v -> toggleRecording());
         snapshotButton.setOnClickListener(v -> takeSnapshot());
         backButton.setOnClickListener(v -> leave());
@@ -644,6 +725,7 @@ public class LiveActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        stopWatchingTemperature();
         handler.removeCallbacksAndMessages(null);
         if (recorder != null) {
             recorder.stop(null);
@@ -714,6 +796,117 @@ public class LiveActivity extends AppCompatActivity {
         player.prepare();
         player.setPlayWhenReady(true);
         refreshStatus();
+    }
+
+    /**
+     * Listen to what the device says about its own temperature, and back off when it is hot.
+     *
+     * Android reports a thermal status, and it is worth more than any guess this code could
+     * make: it comes from the sensors, it accounts for the sun on the back of a controller
+     * on an airfield, and it changes before throttling does. Backing off on that signal
+     * keeps the detection rate steady and predictable instead of letting it decay through a
+     * flight as the chip is slowed underneath it.
+     */
+    private void watchTemperature() {
+        // Android 9 is what the MK15 runs and this arrived in Android 10, so on the device
+        // this was written for it never fires. That is not a reason to drop it - a newer
+        // controller gets the benefit - but it does mean the thermal handling cannot be
+        // relied on. What actually keeps the MK15 cool is TARGET_PERIOD_MS and DUTY_CYCLE
+        // above, which need no API at all.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return;
+        }
+        PowerManager power = getSystemService(PowerManager.class);
+        if (power == null) {
+            return;
+        }
+        thermalListener = status -> {
+            float ease;
+            if (status >= PowerManager.THERMAL_STATUS_SEVERE) {
+                ease = 4f;          // one detection a second, and no close look
+            } else if (status >= PowerManager.THERMAL_STATUS_MODERATE) {
+                ease = 2f;
+            } else {
+                ease = 1f;
+            }
+            thermalEase = ease;
+            hot = status >= PowerManager.THERMAL_STATUS_SEVERE;
+            handler.post(this::refreshStatus);
+        };
+        power.addThermalStatusListener(thermalListener);
+    }
+
+    private void stopWatchingTemperature() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || thermalListener == null) {
+            return;
+        }
+        PowerManager power = getSystemService(PowerManager.class);
+        if (power != null) {
+            power.removeThermalStatusListener(thermalListener);
+        }
+        thermalListener = null;
+    }
+
+    /**
+     * Shrink to a small movable window and let another app have the screen.
+     *
+     * The activity is not stopped in this mode, it is only small, so the stream, the
+     * detector and the recording all carry on exactly as they were - which is the point:
+     * fly in the flight software with the drone's feed and its boxes in the corner.
+     *
+     * Entered on the button and automatically when the operator leaves for another app, so
+     * it does not have to be remembered mid-flight.
+     */
+    private void enterSmallWindow() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Toast.makeText(this, R.string.pip_unsupported, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            Toast.makeText(this, R.string.pip_unsupported, Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            // The video's own shape, so the window is not letterboxed. Android refuses
+            // anything more extreme than about 2.39:1, hence the clamp.
+            int width = Math.max(1, videoPixelWidth);
+            int height = Math.max(1, videoPixelHeight);
+            float ratio = width / (float) height;
+            if (ratio > 2.39f) {
+                height = Math.round(width / 2.39f);
+            } else if (ratio < 0.42f) {
+                width = Math.round(height * 0.42f);
+            }
+            enterPictureInPictureMode(new PictureInPictureParams.Builder()
+                    .setAspectRatio(new Rational(width, height))
+                    .build());
+        } catch (RuntimeException refused) {
+            Toast.makeText(this, R.string.pip_unsupported, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        // Leaving for another app while the stream is up shrinks the window rather than
+        // hiding it. Without this, switching apps mid-flight loses sight of the drone.
+        if (player != null && !isInPictureInPictureMode()) {
+            enterSmallWindow();
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean small, @NonNull Configuration config) {
+        super.onPictureInPictureModeChanged(small, config);
+        // Nothing but the video and its boxes in a window that size. Buttons at that scale
+        // are unhittable and would cover most of the picture.
+        int visibility = small ? View.GONE : View.VISIBLE;
+        recordButton.setVisibility(visibility);
+        snapshotButton.setVisibility(visibility);
+        status.setVisibility(visibility);
+        findViewById(R.id.settings).setVisibility(visibility);
+        pipButton.setVisibility(visibility);
+        backButton.setVisibility(small || isRecording() ? View.GONE : View.VISIBLE);
     }
 
     // -----------------------------------------------------------------------------------
@@ -1103,6 +1296,10 @@ public class LiveActivity extends AppCompatActivity {
             line.append("  ·  ").append(getString(R.string.no_key_no_boxes));
         } else if (analyser != null && analyser.lastLatencyMillis() > 0) {
             line.append("  ·  ").append(analyser.lastLatencyMillis() / 1000f).append("s round trip");
+        }
+
+        if (hot) {
+            line.append("  ·  ").append(getString(R.string.thermal_easing));
         }
 
         if (isRecording()) {

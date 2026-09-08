@@ -45,6 +45,13 @@
          than that. What it marks is for an operator to look at, not a verdict. -->
     <string name="fire_readout">candidates: %1$d flame, %2$d smoke</string>
 
+    <!-- The small-window button, and what to say where the system will not give us one. -->
+    <string name="small_window">Small window</string>
+    <string name="pip_unsupported">This tablet will not give the app a small floating window. The recording still runs in the background.</string>
+    <!-- Shown when the device reports it is too hot and the detection rate has been eased
+         back. Said out loud, because a rate that quietly halves looks like a fault. -->
+    <string name="thermal_easing">hot, easing off</string>
+
     <!-- The foreground-service notification: what it says while recording in the background. -->
     <string name="recording_channel">Recording</string>
     <string name="recording_channel_description">Shown while a flight is being recorded, so a recording running with the app off screen is never invisible.</string>

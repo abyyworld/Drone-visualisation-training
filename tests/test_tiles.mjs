@@ -17,7 +17,7 @@
 
 import {
   TILE_COUNT, TILE_COLUMNS, TILE_ROWS,
-  tileRegion, overlap, merge, toFrame, coversFrame,
+  tileRegion, overlap, merge, toFrame, coversFrame, containment,
 } from '../web/js/tiles.js';
 
 let failures = 0;
@@ -116,6 +116,41 @@ console.log('\nThe same person seen twice is one person');
     [{ label: 'car', confidence: 0.7, box: [100, 100, 140, 190] }],
   );
   check('different classes never merge', mixed.length === 2);
+}
+
+console.log('\nTwo people standing close together');
+{
+  // Reported from a real flight: the app drew one box around two people and counted them
+  // as one. At full-frame scale two people side by side are one blob of pixels, so that
+  // pass returns one wide box; the tile, looking three times larger, sees both. The old
+  // merge asked only "do these overlap?" and threw both tile boxes away in favour of the
+  // blob, which is the exact opposite of what tiling is for.
+  const blob = { label: 'person', confidence: 0.62, box: [100, 100, 190, 200] };
+  const left = { label: 'person', confidence: 0.81, box: [102, 100, 142, 198] };
+  const right = { label: 'person', confidence: 0.78, box: [148, 102, 188, 200] };
+
+  const merged = merge([blob], [left, right]);
+  check('the closer look wins and there are two people', merged.length === 2,
+    `${merged.length} findings: ${JSON.stringify(merged.map((f) => f.box))}`);
+  check('the blur over both of them is gone',
+    merged.every((f) => f.box[2] - f.box[0] < 60),
+    JSON.stringify(merged.map((f) => f.box[2] - f.box[0])));
+
+  // And the ordinary case still holds: one person seen by both passes is one person, not
+  // one person plus a blur.
+  const one = merge(
+    [{ label: 'person', confidence: 0.5, box: [100, 100, 140, 190] }],
+    [{ label: 'person', confidence: 0.9, box: [102, 99, 142, 189] }],
+  );
+  check('one person seen twice is still one', one.length === 1, `${one.length}`);
+  check('and keeps the confident reading', one[0].confidence === 0.9);
+}
+
+console.log('\nContainment');
+{
+  check('fully inside is one', containment([2, 2, 8, 8], [0, 0, 10, 10]) === 1);
+  check('fully outside is zero', containment([20, 20, 30, 30], [0, 0, 10, 10]) === 0);
+  check('half in is a half', Math.abs(containment([5, 0, 15, 10], [0, 0, 10, 10]) - 0.5) < 1e-9);
 }
 
 console.log('\nMerging never loses anyone');

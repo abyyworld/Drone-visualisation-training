@@ -54,21 +54,43 @@ export function overlap(a, b) {
 }
 
 /**
- * Fold a tile's findings into the frame's, dropping anything already there.
+ * How much of a frame-pass box a tile box has to sit inside before the frame box is
+ * treated as a blur over it rather than a rival for it.
+ */
+const CONTAINED = 0.7;
+
+/**
+ * Fold a tile's findings into the frame's.
  *
- * A tile overlaps its neighbours and covers ground the full-frame pass also looked at, so
- * the same person arrives twice. Keeping both would draw two boxes on one person and, far
- * worse, count them twice - which is the whole thing this system is trying not to do.
+ * THE CASE THIS GETS WRONG IF IT IS DONE NAIVELY
+ *     Two people standing close together come back from the full-frame pass as one wide
+ *     box, because at that scale they are one blob of pixels. The tile, looking at the same
+ *     ground three times larger, sees two. A merge that just asks "do these overlap?" then
+ *     throws both tile boxes away in favour of the blob, and the app draws one box around
+ *     two people and counts them as one. That was reported from a real flight and it is the
+ *     exact opposite of what tiling is for.
  *
- * Where they are the same, the more confident box wins, and that is usually the tile's: it
- * saw three times as many pixels of that person as the full frame did.
+ *     So overlap alone does not decide it. A tile box that sits mostly *inside* a frame box
+ *     is not a rival reading of the same thing, it is a closer reading of part of it, and
+ *     the frame box is a blur over whatever the tile found. When that happens the frame box
+ *     is dropped and every tile box in it is kept.
+ *
+ *     The two are treated as the same thing only when they are the same size and place -
+ *     genuine double vision, one person seen by both passes - and then the more confident
+ *     wins, which is usually the tile's.
  */
 export function merge(base, extra, threshold = MERGE_IOU) {
   const merged = base.map((finding) => ({ ...finding }));
+  const supersededByTile = new Set();
+
   for (const candidate of extra) {
     let duplicate = false;
+
     for (const existing of merged) {
       if (existing.label !== candidate.label) continue;
+      if (supersededByTile.has(existing)) continue;
+
+      // The same thing seen twice: same place, same size.
       if (overlap(existing.box, candidate.box) > threshold) {
         if (candidate.confidence > existing.confidence) {
           existing.box = candidate.box;
@@ -77,10 +99,31 @@ export function merge(base, extra, threshold = MERGE_IOU) {
         duplicate = true;
         break;
       }
+
+      // A closer look at part of it. The wide box was a blur over more than one thing, and
+      // whatever the tile resolves inside it is the better answer.
+      if (containment(candidate.box, existing.box) >= CONTAINED
+        && area(candidate.box) < area(existing.box) * 0.75) {
+        supersededByTile.add(existing);
+      }
     }
     if (!duplicate) merged.push({ ...candidate });
   }
-  return merged;
+
+  return merged.filter((finding) => !supersededByTile.has(finding));
+}
+
+/** How much of `inner` lies inside `outer`, as a fraction of `inner`. */
+export function containment(inner, outer) {
+  const width = Math.min(inner[2], outer[2]) - Math.max(inner[0], outer[0]);
+  const height = Math.min(inner[3], outer[3]) - Math.max(inner[1], outer[1]);
+  if (width <= 0 || height <= 0) return 0;
+  const size = area(inner);
+  return size > 0 ? (width * height) / size : 0;
+}
+
+function area(box) {
+  return (box[2] - box[0]) * (box[3] - box[1]);
 }
 
 /**

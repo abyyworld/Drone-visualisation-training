@@ -173,6 +173,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private int flatProgram;
     private FloatBuffer quad;
     private FloatBuffer quadFlipped;
+    private FloatBuffer regionBuffer;
 
     private int frameBuffer;
     private int frameTexture;
@@ -355,11 +356,31 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
      * and holding both is how a live view turns into a backlog.
      */
     void requestFrame(int longEdge, FrameConsumer consumer) {
+        requestRegion(0f, 0f, 1f, 1f, longEdge, consumer);
+    }
+
+    /**
+     * Ask for one part of the frame, at up to `longEdge` across.
+     *
+     * THIS IS WHERE TILING ACTUALLY PAYS
+     *     Reading the whole frame back large and then cropping a sixth out of it in Java
+     *     costs the whole frame's bytes to use a sixth of them, and the crop is limited to
+     *     whatever detail survived that one downscale. Rendering the region on its own goes
+     *     straight from the decoder's texture: a sixth of a 1920-wide frame is about 750
+     *     pixels across, and asking for 640 of it is very nearly one to one.
+     *
+     *     Two small reads - the whole frame small, one region sharp - are less than half
+     *     the bytes of one big read, and the region is sharper than the crop was.
+     *
+     * @param x0 left edge, 0 to 1 across the frame
+     */
+    void requestRegion(float x0, float y0, float x1, float y1, int longEdge,
+                       FrameConsumer consumer) {
         gl.post(() -> {
             while (requests.size() >= MAX_PENDING) {
                 requests.removeFirst();
             }
-            requests.addLast(new Request(longEdge, consumer));
+            requests.addLast(new Request(x0, y0, x1, y1, longEdge, consumer));
         });
     }
 
@@ -492,10 +513,14 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
 
     /** Render the requested moment into the offscreen buffer and set up the strips. */
     private boolean beginRead(Request request) {
+        // The region's own size in source pixels, not the whole frame's: a sixth of the
+        // frame asked for at 640 should come back at 640, not at a sixth of 640.
+        float regionWidth = Math.max(1f, (request.x1 - request.x0) * videoWidth);
+        float regionHeight = Math.max(1f, (request.y1 - request.y0) * videoHeight);
         int longEdge = Math.max(16, request.longEdge);
-        float scale = Math.min(1f, longEdge / (float) Math.max(videoWidth, videoHeight));
-        int width = Math.max(2, Math.round(videoWidth * scale));
-        int height = Math.max(2, Math.round(videoHeight * scale));
+        float scale = Math.min(1f, longEdge / Math.max(regionWidth, regionHeight));
+        int width = Math.max(2, Math.round(regionWidth * scale));
+        int height = Math.max(2, Math.round(regionHeight * scale));
 
         try {
             makeCurrent(current());
@@ -503,9 +528,9 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
             GLES20.glDisable(GLES20.GL_BLEND);
             GLES20.glViewport(0, 0, width, height);
-            // The flipped quad, because glReadPixels starts at the bottom row and an
+            // Flipped vertically, because glReadPixels starts at the bottom row and an
             // unflipped render therefore comes back upside down.
-            drawExternal(quadFlipped, textureMatrix);
+            drawExternal(regionQuad(request), textureMatrix);
         } catch (Exception | Error rendering) {
             return false;
         } finally {
@@ -515,6 +540,32 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         pending = new Read(request.consumer, width, height,
                 Math.max(1, READ_CHUNK_PIXELS / Math.max(1, width)));
         return true;
+    }
+
+    /**
+     * A full-viewport quad that samples only the requested part of the video texture.
+     *
+     * The positions are the whole offscreen buffer, flipped; the texture coordinates are
+     * the region. Restricting them here rather than cropping afterwards is what makes the
+     * region cost only the region's pixels.
+     */
+    private FloatBuffer regionQuad(Request request) {
+        if (request.x0 <= 0f && request.y0 <= 0f && request.x1 >= 1f && request.y1 >= 1f) {
+            return quadFlipped;
+        }
+        float[] quad = {
+            -1f,  1f,  request.x0, request.y0,
+             1f,  1f,  request.x1, request.y0,
+            -1f, -1f,  request.x0, request.y1,
+             1f, -1f,  request.x1, request.y1,
+        };
+        if (regionBuffer == null) {
+            regionBuffer = ByteBuffer.allocateDirect(quad.length * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+        }
+        regionBuffer.position(0);
+        regionBuffer.put(quad).position(0);
+        return regionBuffer;
     }
 
     /** Take the next strip, and deliver the frame once the last one is in. */
@@ -879,10 +930,18 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     }
 
     private static final class Request {
+        final float x0;
+        final float y0;
+        final float x1;
+        final float y1;
         final int longEdge;
         final FrameConsumer consumer;
 
-        Request(int longEdge, FrameConsumer consumer) {
+        Request(float x0, float y0, float x1, float y1, int longEdge, FrameConsumer consumer) {
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
             this.longEdge = longEdge;
             this.consumer = consumer;
         }

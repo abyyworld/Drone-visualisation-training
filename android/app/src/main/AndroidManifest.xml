@@ -59,10 +59,24 @@
           recreate this activity would tear down the RTSP session and the encoder, so a
           tablet turned over mid-flight would drop the video and end the recording.
         -->
+        <!--
+          supportsPictureInPicture is what lets this shrink to a small movable window while
+          another app has the screen, which is how a pilot keeps the drone's feed and its
+          boxes in the corner while flying in the flight software. In that mode the activity
+          is not stopped, only small, so the stream, the detector and the recording all
+          carry on exactly as they were.
+
+          resizeableActivity has to be true for it, and configChanges must already list
+          screenSize and screenLayout - which it does - or entering and leaving the small
+          window would destroy and rebuild the activity, taking the video pipeline and any
+          recording with it.
+        -->
         <activity
             android:name=".LiveActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density" />
 
         <activity

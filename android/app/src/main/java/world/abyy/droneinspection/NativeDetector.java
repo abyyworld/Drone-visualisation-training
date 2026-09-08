@@ -118,47 +118,22 @@ public final class NativeDetector {
     }
 
     /**
-     * Detect in one frame, and in one tile of it, and merge the two.
+     * Detect in a picture of one region of the frame, with the boxes mapped back.
      *
-     * WHY A CROWD NEEDS THE TILE
-     *     The model's input is 448 pixels square, so a 1920-wide frame is squeezed by more
-     *     than four and a person forty pixels tall arrives at nine. Nine pixels is below
-     *     what any detector can find. That is why a crowd shot returns five people rather
-     *     than fifty: they are not being missed by a threshold, they are never shown to the
-     *     model at a size it can work with.
+     * The region arrives already rendered at its own resolution by GlPipeline, rather than
+     * being cropped out of a big readback here. A sixth of a 1920-wide frame is about 750
+     * pixels across and comes back at 640, so the model sees it at nearly one to one -
+     * which is the entire reason for tiling. Cropping a sixth out of a 1280-wide readback
+     * gave 427 pixels of a picture that had already been downscaled once, and stretching
+     * that back up invents nothing.
      *
-     *     A sixth of the frame is 640 across and squeezes by 1.4, so the same person
-     *     arrives at twenty-eight pixels.
-     *
-     *     One tile a pass, cycling, rather than all six: six detections in a row is six
-     *     times the latency, and the full-frame pass that runs every time is what keeps the
-     *     tracks alive between close looks.
-     *
-     * @param tile which tile of the cycle to look at closely
+     * @param region x, y, width, height of the region in full-frame pixels
      */
-    public List<Finding> detectTiled(Bitmap frame, int tile) {
+    public List<Finding> detectRegion(Bitmap image, float[] region) {
         long started = System.nanoTime();
-        List<Finding> findings = detectIn(frame, 0f, 0f, 1f, 1f);
-
-        float[] region = Tiles.region(tile, frame.getWidth(), frame.getHeight());
-        int x = Math.max(0, Math.round(region[0]));
-        int y = Math.max(0, Math.round(region[1]));
-        int width = Math.min(frame.getWidth() - x, Math.round(region[2]));
-        int height = Math.min(frame.getHeight() - y, Math.round(region[3]));
-
-        if (width >= 32 && height >= 32) {
-            Bitmap crop = null;
-            try {
-                crop = Bitmap.createBitmap(frame, x, y, width, height);
-                findings = Tiles.merge(findings, detectIn(crop, x, y, 1f, 1f));
-            } catch (RuntimeException | OutOfMemoryError ignored) {
-                // The full-frame findings still stand; only the close look is lost.
-            } finally {
-                if (crop != null && crop != frame) {
-                    crop.recycle();
-                }
-            }
-        }
+        float scaleX = region[2] / Math.max(1, image.getWidth());
+        float scaleY = region[3] / Math.max(1, image.getHeight());
+        List<Finding> findings = detectIn(image, region[0], region[1], scaleX, scaleY);
         lastInferenceMs = (System.nanoTime() - started) / 1_000_000;
         return findings;
     }

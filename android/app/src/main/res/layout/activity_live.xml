@@ -60,7 +60,17 @@
             android:id="@+id/snapshot"
             android:layout_width="120dp"
             android:layout_height="76dp"
+            android:layout_marginBottom="14dp"
             android:text="@string/take_photo" />
+
+        <!-- Shrinks to a small movable window so the drone's feed, and its boxes, stay
+             visible over the flight software. The activity is not stopped in that mode,
+             only small, so tracking and recording carry straight on. -->
+        <Button
+            android:id="@+id/pip"
+            android:layout_width="120dp"
+            android:layout_height="60dp"
+            android:text="@string/small_window" />
     </LinearLayout>
 
     <LinearLayout
