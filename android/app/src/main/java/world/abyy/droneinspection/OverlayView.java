@@ -37,6 +37,21 @@ public class OverlayView extends View {
     };
 
     private static final long DIM_AFTER_MS = 4_000;
+
+    /**
+     * Above this many boxes, the labels come off.
+     *
+     * Almost nothing about a crowd costs more than a crowd of one: the model runs the same
+     * convolutions over the same tensor whether the frame holds nobody or two hundred
+     * people, and suppression and tracking are arithmetic on short lists. Drawing is the
+     * exception. Every label measures its own text and then draws it, and at two hundred
+     * boxes and sixty frames a second that is twelve thousand text measurements a second
+     * on a handheld - which is real work, repeated, for something nobody can read anyway.
+     *
+     * Past this many, the boxes stay and the labels go. A number on a box is only useful
+     * when there are few enough boxes to read one.
+     */
+    private static final int LABEL_LIMIT = 40;
     private static final long STALE_AFTER_MS = 15_000;
 
     private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -213,6 +228,7 @@ public class OverlayView extends View {
         // current: they came from this device on the last frame it managed.
         float trackScaleX = trackFrameWidth > 0 ? width / (float) trackFrameWidth : 1f;
         float trackScaleY = trackFrameHeight > 0 ? height / (float) trackFrameHeight : 1f;
+        boolean labelled = tracks.size() <= LABEL_LIMIT;
         for (Tracker.Track track : tracks) {
             int colour = PALETTE[colourIndex(track.label) % PALETTE.length];
             boxPaint.setColor(colour);
@@ -222,6 +238,12 @@ public class OverlayView extends View {
                     track.box[0] * trackScaleX, track.box[1] * trackScaleY,
                     track.box[2] * trackScaleX, track.box[3] * trackScaleY);
             canvas.drawRect(box, boxPaint);
+
+            if (!labelled) {
+                // Too many to read. The box is the information at this density; the
+                // numbers are in the status line.
+                continue;
+            }
 
             String text = track.label + " #" + track.id;
             labelPaint.getTextBounds(text, 0, text.length(), textBounds);

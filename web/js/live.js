@@ -34,6 +34,17 @@ import { colorFor } from './render.js';
 
 const PALETTE_ALPHA_COASTED = 0.45;
 
+/**
+ * Above this many boxes, the labels come off.
+ *
+ * Almost nothing about a crowd costs more than a crowd of one: the model runs the same
+ * convolutions whether the frame holds nobody or two hundred people. Drawing is the
+ * exception - every label measures its own text and then draws it, and at two hundred
+ * boxes and sixty frames a second that is twelve thousand text measurements a second, for
+ * something nobody can read at that density anyway.
+ */
+const LABEL_LIMIT = 40;
+
 // The floor stops a fast machine spending every millisecond in the detector; the ceiling
 // stops a slow one leaving the boxes stale for longer than the tracker can sensibly coast.
 /**
@@ -441,7 +452,9 @@ export class LiveView {
 
     this.drawFire(ctx, lineWidth, fontSize);
 
-    for (const track of this.tracker.open()) {
+    const open = this.tracker.open();
+    const labelled = open.length <= LABEL_LIMIT;
+    for (const track of open) {
       const colour = colorFor(track.classId ?? 0);
       // A coasted box is a prediction rather than an observation, and is drawn as one. An
       // operator should be able to see at a glance which boxes the model is still looking at.
@@ -453,15 +466,17 @@ export class LiveView {
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
       ctx.setLineDash([]);
 
-      const label = `${track.label} #${track.id}`;
-      const padding = lineWidth * 2;
-      const textWidth = ctx.measureText(label).width;
-      const top = Math.max(0, y0 - fontSize - padding * 2);
+      if (labelled) {
+        const label = `${track.label} #${track.id}`;
+        const padding = lineWidth * 2;
+        const textWidth = ctx.measureText(label).width;
+        const top = Math.max(0, y0 - fontSize - padding * 2);
 
-      ctx.fillStyle = colour;
-      ctx.fillRect(x0, top, textWidth + padding * 2, fontSize + padding * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(label, x0 + padding, top + padding);
+        ctx.fillStyle = colour;
+        ctx.fillRect(x0, top, textWidth + padding * 2, fontSize + padding * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, x0 + padding, top + padding);
+      }
 
       // The trail says where something came from, which is useful when you are studying a
       // flow and is a scribble over the picture when you are not. Off unless asked for.
