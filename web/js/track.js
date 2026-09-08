@@ -27,8 +27,20 @@
  *     replace `associate` and nothing else.
  */
 
-const MIN_IOU = 0.25;
-const MAX_MISSES = 12;
+// Deliberately low. Detection runs a few times a second, not sixty, so a person walking
+// normally can move most of their own width between two looks - and at IoU 0.25 that was
+// enough to lose them and issue a new number, which is what "person #1, then #2, then #3
+// while standing there moving" turns out to mean.
+const MIN_IOU = 0.08;
+
+// Centre-distance fallback, as a multiple of the box's own size. Two boxes that do not
+// overlap at all are still obviously the same person if the second is half a body-width
+// from the first and the same size. IoU alone cannot see that; this can.
+const MAX_CENTRE_DRIFT = 1.6;
+const MAX_SIZE_RATIO = 2.2;
+
+// About four seconds at a few detections a second. Long enough to walk behind something.
+const MAX_MISSES = 20;
 const CONFIRM_AFTER = 2;
 
 /** Intersection over union of two [x0, y0, x1, y1] boxes. */
@@ -50,6 +62,47 @@ function centre(box) {
   return [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
 }
 
+function sizeOf(box) {
+  return [Math.abs(box[2] - box[0]), Math.abs(box[3] - box[1])];
+}
+
+/**
+ * How strongly a detection belongs to a track. Zero means it does not.
+ *
+ * Overlap first, because when boxes overlap that is the better evidence. When they do not,
+ * fall back to how far the centre has moved relative to the size of the thing - a person
+ * who has stepped one body-width sideways between two looks is still that person, and a
+ * detector running five times a second sees exactly that. The fallback also checks the
+ * boxes are a similar size, so a distant person is not adopted by a nearby one's track.
+ *
+ * The track's own velocity is used to guess where it should be, so something moving
+ * steadily is matched against its predicted position rather than its last one.
+ */
+function affinity(track, box, minIou) {
+  const predicted = [
+    track.box[0] + track.velocity[0], track.box[1] + track.velocity[1],
+    track.box[2] + track.velocity[0], track.box[3] + track.velocity[1],
+  ];
+
+  const overlap = Math.max(iou(track.box, box), iou(predicted, box));
+  if (overlap >= minIou) return 1 + overlap;   // always beats any distance-only match
+
+  const [tw, th] = sizeOf(track.box);
+  const [dw, dh] = sizeOf(box);
+  if (tw <= 0 || th <= 0 || dw <= 0 || dh <= 0) return 0;
+
+  const ratio = Math.max(tw / dw, dw / tw, th / dh, dh / th);
+  if (ratio > MAX_SIZE_RATIO) return 0;
+
+  const [px, py] = centre(predicted);
+  const [bx, by] = centre(box);
+  const drift = Math.hypot(px - bx, py - by) / Math.max(1, Math.hypot(tw, th) / 2);
+  if (drift > MAX_CENTRE_DRIFT) return 0;
+
+  // Closer is better, and never reaches the overlap band above.
+  return 1 - drift / MAX_CENTRE_DRIFT;
+}
+
 export class Tracker {
   constructor({ minIou = MIN_IOU, maxMisses = MAX_MISSES, confirmAfter = CONFIRM_AFTER } = {}) {
     this.minIou = minIou;
@@ -58,6 +111,7 @@ export class Tracker {
     this.tracks = [];
     this.nextId = 1;
     this.frame = 0;
+    this.everSeen = new Map();
   }
 
   /**
@@ -70,14 +124,14 @@ export class Tracker {
     this.frame += 1;
     const pairs = [];
 
-    // Every plausible pairing, best overlap first. Only a track and a detection of the same
-    // class may pair: a car becoming a person between two frames is not a thing that
-    // happens, and allowing it lets an identity jump across the frame.
+    // Every plausible pairing, best first. Only a track and a detection of the same class
+    // may pair: a car becoming a person between two frames is not a thing that happens, and
+    // allowing it lets an identity jump across the frame.
     for (const track of this.tracks) {
       for (const [index, detection] of detections.entries()) {
         if (track.label !== detection.label) continue;
-        const score = iou(track.box, detection.box);
-        if (score >= this.minIou) pairs.push({ track, index, score });
+        const score = affinity(track, detection.box, this.minIou);
+        if (score > 0) pairs.push({ track, index, score });
       }
     }
     pairs.sort((a, b) => b.score - a.score);
@@ -99,7 +153,12 @@ export class Tracker {
       pair.track.missed = 0;
       pair.track.seen += 1;
       pair.track.lastFrame = this.frame;
-      pair.track.velocity = [now[0] - previous[0], now[1] - previous[1]];
+      // Smoothed, so one noisy frame does not send the coasting prediction sideways.
+      const observed = [now[0] - previous[0], now[1] - previous[1]];
+      pair.track.velocity = [
+        pair.track.velocity[0] * 0.6 + observed[0] * 0.4,
+        pair.track.velocity[1] * 0.6 + observed[1] * 0.4,
+      ];
       pair.track.path.push(now);
       if (pair.track.path.length > 60) pair.track.path.shift();
     }
@@ -133,6 +192,15 @@ export class Tracker {
       ];
     }
 
+    // Counted once, at the moment a track becomes confirmed - not while it is a one-frame
+    // flicker, and not again on every frame after.
+    for (const track of this.tracks) {
+      if (track.seen === this.confirmAfter && !track.counted) {
+        track.counted = true;
+        this.everSeen.set(track.label, (this.everSeen.get(track.label) ?? 0) + 1);
+      }
+    }
+
     this.tracks = this.tracks.filter((t) => t.missed <= this.maxMisses);
     return this.open();
   }
@@ -148,14 +216,27 @@ export class Tracker {
     return this.tracks.filter((t) => t.seen >= this.confirmAfter);
   }
 
-  /** How many distinct things of a class have been seen since the start. */
+  /** How many of a class are being tracked right now. */
   countOf(label) {
     return this.tracks.filter((t) => t.label === label && t.seen >= this.confirmAfter).length;
+  }
+
+  /**
+   * How many distinct things of a class have been seen since the start.
+   *
+   * A running total that never goes down, counted from the identities issued rather than
+   * from the boxes on screen - so somebody who walks through and leaves is counted once,
+   * and somebody who stands still is not counted again every frame. It is the number worth
+   * reporting after a pass over a site, and it is not the same as how many are in view.
+   */
+  countSeen(label) {
+    return this.everSeen.get(label) ?? 0;
   }
 
   reset() {
     this.tracks = [];
     this.nextId = 1;
     this.frame = 0;
+    this.everSeen = new Map();
   }
 }

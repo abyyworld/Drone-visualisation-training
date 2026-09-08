@@ -63,7 +63,7 @@ async function init() {
     'empty-state', 'progress', 'progress-bar', 'progress-label', 'clear', 'export-training',
     'drop-blocked', 'engine-key-link',
     'live-start', 'live-stop', 'live-record', 'live-camera', 'live-stage', 'live-video',
-    'live-overlay', 'live-status',
+    'live-overlay', 'live-status', 'live-count', 'live-trails', 'live-count-readout',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -253,6 +253,15 @@ function wireLive() {
     }
   });
 
+  el['live-count'].addEventListener('change', () => {
+    view.countPeople = el['live-count'].checked;
+    el['live-count-readout'].hidden = !view.countPeople;
+  });
+
+  el['live-trails'].addEventListener('change', () => {
+    view.showTrails = el['live-trails'].checked;
+  });
+
   el['live-camera'].addEventListener('change', async () => {
     if (el['live-stop'].hidden) return;
     view.stop();
@@ -275,11 +284,46 @@ function renderLiveStatus(message, stats) {
   const parts = [`${stats.fps.toFixed(1)} detections per second`];
   if (stats.inferenceMs) parts.push(`${Math.round(stats.inferenceMs)} ms each`);
   parts.push(stats.onScreen.length ? `on screen: ${stats.onScreen.join(', ')}` : 'nothing on screen');
-  // Distinct things since the camera opened. Not the same number as what is on screen, and
-  // the more useful one after a pass over a site.
-  parts.push(`${stats.seenTotal} seen in total`);
   if (stats.recording) parts.push('RECORDING');
   el['live-status'].textContent = parts.join('  ·  ');
+
+  if (!el['live-count-readout'].hidden) renderPeopleCount(stats);
+}
+
+/**
+ * The people readout.
+ *
+ * Two numbers, because they answer different questions and are constantly confused. "In
+ * view" is how many are on screen at this instant. "Seen so far" is how many distinct
+ * people have appeared since the camera opened, counted once each by their track rather
+ * than once per frame, so it keeps climbing as people walk through and never goes down.
+ *
+ * The caveat under them is not boilerplate. This counts what the detector found, which is
+ * fewer than the number of people present whenever anyone is small, distant, behind
+ * something or in a group - and that gap grows with altitude. Presented without saying so,
+ * the number would be read as a measurement of the crowd, which it is not.
+ */
+function renderPeopleCount(stats) {
+  el['live-count-readout'].innerHTML = '';
+
+  const line = document.createElement('span');
+  line.append(inView(stats.people), ' in view  ·  ');
+  line.append(inView(stats.peopleTotal), ' seen so far');
+  el['live-count-readout'].appendChild(line);
+
+  const caveat = document.createElement('span');
+  caveat.className = 'live__caveat';
+  caveat.textContent =
+    'People the detector found, which is fewer than the people there. Anyone small, '
+    + 'distant, overlapping someone else or turned away is missed, and more of them are '
+    + 'missed the higher the camera is. Treat it as a floor, not a measurement.';
+  el['live-count-readout'].appendChild(caveat);
+}
+
+function inView(value) {
+  const strong = document.createElement('strong');
+  strong.textContent = String(value);
+  return strong;
 }
 
 // ---------------------------------------------------------------------------------------

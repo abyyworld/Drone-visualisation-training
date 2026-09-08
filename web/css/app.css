@@ -462,3 +462,36 @@ body {
   border-color: #C0392B;
   color: #fff;
 }
+
+.live__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  user-select: none;
+  cursor: pointer;
+}
+
+.live__toggle input { cursor: pointer; }
+
+/* The count is the thing an operator glances at, so it is not buried in the status line. */
+.live__count {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(31, 78, 92, 0.08);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.live__count strong {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.live__count .live__caveat {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  opacity: 0.75;
+}

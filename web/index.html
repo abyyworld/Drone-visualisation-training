@@ -56,7 +56,18 @@
       <button id="live-stop" class="button button--ghost" hidden>Stop</button>
       <button id="live-record" class="button" hidden>Record</button>
       <select id="live-camera" class="live__camera" hidden aria-label="Camera"></select>
+
+      <label class="live__toggle">
+        <input id="live-count" type="checkbox">
+        People count
+      </label>
+      <label class="live__toggle">
+        <input id="live-trails" type="checkbox">
+        Show trails
+      </label>
     </div>
+
+    <p id="live-count-readout" class="live__count" hidden></p>
 
     <div id="live-stage" class="live__stage" hidden>
       <video id="live-video" class="live__video" playsinline muted></video>
@@ -242,10 +253,16 @@
         <strong>blocked exits</strong>, <strong>climbing</strong> and
         <strong>a person on the ground</strong>.</p>
         <p class="caution">
-          It marks regions, never individuals, and it never puts a number on how many people
-          are present. At event density a person is a few pixels across and overlaps their
-          neighbours, so boxing them one by one is not possible and a figure would be read as
-          a measurement this image cannot support. An empty result describes one frame at one
+          That is the <strong>provider engine</strong>, reading a still frame. It marks
+          regions rather than individuals, because at event density a person is a few pixels
+          across and overlaps their neighbours, and no box-per-person survives that.
+        </p>
+        <p class="caution">
+          For a number, use <strong>Live tracking</strong> above with People count switched
+          on. That runs the on-device detector, which does box individuals and does count
+          them - and counts what it found, which is a floor rather than a measurement. It
+          works where people are separable, and it misses more of them the higher the camera
+          goes and the tighter the crowd packs. Either way an empty result describes one
           moment, and a crowd changes faster than that.
         </p>
       </article>

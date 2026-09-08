@@ -94,17 +94,76 @@ open = tracker.update([{ label: 'car', confidence: 0.9, box: box(50, 50) }]);
 check('a different class at the same place is a different track',
   tracker.tracks.length === 2, `${tracker.tracks.length}`);
 
+console.log('\nMoving faster than the detector looks');
+// The reported bug: standing in front of a camera and moving produced person #1, then #2,
+// then #3. Detection runs a few times a second, so between two looks a person can move
+// most of their own width - and the boxes then do not overlap at all. IoU alone loses them.
+tracker = new Tracker();
+const stride = 44;   // slightly more than a box width, which is what walking looks like at 5fps
+let ids = new Set();
+for (let step = 0; step < 12; step += 1) {
+  const open = tracker.update([person(100 + step * stride, 100)]);
+  for (const t of open) ids.add(t.id);
+}
+check('a person walking keeps one identity across a whole pass',
+  ids.size === 1, `${ids.size} ids issued`);
+
+// Vertically too, and diagonally, which is what happens when someone walks toward a camera.
+tracker = new Tracker();
+ids = new Set();
+for (let step = 0; step < 12; step += 1) {
+  const size = 40 + step * 4;   // getting closer, so getting bigger
+  const open = tracker.update([{
+    label: 'person', confidence: 0.8,
+    box: box(120 + step * 30, 90 + step * 22, size, size * 2),
+  }]);
+  for (const t of open) ids.add(t.id);
+}
+check('and one walking toward the camera, growing as they come',
+  ids.size === 1, `${ids.size} ids issued`);
+
+// The guard that stops the looser matching adopting the wrong person: someone far away is
+// a much smaller box, and must not inherit a nearby track.
+tracker = new Tracker();
+tracker.update([person(100, 100)]);
+tracker.update([person(104, 100)]);
+const distant = tracker.update([{ label: 'person', confidence: 0.8, box: box(150, 100, 8, 16) }]);
+check('a much smaller box is not adopted by a nearby track',
+  tracker.tracks.length === 2, `${tracker.tracks.length} tracks`);
+
 console.log('\nCounting');
 tracker = new Tracker();
 for (let i = 0; i < 3; i += 1) {
   tracker.update([person(0, 0), person(200, 0), person(400, 0)]);
 }
-check('distinct things are counted once each', tracker.countOf('person') === 3);
-check('a class never seen counts zero', tracker.countOf('boat') === 0);
+check('three people in view are three', tracker.countOf('person') === 3);
+check('a class never seen is zero', tracker.countOf('boat') === 0);
+
+// The running total is the other number, and the one people mean by "how many did we see".
+// Somebody who walks through is one, not one per frame, and it never goes down.
+check('the running total counts each of them once', tracker.countSeen('person') === 3);
+for (let i = 0; i < 5; i += 1) tracker.update([person(0, 0), person(200, 0), person(400, 0)]);
+check('and does not climb while they stand still', tracker.countSeen('person') === 3);
+
+// Someone leaves and a different person arrives elsewhere: two distinct people seen.
+tracker = new Tracker();
+for (let i = 0; i < 3; i += 1) tracker.update([person(0, 0)]);
+for (let i = 0; i < 30; i += 1) tracker.update([]);          // they leave
+for (let i = 0; i < 3; i += 1) tracker.update([person(900, 400)]);
+check('someone leaving and someone else arriving is two, not one',
+  tracker.countSeen('person') === 2, `${tracker.countSeen('person')}`);
+check('while only one is in view now', tracker.countOf('person') === 1);
+
+// A one-frame flicker is not a person.
+tracker = new Tracker();
+tracker.update([person(600, 600)]);
+tracker.update([]);
+check('a single-frame blip is never counted', tracker.countSeen('person') === 0);
 
 console.log('\nReset');
 tracker.reset();
 check('reset clears the tracks', tracker.open().length === 0);
+check('and the running total', tracker.countSeen('person') === 0);
 check('and restarts the numbering', tracker.update([person(0, 0)]) && tracker.tracks[0].id === 1);
 
 console.log(`\n${passes} passed, ${failures} failed`);

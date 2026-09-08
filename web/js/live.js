@@ -32,6 +32,11 @@ import { colorFor } from './render.js';
 
 const PALETTE_ALPHA_COASTED = 0.45;
 
+// The floor stops a fast machine spending every millisecond in the detector; the ceiling
+// stops a slow one leaving the boxes stale for longer than the tracker can sensibly coast.
+const MIN_GAP_MS = 60;
+const MAX_GAP_MS = 400;
+
 export class LiveView {
   /**
    * @param {HTMLVideoElement} video
@@ -46,7 +51,12 @@ export class LiveView {
     this.running = false;
     this.detecting = false;
     this.frameHandle = 0;
+    this.detectHandle = 0;
     this.lastTimestamp = -1;
+    // Trails are off by default. They read as scribbles over a moving picture, and the
+    // number on the box already says which thing is which.
+    this.showTrails = false;
+    this.countPeople = false;
     this.detections = 0;
     this.startedAt = 0;
     this.recorder = null;
@@ -98,17 +108,31 @@ export class LiveView {
     this.startedAt = performance.now();
     this.running = true;
     this.loop();
+    this.detectLoop();
   }
 
   stop() {
     this.running = false;
     cancelAnimationFrame(this.frameHandle);
+    clearTimeout(this.detectHandle);
     this.stopRecording();
     for (const track of this.stream?.getTracks() ?? []) track.stop();
     this.stream = null;
     this.video.srcObject = null;
   }
 
+  /**
+   * Drawing. Runs on every animation frame and does nothing expensive.
+   *
+   * This used to also run the detector, on the belief that a `detecting` flag kept them
+   * apart. It did not: detectForVideo is synchronous, so the flag was set and cleared
+   * inside one tick and detection ran on every single frame, blocking the thread for a
+   * tenth of a second each time. The video stuttered, and detections landed so far apart
+   * that a walking person outran the tracker and kept being issued a new number.
+   *
+   * So the two are genuinely separate now. This draws; detectLoop below detects on its own
+   * cadence and deliberately leaves the browser room to render between calls.
+   */
   loop() {
     if (!this.running) return;
     this.frameHandle = requestAnimationFrame(() => this.loop());
@@ -121,25 +145,42 @@ export class LiveView {
       this.canvas.height = height;
     }
 
-    // One detection at a time. A second one started while the first is running would put
-    // the device permanently behind, and MediaPipe rejects a repeated timestamp anyway.
-    if (!this.detecting) {
+    this.draw();
+    this.report();
+  }
+
+  /**
+   * Detection, on a timer rather than a frame callback.
+   *
+   * The gap after each detection is the length of that detection, floored at MIN_GAP_MS.
+   * A machine taking 150 ms per frame therefore spends about half its time detecting and
+   * half of it free to decode and paint video, which is what keeps the picture smooth
+   * instead of running the detector flat out and starving everything else.
+   */
+  detectLoop() {
+    if (!this.running) return;
+
+    const started = performance.now();
+    if (this.video.readyState >= 2 && this.video.videoWidth) {
+      // MediaPipe rejects a timestamp that does not advance, and at high frame rates two
+      // calls can land in the same millisecond.
       const timestamp = Math.max(this.lastTimestamp + 1, Math.round(performance.now()));
       this.lastTimestamp = timestamp;
-      this.detecting = true;
       try {
         const found = detectFrame(this.video, timestamp);
         if (found) {
           this.tracker.update(found);
           this.detections += 1;
         }
-      } finally {
-        this.detecting = false;
+      } catch (error) {
+        this.onStatus(`Detection stopped: ${error.message}`);
+        return;
       }
     }
 
-    this.draw();
-    this.report();
+    const took = performance.now() - started;
+    const gap = Math.max(MIN_GAP_MS, Math.min(took, MAX_GAP_MS));
+    this.detectHandle = setTimeout(() => this.detectLoop(), gap);
   }
 
   draw() {
@@ -175,8 +216,9 @@ export class LiveView {
       ctx.fillStyle = '#ffffff';
       ctx.fillText(label, x0 + padding, top + padding);
 
-      // The trail says where it came from, which is most of what "tracking" is for.
-      if (track.path.length > 2) {
+      // The trail says where something came from, which is useful when you are studying a
+      // flow and is a scribble over the picture when you are not. Off unless asked for.
+      if (this.showTrails && track.path.length > 2) {
         ctx.globalAlpha = 0.5;
         ctx.beginPath();
         ctx.moveTo(track.path[0][0], track.path[0][1]);
@@ -197,8 +239,11 @@ export class LiveView {
       fps: seconds > 0 ? this.detections / seconds : 0,
       inferenceMs: inferenceMillis(),
       onScreen: [...counts].map(([label, n]) => `${n} ${label}${n === 1 ? '' : 's'}`),
-      // Distinct things seen since the start, which is not the same as what is on screen
-      // now and is the number worth reporting after a pass.
+      // Two different numbers, and confusing them is the classic mistake. `people` is how
+      // many are in view right now; `peopleTotal` is how many distinct ones have been seen
+      // since the camera opened, which keeps climbing as people walk through.
+      people: counts.get('person') ?? 0,
+      peopleTotal: this.tracker.countSeen('person'),
       seenTotal: this.tracker.nextId - 1,
       recording: Boolean(this.recorder),
     });

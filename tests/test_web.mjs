@@ -429,8 +429,8 @@ async function main() {
     const liveStatus = await page.locator('#live-status').textContent();
     check('it reports a detection rate', /detections per second/.test(liveStatus), liveStatus);
     check('and how long a frame takes', /ms each/.test(liveStatus), liveStatus);
-    check('and a running total of distinct things seen',
-      /seen in total/.test(liveStatus), liveStatus);
+    check('and what is on screen right now',
+      /on screen|nothing on screen/.test(liveStatus), liveStatus);
 
     const rate = Number(/([\d.]+) detections per second/.exec(liveStatus)?.[1] ?? 0);
     // A loop that has stalled or is queueing behind itself reports near zero. This is the
@@ -442,6 +442,26 @@ async function main() {
     );
     check('the overlay is sized to the video, not to the page',
       overlay.w > 0 && overlay.h > 0, JSON.stringify(overlay));
+
+    // The people readout. The user asked for a count; what it counts is what the detector
+    // found, and the caveat under it says so - a number presented bare would be read as a
+    // measurement of the crowd, which it is not.
+    await page.locator('#live-count').check();
+    check('the people readout appears when asked for',
+      await page.locator('#live-count-readout').isVisible());
+    await page.waitForFunction(
+      () => /in view/.test(document.getElementById('live-count-readout').textContent),
+      null, { timeout: 30000 },
+    );
+    const countText = await page.locator('#live-count-readout').textContent();
+    check('it separates who is in view from who has been seen',
+      /in view/.test(countText) && /seen so far/.test(countText), countText);
+    check('and says the number is a floor rather than a measurement',
+      /fewer than the people there/.test(countText), countText);
+
+    // Trails are the "snake sketches": useful for studying a flow, a scribble otherwise.
+    check('trails are off unless asked for',
+      await page.evaluate(() => !document.getElementById('live-trails').checked));
 
     await page.locator('#live-stop').click();
     check('stopping hides the stage', await page.locator('#live-stage').isHidden());

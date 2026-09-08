@@ -36,8 +36,22 @@ Detection and drawing are decoupled - drawing runs every animation frame so boxe
 the video, detection runs as fast as the device manages, and the tracker coasts between.
 Nothing queues behind itself, so a slow device degrades instead of spiralling.
 
-`web/js/track.js` is greedy IoU association with a short memory. Not SORT, which is GPL-3.0
-and not something to inherit by accident.
+**People count** is a toggle on the live view. Two numbers, because they answer different
+questions: how many are in view now, and how many distinct people have been seen since the
+camera opened - counted once each by their track, not once per frame. It counts what the
+detector found, which is a floor and not a measurement: anyone small, distant, overlapping
+or turned away is missed, and more are missed the higher the camera is. The readout says so
+under the number.
+
+**Trails** are a toggle too, and off by default.
+
+`web/js/track.js` is IoU association with a centre-distance fallback and a short memory. The
+fallback is what makes it survive a person walking: detection runs a few times a second, so
+between two looks someone can move most of their own width and the boxes then do not overlap
+at all. IoU alone lost them and issued a new number, which is what "person #1, then #2, then
+#3" looked like from the outside.
+
+Not SORT, which is GPL-3.0 and not something to inherit by accident.
 
 An API cannot do any of this at any price: one round trip takes seconds, so there is nothing
 to associate between frames. That is the difference between watching something and
