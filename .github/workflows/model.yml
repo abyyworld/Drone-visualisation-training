@@ -21,7 +21,7 @@ on:
         required: true
         default: person
         type: choice
-        options: [person, wildfire]
+        options: [person, wildfire, turbine, solar]
       candidate:
         description: 'Which weights to convert (blank tries the list for that subject)'
         required: false
@@ -103,6 +103,13 @@ jobs:
                   # Not aerial, always reachable, still better than EfficientDet-Lite2 here.
                   "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
               ],
+              # Nothing is written down for these two. Blade damage and panel defect
+              # weights are published far less often than people or fire, and the addresses
+              # that do exist go stale, so these rely on the search below. If it finds
+              # nothing the run says which searches it ran, and that is the honest answer:
+              # this subject needs a provider key until somebody publishes weights for it.
+              "turbine": [],
+              "solar": [],
               "wildfire": [
                   # Flame and smoke as trained classes, which is what the colour and motion
                   # scanner in firescan.js can only approximate. That scanner stays: it needs
@@ -125,6 +132,10 @@ jobs:
               "person": ["visdrone yolo", "aerial person detection yolo"],
               "wildfire": ["fire smoke yolov8", "fire detection yolo",
                            "wildfire smoke yolo", "fire smoke detection"],
+              "turbine": ["wind turbine blade damage", "wind turbine defect detection",
+                          "turbine blade crack yolo", "wind turbine inspection yolo"],
+              "solar": ["solar panel defect detection", "solar panel fault yolo",
+                        "photovoltaic defect detection", "solar panel inspection yolov8"],
           }
 
           def published(terms, limit=8):
