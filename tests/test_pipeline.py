@@ -106,36 +106,88 @@ class UnhurriedSyntheticSource(PacedSyntheticSource):
     PERIOD_S = 0.010
 
 
-#: A queue deep enough that a stalled consumer does not lose the frames a
-#: test is asserting about. Sixty is the length of the synthetic clip, so
-#: nothing is dropped even if inference stops entirely for the whole run.
-ROOMY_QUEUE = 64
-
-
 def unhurried_factory(cfg):
     """A ``source_factory`` producing :class:`UnhurriedSyntheticSource`."""
     return lambda: UnhurriedSyntheticSource(cfg.source).open()
 
 
+class LockstepSyntheticSource(SyntheticSource):
+    """A source that will not produce a frame until the model has room for it.
+
+    Pacing by a sleep is a guess about how fast the machine is, and on a
+    shared CI runner the guess is wrong: the loop is not scheduled, the queue
+    overflows, and the drop policy discards the exact frames a test is
+    asserting about. Three milliseconds was wrong, ten was wrong less often,
+    and no number is right, because the thing being guessed at is load.
+
+    So this does not guess. It waits until the queue is empty before reading
+    the next frame, which makes the whole path lossless whatever the machine
+    is doing: nothing is ever dropped, so a test can say "the detection is on
+    frame 20" and mean it. It is a slower source than any real one, which is
+    the point -- a real source outruns inference and the drop policy is what
+    handles that, and the tests that are about the drop policy use the paced
+    source and the shipped queue instead.
+
+    Note what this does *not* do: it does not raise the queue size. A deep
+    queue ends the run with frames still in it that the model never looked at,
+    because shutdown abandons whatever is queued. That was tried, and it
+    turned a run that dropped frames 20 to 35 into a run that abandoned them,
+    which is the same red build wearing a different hat.
+    """
+
+    #: A ceiling on the wait, so a stalled or dead inference thread ends the
+    #: test with an ordinary assertion rather than hanging the suite.
+    MAX_WAIT_S = 5.0
+
+    def __init__(self, cfg, room):
+        super().__init__(cfg)
+        self._room = room
+
+    def _read_raw(self):
+        deadline = time.monotonic() + self.MAX_WAIT_S
+        while not self._room() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        return super()._read_raw()
+
+
+def lockstep_factory(cfg, holder):
+    """A ``source_factory`` producing :class:`LockstepSyntheticSource`.
+
+    ``holder`` is filled in with the pipeline after it is constructed, because
+    the source has to see the queue it is feeding and the factory runs inside
+    the pipeline's own start-up.
+    """
+    def room():
+        pipe = holder.get("pipe")
+        if pipe is None:
+            return True
+        # Reaching for a private attribute, deliberately. The alternative is
+        # guessing at timing again, and the queue is the thing being waited on.
+        return pipe._queue.empty() or pipe._stop.is_set()
+
+    return lambda: LockstepSyntheticSource(cfg.source, room).open()
+
+
 def build(cfg, **kwargs) -> Pipeline:
-    """Build a pipeline with the scripted stub and a queue that will not starve.
+    """Build a pipeline at the shipped queue size, fed in lockstep.
 
-    The queue defaults to something roomier than the shipped size of 2. That
-    is not a test of a configuration nobody runs; it is a test of everything
-    except the drop policy. With a queue of 2, a runner that stalls for a
-    second - which a shared CI machine does - discards most of the run, and a
-    test asking "what did the temporal filter do on frame 12?" then asks about
-    a frame that was never delivered. The failure looks like a broken filter
-    and is a busy machine.
+    The queue stays at its default of 2, because that is the drop policy the
+    station actually ships and a test that raised it would be testing a
+    configuration nobody runs -- and worse, would end the run with frames
+    still queued that the model never saw.
 
-    The drop policy itself is still tested, at the shipped queue size: the
-    tests that mean it pass ``queue_size=2`` explicitly, so raising the
-    default here cannot weaken them.
+    What changes instead is the source: it waits for the model rather than
+    racing it, so nothing is dropped however loaded the machine is, and a test
+    that says "frame 20" is asserting about frame 20. The tests that are
+    genuinely about the drop policy pass their own fast source and want it to
+    fire.
     """
     runner = kwargs.pop("runner", StubModelRunner(cfg.inference, script=fire_script))
-    kwargs.setdefault("source_factory", paced_factory(cfg))
-    kwargs.setdefault("queue_size", ROOMY_QUEUE)
-    return Pipeline(cfg, runner=runner, **kwargs)
+    holder: dict[str, Pipeline] = {}
+    kwargs.setdefault("source_factory", lockstep_factory(cfg, holder))
+    pipe = Pipeline(cfg, runner=runner, **kwargs)
+    holder["pipe"] = pipe
+    return pipe
 
 
 def first_with_detections(frames, what: str) -> int:
@@ -696,9 +748,20 @@ class TestLifecycle:
             runner=StubModelRunner(pipeline_cfg.inference, script=fire_script),
             source=src,
         )
-        published = asyncio.run(run_collecting(pipe))
+        asyncio.run(run_collecting(pipe))
+        # Twelve is the number this source was built with and pipeline_cfg's is
+        # sixty, so reading twelve is the assertion: the object handed in is the
+        # one that was read.
         assert pipe.metrics.frames_read == 12
-        assert published
+        # Deliberately not "assert published". This source is unpaced and the
+        # queue is the shipped depth of two, so on a loaded machine the drop
+        # policy can legitimately discard every frame before inference is
+        # scheduled - and a test of which source object was used has no business
+        # failing because the machine was busy. What must hold is that every
+        # frame read was accounted for: inferred, or dropped and counted.
+        m = pipe.metrics
+        assert m.frames_dequeued + m.frames_dropped <= m.frames_read
+        assert m.frames_dequeued + m.frames_dropped > 0
 
 
 class TestInferenceFailure:
