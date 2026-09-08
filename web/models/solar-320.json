@@ -1,0 +1,21 @@
+{
+  "imgsz": 320,
+  "labels": [
+    "Bird Drop",
+    "Defective",
+    "Dust",
+    "Non Defective",
+    "Physical Damage",
+    "Snow"
+  ],
+  "keepClasses": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "confThreshold": 0.25,
+  "iouThreshold": 0.45
+}
