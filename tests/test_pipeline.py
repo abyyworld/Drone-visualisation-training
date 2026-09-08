@@ -71,6 +71,13 @@ class PacedSyntheticSource(SyntheticSource):
     Note what this does *not* do: it does not raise the queue size. A large
     queue would end the run with frames still in it that the model never
     looked at, which is a different and worse kind of untruth.
+
+    3 ms is right for tests about the drop policy, which need the source to be
+    able to outrun inference. It is too tight for tests that assert *which*
+    frame carries the first detection: on a contended CI runner the event loop
+    is not always scheduled within 3 ms, the queue overflows, and the drop
+    policy discards exactly the frames being asserted about. Those tests use
+    :func:`unhurried_factory` instead.
     """
 
     PERIOD_S = 0.003
@@ -87,6 +94,23 @@ def paced_factory(cfg):
     return lambda: PacedSyntheticSource(cfg.source).open()
 
 
+class UnhurriedSyntheticSource(PacedSyntheticSource):
+    """Paced slowly enough that a loaded machine still drops nothing.
+
+    For tests that assert on the index of a particular frame. They are not
+    about the drop policy, and a dropped frame makes them assert about a
+    different frame than the one they mean - which is how a green suite became
+    a red build that reproduced on no developer machine.
+    """
+
+    PERIOD_S = 0.010
+
+
+def unhurried_factory(cfg):
+    """A ``source_factory`` producing :class:`UnhurriedSyntheticSource`."""
+    return lambda: UnhurriedSyntheticSource(cfg.source).open()
+
+
 def build(cfg, **kwargs) -> Pipeline:
     """Build a pipeline with the shipped queue size and the scripted stub.
 
@@ -97,6 +121,26 @@ def build(cfg, **kwargs) -> Pipeline:
     runner = kwargs.pop("runner", StubModelRunner(cfg.inference, script=fire_script))
     kwargs.setdefault("source_factory", paced_factory(cfg))
     return Pipeline(cfg, runner=runner, **kwargs)
+
+
+def first_with_detections(frames, what: str) -> int:
+    """Index of the first frame carrying a detection.
+
+    A helper rather than a bare ``next``, because ``next`` over an empty
+    generator raises ``StopIteration`` and tells whoever reads the failure
+    nothing at all -- not how many frames there were, not whether any survived
+    the drop policy, not whether the run produced anything. That is precisely
+    how this arrived from CI.
+    """
+    for index, frame in enumerate(frames):
+        if len(frame) > 0:
+            return index
+    raise AssertionError(
+        f"no {what} frame carried a detection. "
+        f"{len(frames)} frames were logged inside the window; "
+        "if that is 0 the drop policy discarded them all, which means the "
+        "paced source is running faster than this machine can consume it."
+    )
 
 
 async def run_collecting(pipe: Pipeline) -> list[FrameDetections]:
@@ -432,11 +476,11 @@ class TestTemporalFilterIntegration:
     def test_the_configured_n_of_m_is_the_one_applied(self, pipeline_cfg):
         cfg = pipeline_cfg
         cfg.temporal.n, cfg.temporal.m = 5, 5
-        pipe = build(cfg)
+        pipe = build(cfg, source_factory=unhurried_factory(cfg))
         asyncio.run(run_collecting(pipe))
         logged = load_incident_detections(pipe.incident_dir)
         inside = [f for f in logged if f.frame_id in FIRE_FRAMES]
-        assert next(i for i, f in enumerate(inside) if len(f) > 0) == 4
+        assert first_with_detections(inside, "n-of-m filtered") == 4
 
     def test_temporal_none_publishes_the_runner_output_unfiltered(self, pipeline_cfg):
         # Replay uses this: the recorded payloads are already filtered, and
@@ -445,12 +489,12 @@ class TestTemporalFilterIntegration:
             pipeline_cfg,
             runner=StubModelRunner(pipeline_cfg.inference, script=fire_script),
             temporal=None,
-            source_factory=paced_factory(pipeline_cfg),
+            source_factory=unhurried_factory(pipeline_cfg),
         )
         published = asyncio.run(run_collecting(pipe))
         logged = load_incident_detections(pipe.incident_dir)
         inside = [f for f in logged if f.frame_id in FIRE_FRAMES]
-        assert next(i for i, f in enumerate(inside) if len(f) > 0) == 0
+        assert first_with_detections(inside, "unfiltered") == 0
         assert all(d.track_id is None for f in published for d in f.detections)
 
     def test_an_explicit_filter_instance_is_used(self, pipeline_cfg):
@@ -461,13 +505,13 @@ class TestTemporalFilterIntegration:
             pipeline_cfg,
             runner=StubModelRunner(pipeline_cfg.inference, script=fire_script),
             temporal=filt,
-            source_factory=paced_factory(pipeline_cfg),
+            source_factory=unhurried_factory(pipeline_cfg),
         )
         asyncio.run(run_collecting(pipe))
         assert filt.frames_seen > 0
         logged = load_incident_detections(pipe.incident_dir)
         inside = [f for f in logged if f.frame_id in FIRE_FRAMES]
-        assert next(i for i, f in enumerate(inside) if len(f) > 0) == 0
+        assert first_with_detections(inside, "unfiltered") == 0
 
     def test_the_filter_sees_every_inferred_frame_including_the_empty_ones(self, pipeline_cfg):
         from station.core.config import TemporalConfig
