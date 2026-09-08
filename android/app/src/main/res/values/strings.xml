@@ -44,4 +44,8 @@
     <!-- Regions, and the word candidate, because colour and motion cannot produce more
          than that. What it marks is for an operator to look at, not a verdict. -->
     <string name="fire_readout">candidates: %1$d flame, %2$d smoke</string>
+    <!-- Shown when the GPU video path could not be used and the slower one took over. The
+         screen still works; the operator should know it is working the slow way. -->
+    <string name="video_path_fallback">The GPU video path is unavailable on this device, so the slower one is in use: %1$s</string>
+    <string name="overlay_too_big">Not enough memory to draw the boxes into the recording. The picture is still being recorded.</string>
 </resources>

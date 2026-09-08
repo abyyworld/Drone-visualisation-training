@@ -4,12 +4,26 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- A TextureView rather than a SurfaceView: the frames have to be readable back for
-         the recorder and the analyser, and a SurfaceView's contents cannot be read. -->
+    <!-- Two video views, one of which is used.
+
+         The SurfaceView is the one that should win. The pipeline owns the decoder's texture
+         and renders it here itself, which is what lets the same texture go straight to the
+         encoder without the frame ever coming back to the CPU.
+
+         The TextureView is the fallback, kept because a GL pipeline that fails to come up on
+         some device would otherwise mean a black screen in a field with a drone in the air.
+         It reads frames back with getBitmap(), which is slower and always works. Exactly one
+         of these is visible; see LiveActivity. -->
+    <SurfaceView
+        android:id="@+id/video_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <TextureView
         android:id="@+id/video"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <world.abyy.droneinspection.OverlayView
         android:id="@+id/overlay"

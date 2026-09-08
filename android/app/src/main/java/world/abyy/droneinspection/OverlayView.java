@@ -185,7 +185,16 @@ public class OverlayView extends View {
         }
     }
 
-    private void render(Canvas canvas, int width, int height) {
+    /**
+     * Synchronized, because this is now drawn from two threads.
+     *
+     * onDraw runs on the main thread for the screen; drawInto runs on the pipeline's thread
+     * to compose a snapshot, and on the recorder's path to build the overlay texture. They
+     * share the Paint objects and the text-bounds Rect above, and two threads using one
+     * Paint at once produces boxes in the wrong colour and text in the wrong place, which
+     * looks like a rendering bug and is a missing lock.
+     */
+    private synchronized void render(Canvas canvas, int width, int height) {
         long age = findingsAt == 0 ? 0 : System.currentTimeMillis() - findingsAt;
         boolean stale = findingsAt != 0 && age > STALE_AFTER_MS;
 

@@ -10,6 +10,9 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.WindowManager;
@@ -25,6 +28,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.rtsp.RtspMediaSource;
@@ -66,6 +70,20 @@ public class LiveActivity extends AppCompatActivity {
     private static final int RECORD_LONG_EDGE = 1280;
 
     /**
+     * The ceiling on the recorded picture when the GPU path is running.
+     *
+     * Higher than the fallback's, because there is no readback to pay for: the frame is
+     * already on the GPU and the encoder is on the GPU, so recording at the stream's own
+     * size costs nothing extra. The cap is only there because H.264 encoders on handheld
+     * hardware have real limits, and going past them fails at configure() rather than
+     * degrading.
+     */
+    private static final int RECORD_MAX_EDGE = 1920;
+
+    /** A snapshot is a still to be looked at closely, so it is taken at full resolution. */
+    private static final int SNAPSHOT_LONG_EDGE = 4096;
+
+    /**
      * What the frame is scaled to before detection.
      *
      * The model works at 448 px, so handing it a 1080p frame only costs a bigger downscale
@@ -81,10 +99,38 @@ public class LiveActivity extends AppCompatActivity {
      */
     private static final long MIN_DETECT_GAP_MS = 40;
 
+    /**
+     * How long a requested frame may be outstanding before detection gives up on it.
+     *
+     * The GPU path serves a request from the next video frame to arrive. If the stream
+     * stalls, no frame arrives, and without this the in-flight flag would stay set and
+     * detection would never restart when the picture came back.
+     */
+    private static final long DETECT_TIMEOUT_MS = 3000;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    private SurfaceView videoSurface;
     private TextureView video;
     private OverlayView overlay;
+
+    /**
+     * The GPU path, and whether it came up.
+     *
+     * When it did, the decoder's frames never touch the CPU on their way to the screen or
+     * to the encoder, and the model's frames are read back small and off the main thread.
+     * When it did not, everything falls back to the TextureView and getBitmap(), which is
+     * slower and always works. A field with a drone in the air is the wrong place to find
+     * out that a device's GL driver is unusual.
+     */
+    private GlPipeline glPipeline;
+    private boolean usingGl;
+    private boolean surfaceReady;
+    private boolean wantStream;
+    private int videoPixelWidth = 1280;
+    private int videoPixelHeight = 720;
+    private int recordWidth;
+    private int recordHeight;
     private TextView status;
     private Button recordButton;
     private Button snapshotButton;
@@ -115,6 +161,7 @@ public class LiveActivity extends AppCompatActivity {
     /** Written on the work thread, read on the main one, hence volatile throughout. */
     private volatile NativeDetector detector;
     private volatile boolean detectBusy;
+    private volatile long detectRequestedAt;
     private volatile int peopleInView;
     private volatile int peopleSeen;
     private volatile long detectionsRun;
@@ -150,16 +197,32 @@ public class LiveActivity extends AppCompatActivity {
         @Override
         public void run() {
             if (!detectBusy) {
-                Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
-                if (frame != null) {
-                    detectBusy = true;
-                    if (work == null || !work.post(() -> analyseFrame(frame))) {
+                detectBusy = true;
+                detectRequestedAt = System.currentTimeMillis();
+                requestFrame(DETECT_LONG_EDGE, frame -> {
+                    Handler worker = work;
+                    if (worker == null || !worker.post(() -> analyseFrame(frame))) {
                         frame.recycle();
                         detectBusy = false;
                     }
-                }
+                });
+                // On the GPU path the frame arrives later, on the pipeline's thread. If it
+                // never does - the stream has not started, or has stopped - the flag would
+                // pin detection off forever, so it is released on the next tick that finds
+                // nothing in flight.
+                handler.postDelayed(releaseDetect, DETECT_TIMEOUT_MS);
             }
             handler.postDelayed(this, MIN_DETECT_GAP_MS);
+        }
+    };
+
+    /** Undo a detection that was asked for and never arrived. See detectTick. */
+    private final Runnable releaseDetect = new Runnable() {
+        @Override
+        public void run() {
+            if (detectBusy && System.currentTimeMillis() - detectRequestedAt >= DETECT_TIMEOUT_MS) {
+                detectBusy = false;
+            }
         }
     };
 
@@ -215,6 +278,9 @@ public class LiveActivity extends AppCompatActivity {
             }
             overlay.setFire(finalFire);
             detectBusy = false;
+            // The recording's overlay is a texture, and it is only re-uploaded when the
+            // boxes change, which is here.
+            pushOverlay();
             refreshStatus();
         });
     }
@@ -260,8 +326,28 @@ public class LiveActivity extends AppCompatActivity {
         // A controller screen that sleeps mid-flight is worse than useless.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        videoSurface = findViewById(R.id.video_surface);
         video = findViewById(R.id.video);
         overlay = findViewById(R.id.overlay);
+
+        videoSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                openPipeline(holder.getSurface());
+            }
+
+            @Override
+            public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int w, int h) {
+                if (glPipeline != null) {
+                    glPipeline.setDisplaySize(w, h);
+                }
+            }
+
+            @Override
+            public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                closePipeline();
+            }
+        });
         status = findViewById(R.id.status);
         recordButton = findViewById(R.id.record);
         snapshotButton = findViewById(R.id.snapshot);
@@ -308,6 +394,7 @@ public class LiveActivity extends AppCompatActivity {
                 findings = next;
                 lastError = "";
                 overlay.setFindings(next);
+                pushOverlay();
                 refreshStatus();
             }
 
@@ -322,7 +409,13 @@ public class LiveActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        openStream();
+        // The stream cannot open until it is known which surface it is opening onto, and
+        // that is not known until the SurfaceView has one. Whichever happens second starts
+        // it; see openPipeline().
+        wantStream = true;
+        if (surfaceReady) {
+            openStream();
+        }
 
         workThread = new HandlerThread("live-work");
         workThread.start();
@@ -352,8 +445,10 @@ public class LiveActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
+        wantStream = false;
         handler.removeCallbacks(analysisTick);
         handler.removeCallbacks(detectTick);
+        handler.removeCallbacks(releaseDetect);
         if (workThread != null) {
             // quitSafely, so a detection already running finishes and recycles its bitmap
             // rather than being cut off mid-frame. Then wait for it, briefly: onDestroy
@@ -390,6 +485,7 @@ public class LiveActivity extends AppCompatActivity {
             analyser.destroy();
             analyser = null;
         }
+        closePipeline();
         if (detector != null) {
             detector.close();
             detector = null;
@@ -404,7 +500,14 @@ public class LiveActivity extends AppCompatActivity {
     private void openStream() {
         String uri = Settings.stream(this);
         player = new ExoPlayer.Builder(this).build();
-        player.setVideoTextureView(video);
+        if (usingGl && glPipeline != null && glPipeline.videoInput() != null) {
+            // The player draws into the pipeline's own SurfaceTexture rather than into a
+            // view. That texture is what goes to the screen and to the encoder, which is
+            // the whole point: one decode, two destinations, no copy through the CPU.
+            player.setVideoSurface(glPipeline.videoInput());
+        } else {
+            player.setVideoTextureView(video);
+        }
 
         // Forcing TCP rather than letting it negotiate UDP: the controller link drops
         // packets under load, and a UDP RTSP session degrades into a frozen picture with no
@@ -423,10 +526,139 @@ public class LiveActivity extends AppCompatActivity {
             public void onPlaybackStateChanged(int state) {
                 refreshStatus();
             }
+
+            @Override
+            public void onVideoSizeChanged(@NonNull VideoSize size) {
+                if (size.width <= 0 || size.height <= 0) {
+                    return;
+                }
+                videoPixelWidth = size.width;
+                videoPixelHeight = size.height;
+                // The pipeline needs the real dimensions for two things: the buffer the
+                // decoder writes into, and the aspect ratio it letterboxes to. Guessing
+                // either produces a picture that is subtly the wrong shape, which on a feed
+                // an operator is judging distances from is worse than an obvious fault.
+                if (glPipeline != null) {
+                    glPipeline.setVideoSize(size.width, size.height);
+                }
+            }
         });
         player.prepare();
         player.setPlayWhenReady(true);
         refreshStatus();
+    }
+
+    // -----------------------------------------------------------------------------------
+    // The video pipeline
+    // -----------------------------------------------------------------------------------
+
+    /**
+     * Bring the GPU path up against the display surface, or fall back to the old one.
+     *
+     * The fallback is not a formality. This is the only code in the app that depends on a
+     * particular device's GL driver behaving, and the cost of being wrong about that is a
+     * black screen on a controller. So if anything at all goes wrong here, the TextureView
+     * takes over and the screen keeps working, more slowly and with a line saying so.
+     */
+    private void openPipeline(Surface surface) {
+        if (glPipeline != null) {
+            return;
+        }
+        GlPipeline pipeline = new GlPipeline(message -> handler.post(() -> {
+            // Delivered from the GL thread after something failed mid-flight. Falling back
+            // now means tearing down the player and rebuilding it on the TextureView.
+            lastError = getString(R.string.video_path_fallback, message);
+            fallBackToTextureView();
+        }));
+        String problem = pipeline.start(surface, videoSurface.getWidth(), videoSurface.getHeight());
+        if (problem != null) {
+            pipeline.release();
+            lastError = getString(R.string.video_path_fallback, problem);
+            usingGl = false;
+            videoSurface.setVisibility(View.GONE);
+            video.setVisibility(View.VISIBLE);
+        } else {
+            glPipeline = pipeline;
+            usingGl = true;
+        }
+        surfaceReady = true;
+        if (wantStream && player == null) {
+            openStream();
+        }
+        refreshStatus();
+    }
+
+    private void closePipeline() {
+        surfaceReady = false;
+        GlPipeline finishing = glPipeline;
+        glPipeline = null;
+        usingGl = false;
+        if (finishing != null) {
+            finishing.release();
+        }
+    }
+
+    /** Something broke in GL while running. Rebuild the stream on the slow path. */
+    private void fallBackToTextureView() {
+        if (!usingGl) {
+            return;
+        }
+        boolean wasRecording = isRecording();
+        if (wasRecording) {
+            stopRecording();
+        }
+        closePipeline();
+        videoSurface.setVisibility(View.GONE);
+        video.setVisibility(View.VISIBLE);
+        if (player != null) {
+            player.release();
+            player = null;
+        }
+        openStream();
+        refreshStatus();
+    }
+
+    /**
+     * One frame, however this device is getting them.
+     *
+     * On the GPU path the frame is rendered small into an offscreen buffer and read back on
+     * the pipeline's thread, so the consumer is called there. On the fallback it is pulled
+     * off the TextureView here, so the consumer is called on the main thread. Either way the
+     * consumer owns the bitmap and must recycle it.
+     */
+    private void requestFrame(int longEdge, GlPipeline.FrameConsumer consumer) {
+        GlPipeline pipeline = glPipeline;
+        if (usingGl && pipeline != null) {
+            pipeline.requestFrame(longEdge, consumer);
+            return;
+        }
+        Bitmap frame = grabVideoFrame(longEdge);
+        if (frame != null) {
+            consumer.onFrame(frame);
+        }
+    }
+
+    /**
+     * Hand the current boxes to the pipeline, as pixels, for it to composite into the file.
+     *
+     * Only while recording, and only when the boxes have changed rather than once per frame.
+     * That is the whole reason compositing in GL is cheaper than drawing onto every frame:
+     * the overlay changes at detection rate, a few times a second, not at frame rate.
+     */
+    private void pushOverlay() {
+        GlPipeline pipeline = glPipeline;
+        if (!usingGl || pipeline == null || !isRecording() || recordWidth <= 0) {
+            return;
+        }
+        try {
+            Bitmap layer = Bitmap.createBitmap(recordWidth, recordHeight, Bitmap.Config.ARGB_8888);
+            overlay.drawInto(new Canvas(layer), recordWidth, recordHeight);
+            pipeline.setOverlay(layer);
+        } catch (OutOfMemoryError tooBig) {
+            // The recording keeps its picture and loses its boxes, which is far better than
+            // the recording ending.
+            lastError = getString(R.string.overlay_too_big);
+        }
     }
 
     // -----------------------------------------------------------------------------------
@@ -453,14 +685,20 @@ public class LiveActivity extends AppCompatActivity {
             refreshStatus();
             return;
         }
-        Bitmap frame = grabVideoFrame(LiveAnalyser.MAX_EDGE);
-        if (frame == null) {
-            return;
-        }
+        String provider = Settings.provider(this);
+        String model = Settings.model(this);
+        String key = Settings.apiKey();
+        String domain = Settings.domain(this);
         // The analyser takes ownership: it encodes on its own thread and recycles when it
         // is done. Recycling here would pull the bitmap out from under that encode.
-        analyser.analyse(frame, Settings.provider(this), Settings.model(this),
-                Settings.apiKey(), Settings.domain(this));
+        requestFrame(LiveAnalyser.MAX_EDGE, frame -> {
+            LiveAnalyser current = analyser;
+            if (current == null) {
+                frame.recycle();
+                return;
+            }
+            current.analyse(frame, provider, model, key, domain);
+        });
         refreshStatus();
     }
 
@@ -502,17 +740,62 @@ public class LiveActivity extends AppCompatActivity {
     }
 
     private void startRecording() {
+        if (usingGl && glPipeline != null) {
+            startRecordingOnGpu();
+        } else {
+            startRecordingOnCpu();
+        }
+    }
+
+    /**
+     * The good path: the pipeline renders straight onto the encoder.
+     *
+     * Nothing is read back, nothing is uploaded, and the recording runs at the video's own
+     * resolution rather than at whatever a readback could afford. The overlay is pushed as
+     * a texture when the boxes change, and the encoder is drained after each frame the
+     * pipeline presents.
+     */
+    private void startRecordingOnGpu() {
+        // Even dimensions: H.264 encoders reject odd ones on a great many devices, and the
+        // failure is an opaque IllegalStateException at configure() rather than a message.
+        int longEdge = Math.max(videoPixelWidth, videoPixelHeight);
+        float scale = Math.min(1f, RECORD_MAX_EDGE / (float) longEdge);
+        recordWidth = Math.max(2, Math.round(videoPixelWidth * scale)) & ~1;
+        recordHeight = Math.max(2, Math.round(videoPixelHeight * scale)) & ~1;
+
+        File file = new File(outputDirectory(), "flight-" + timestamp() + ".mp4");
+        BoxRecorder starting = new BoxRecorder(file, recordWidth, recordHeight, false);
+        String problem = starting.startAndWait();
+        if (problem != null) {
+            lastError = getString(R.string.recording_failed, problem);
+            starting.stop(null);
+            refreshStatus();
+            return;
+        }
+        recorder = starting;
+        framesDropped = 0;
+        glPipeline.startRecording(starting.input(), recordWidth, recordHeight,
+                BoxRecorder.FRAME_RATE, starting::drainNow);
+
+        recordButton.setText(R.string.stop_recording);
+        backButton.setVisibility(View.GONE);
+        pushOverlay();
+        refreshStatus();
+    }
+
+    /** The fallback: read each frame back, draw the boxes on it, hand it over. */
+    private void startRecordingOnCpu() {
         Bitmap probe = grabVideoFrame(RECORD_LONG_EDGE);
         if (probe == null) {
             Toast.makeText(this, R.string.no_video_yet, Toast.LENGTH_SHORT).show();
             return;
         }
-        int width = probe.getWidth();
-        int height = probe.getHeight();
+        recordWidth = probe.getWidth();
+        recordHeight = probe.getHeight();
         probe.recycle();
 
         File file = new File(outputDirectory(), "flight-" + timestamp() + ".mp4");
-        recorder = new BoxRecorder(file, width, height);
+        recorder = new BoxRecorder(file, recordWidth, recordHeight);
         recorder.start();
         framesDropped = 0;
         nextRecordAt = SystemClock.uptimeMillis();
@@ -525,6 +808,12 @@ public class LiveActivity extends AppCompatActivity {
 
     private void stopRecording() {
         handler.removeCallbacks(recordTick);
+        GlPipeline pipeline = glPipeline;
+        if (pipeline != null) {
+            // Detach the encoder surface before the encoder is torn down, or the pipeline
+            // renders into a surface that has gone.
+            pipeline.stopRecording();
+        }
         BoxRecorder finishing = recorder;
         recorder = null;
         recordButton.setText(R.string.start_recording);
@@ -547,26 +836,30 @@ public class LiveActivity extends AppCompatActivity {
     }
 
     private void takeSnapshot() {
-        Bitmap frame = grabVideoFrame(4096);
-        if (frame == null) {
-            Toast.makeText(this, R.string.no_video_yet, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        Canvas canvas = new Canvas(frame);
-        overlay.drawInto(canvas, frame.getWidth(), frame.getHeight());
-
         File file = new File(outputDirectory(), "frame-" + timestamp() + ".jpg");
-        try (FileOutputStream out = new FileOutputStream(file)) {
-            frame.compress(Bitmap.CompressFormat.JPEG, 92, out);
-            Toast.makeText(this, getString(R.string.snapshot_saved, file.getName()),
-                    Toast.LENGTH_LONG).show();
-        } catch (IOException writing) {
-            Toast.makeText(this, getString(R.string.snapshot_failed, String.valueOf(writing.getMessage())),
-                    Toast.LENGTH_LONG).show();
-        } finally {
-            frame.recycle();
-        }
+        requestFrame(SNAPSHOT_LONG_EDGE, frame -> {
+            // The boxes are drawn here, on whichever thread delivered the frame, and the
+            // JPEG is written here too. Neither belongs on the main thread: compressing a
+            // full-resolution frame is tens of milliseconds and writing it is file I/O, and
+            // the button that started this is on the same thread as the video.
+            try {
+                overlay.drawInto(new Canvas(frame), frame.getWidth(), frame.getHeight());
+                try (FileOutputStream out = new FileOutputStream(file)) {
+                    frame.compress(Bitmap.CompressFormat.JPEG, 92, out);
+                }
+                handler.post(() -> Toast.makeText(this,
+                        getString(R.string.snapshot_saved, file.getName()),
+                        Toast.LENGTH_LONG).show());
+            } catch (IOException | RuntimeException writing) {
+                handler.post(() -> Toast.makeText(this,
+                        getString(R.string.snapshot_failed, String.valueOf(writing.getMessage())),
+                        Toast.LENGTH_LONG).show());
+            } finally {
+                frame.recycle();
+            }
+        });
     }
+
 
     private void leave() {
         if (isRecording()) {

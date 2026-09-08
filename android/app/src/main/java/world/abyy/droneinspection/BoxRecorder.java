@@ -32,19 +32,16 @@ import java.nio.FloatBuffer;
  *     file exists to be reviewed and to be re-uploaded to the analysis screen afterwards,
  *     and both of those want the boxes.
  *
- * HOW THE FRAMES GET HERE
- *     Not from the decoder. The video is decoded into a TextureView, the boxes are drawn
- *     over it, and the composed result is read back as a Bitmap and handed to submit().
- *     That readback is why this records at a reduced rate rather than at the stream's own:
- *     pulling a frame back from the GPU costs real time, and a handheld doing it sixty
- *     times a second would have nothing left for the decode. A review video does not need
- *     sixty; FRAME_RATE is what it gets.
+ * TWO WAYS FRAMES GET HERE
+ *     Preferred, and what runs when the GPU pipeline is up: nothing arrives here at all.
+ *     GlPipeline is handed input() and renders the decoder's texture and the overlay
+ *     straight onto it, so the frame never leaves the GPU. This class is then only an
+ *     encoder and a muxer, and drainNow() is called after each frame is presented.
  *
- * THE ENCODE PATH
- *     Bitmap -> GL texture -> full-screen quad -> the encoder's input surface -> MediaCodec
- *     -> MediaMuxer. Going through GL rather than converting to YUV in Java is not
- *     gold-plating: the conversion is a few million pixels a second and Java is the wrong
- *     tool for it, while the GPU does the same work as part of drawing.
+ *     Fallback, when GL could not be brought up: the composed frame is read back as a
+ *     Bitmap and handed to submit(), which uploads it to a small EGL context of this
+ *     class's own and draws it onto the encoder's surface. That readback is a real cost,
+ *     which is why the fallback records at FRAME_RATE rather than at the stream's own rate.
  *
  * THREADING
  *     Everything after submit() happens on this class's own thread, because an EGL context
@@ -63,6 +60,13 @@ public final class BoxRecorder {
     private final int width;
     private final int height;
     private final File output;
+
+    /**
+     * True when this class composes frames itself from bitmaps, false when something else
+     * renders onto input(). The EGL context below exists only in the first case: bringing up
+     * a second one alongside GlPipeline's would be two contexts fighting over one encoder.
+     */
+    private final boolean composes;
 
     private MediaCodec encoder;
     private Surface inputSurface;
@@ -98,7 +102,13 @@ public final class BoxRecorder {
             + "  gl_FragColor = texture2D(uTexture, vTexCoord);\n"
             + "}\n";
 
+    /** The fallback: this recorder composes frames from bitmaps handed to submit(). */
     public BoxRecorder(File output, int width, int height) {
+        this(output, width, height, true);
+    }
+
+    public BoxRecorder(File output, int width, int height, boolean composes) {
+        this.composes = composes;
         this.output = output;
         // H.264 encoders reject odd dimensions on a great many devices, and the failure is
         // an opaque IllegalStateException at configure() rather than anything readable.
@@ -127,15 +137,80 @@ public final class BoxRecorder {
     }
 
     public void start() {
-        handler.post(() -> {
+        handler.post(this::openEverything);
+    }
+
+    /**
+     * Start, and wait for the encoder to exist.
+     *
+     * The GL path needs input() the moment this returns, and a Surface that does not exist
+     * yet is not something a caller can be handed and told to try again later.
+     *
+     * @return null on success, or why it failed.
+     */
+    public String startAndWait() {
+        final Object done = new Object();
+        synchronized (done) {
+            handler.post(() -> {
+                openEverything();
+                synchronized (done) {
+                    done.notifyAll();
+                }
+            });
             try {
-                openEncoder();
+                done.wait(5000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return "interrupted while starting the recorder";
+            }
+        }
+        if (failure != null) {
+            return failure;
+        }
+        return running ? null : "the recorder did not start within five seconds";
+    }
+
+    private void openEverything() {
+        try {
+            openEncoder();
+            if (composes) {
                 openGl();
-                running = true;
-                startedAtNanos = System.nanoTime();
-            } catch (Exception opening) {
-                failure = describe(opening);
-                releaseQuietly();
+            }
+            running = true;
+            startedAtNanos = System.nanoTime();
+        } catch (Exception opening) {
+            failure = describe(opening);
+            releaseQuietly();
+        }
+    }
+
+    /**
+     * The encoder's input surface, for something else to render onto.
+     *
+     * Only meaningful after startAndWait() has returned null, and only when this recorder
+     * was built with composes = false.
+     */
+    public Surface input() {
+        return inputSurface;
+    }
+
+    /**
+     * Take whatever the encoder has produced and write it out.
+     *
+     * Called from the GL thread after each frame is presented, and posted rather than run
+     * there: the muxer writes to a file, and file writes do not belong on the thread that
+     * has to be ready for the next video frame.
+     */
+    public void drainNow() {
+        handler.post(() -> {
+            if (!running) {
+                return;
+            }
+            try {
+                drain(false);
+            } catch (Exception encoding) {
+                failure = describe(encoding);
+                running = false;
             }
         });
     }
