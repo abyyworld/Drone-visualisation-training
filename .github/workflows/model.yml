@@ -16,8 +16,14 @@ name: Fetch and convert the detector
 on:
   workflow_dispatch:
     inputs:
+      subject:
+        description: 'Which detector to fetch'
+        required: true
+        default: person
+        type: choice
+        options: [person, wildfire]
       candidate:
-        description: 'Which weights to convert (blank tries the list in order)'
+        description: 'Which weights to convert (blank tries the list for that subject)'
         required: false
         default: ''
 
@@ -77,23 +83,41 @@ jobs:
       - name: Fetch the weights
         id: fetch
         env:
+          SUBJECT: ${{ inputs.subject }}
           CANDIDATE: ${{ inputs.candidate }}
         run: |
           python - <<'PY'
           import os, pathlib, urllib.request
 
-          candidates = [c for c in [os.environ.get("CANDIDATE", "").strip()] if c] or [
-              # Aerial, and small enough for a 2018 mid-range Qualcomm.
-              "https://huggingface.co/dronefreak/visdrone-yolov26n/resolve/main/best.pt",
-              "https://huggingface.co/dronefreak/visdrone-yolo11n/resolve/main/best.pt",
-              "https://huggingface.co/dronefreak/visdrone-yolov8n/resolve/main/best.pt",
-              # Aerial but a size up; only worth it if nothing smaller is published.
-              "https://huggingface.co/dronefreak/visdrone-yolov11s/resolve/main/best.pt",
-              # Not aerial, always reachable. Still a better small detector than the
-              # EfficientDet-Lite2 that ships today, and three times faster.
-              "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
-              "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt",
-          ]
+          # Published weights, best first, per subject. Nothing here is trained: somebody
+          # has already done each of these and put the result up, and a runner can reach
+          # the hosts this project's own environment cannot.
+          BY_SUBJECT = {
+              "person": [
+                  # Aerial, and small enough for a 2018 mid-range Qualcomm.
+                  "https://huggingface.co/dronefreak/visdrone-yolov26n/resolve/main/best.pt",
+                  "https://huggingface.co/dronefreak/visdrone-yolo11n/resolve/main/best.pt",
+                  "https://huggingface.co/dronefreak/visdrone-yolov8n/resolve/main/best.pt",
+                  # Aerial but a size up; only worth it if nothing smaller is published.
+                  "https://huggingface.co/dronefreak/visdrone-yolov11s/resolve/main/best.pt",
+                  # Not aerial, always reachable, still better than EfficientDet-Lite2 here.
+                  "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+              ],
+              "wildfire": [
+                  # Flame and smoke as trained classes, which is what the colour and motion
+                  # scanner in firescan.js can only approximate. That scanner stays: it needs
+                  # no model at all and it is what runs when this is not deployed.
+                  "https://huggingface.co/leonelhs/yolov8-fire-and-smoke/resolve/main/best.pt",
+                  "https://huggingface.co/spaces/leonelhs/fire-detection/resolve/main/best.pt",
+                  "https://huggingface.co/AshtonIsNotHere/yolov8-fire-smoke/resolve/main/best.pt",
+                  "https://huggingface.co/Yasiru/fire-smoke-yolov8/resolve/main/best.pt",
+                  "https://github.com/gaiasd/DFireDataset/releases/download/v1.0/best.pt",
+              ],
+          }
+
+          subject = os.environ.get("SUBJECT", "person").strip() or "person"
+          named = os.environ.get("CANDIDATE", "").strip()
+          candidates = [named] if named else BY_SUBJECT[subject]
 
           for url in candidates:
               try:
@@ -108,48 +132,64 @@ jobs:
                   print(f"  got {len(data) / 1e6:.1f} MB", flush=True)
                   with open(os.environ["GITHUB_OUTPUT"], "a") as out:
                       out.write(f"source={url}\n")
-                      out.write(f"aerial={'visdrone' in url}\n")
+                      out.write(f"subject={subject}\n")
                   raise SystemExit(0)
               except SystemExit:
                   raise
               except Exception as problem:
                   print(f"  no: {problem}", flush=True)
 
+          print()
+          print(f"::error::No published weights for '{subject}' could be downloaded. Tried:")
+          for url in candidates:
+              print(f"::error::  {url}")
           raise SystemExit("none of the candidates could be downloaded")
           PY
 
       - name: Export ONNX, for the browser
+        env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
           .venv-onnx/bin/python - <<'PY'
-          import json, pathlib, shutil
+          import json, os, pathlib, shutil
           from ultralytics import YOLO
 
+          subject = os.environ["SUBJECT"]
           model = YOLO("candidate.pt")
           names = model.names
           print("classes:", names, flush=True)
 
-          people = [i for i, n in names.items()
-                    if str(n).lower() in ("person", "pedestrian", "people")]
-          if not people:
-              raise SystemExit(f"none of this model's classes are people: {names}")
-          print("person-like classes:", people, flush=True)
+          # Which of the model's classes this application actually wants marked.
+          #
+          # For people that is the person-like ones and nothing else: a van beside somebody
+          # is another box, another track, and another chance to be wrong about them. For a
+          # fire everything the model knows is worth seeing, since a model trained on fire
+          # knows fire and smoke and little else.
+          if subject == "person":
+              wanted = [i for i, n in names.items()
+                        if str(n).lower() in ("person", "pedestrian", "people")]
+              if not wanted:
+                  raise SystemExit(f"none of this model's classes are people: {names}")
+          else:
+              wanted = sorted(names)
+          print("keeping:", [str(names[i]) for i in wanted], flush=True)
 
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
           onnx = model.export(format="onnx", imgsz=320, simplify=True, opset=12)
-          shutil.copy(onnx, out / "person-320.onnx")
+          shutil.copy(onnx, out / f"{subject}-320.onnx")
 
-          # Written next to the model rather than typed into the manifest by hand: the
-          # class list and the input size are facts about the file, and a manifest that
-          # disagrees with its model is a silent wrong answer.
-          (out / "person-320.json").write_text(json.dumps({
+          # Written next to the model rather than typed into the manifest by hand: the class
+          # list and the input size are facts about the file, and a manifest that disagrees
+          # with its model is a silent wrong answer.
+          (out / f"{subject}-320.json").write_text(json.dumps({
               "imgsz": 320,
               "labels": [str(names[i]) for i in sorted(names)],
-              "keepClasses": people,
+              "keepClasses": wanted,
               "confThreshold": 0.25,
               "iouThreshold": 0.45,
           }, indent=2) + "\n")
-          print("wrote", out / "person-320.onnx", flush=True)
+          print("wrote", out / f"{subject}-320.onnx", flush=True)
           PY
 
       # Left able to fail without stopping the job, on purpose: the ONNX model is what the
@@ -159,12 +199,15 @@ jobs:
       - name: Export TFLite int8, for the tablet
         continue-on-error: true
         env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
           # No installing things into a running interpreter. See the toolchain step above.
           YOLO_AUTOINSTALL: 'false'
         run: |
           .venv-tflite/bin/python - <<'PY'
-          import pathlib, shutil
+          import os, pathlib, shutil
           from ultralytics import YOLO
+
+          subject = os.environ["SUBJECT"]
 
           # int8, because that is what a Hexagon DSP runs. The calibration images come from
           # ultralytics' own tiny sample set; a few hundred fix the quantisation ranges.
@@ -172,22 +215,26 @@ jobs:
           tflite = model.export(format="tflite", imgsz=320, int8=True, data="coco8.yaml")
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
-          shutil.copy(tflite, out / "person-320-int8.tflite")
-          print("wrote", out / "person-320-int8.tflite", flush=True)
+          shutil.copy(tflite, out / f"{subject}-320-int8.tflite")
+          print("wrote", out / f"{subject}-320-int8.tflite", flush=True)
           PY
 
       # The tablet model, actually loaded and run, before it is published. An int8 export
       # can come out of the converter with a quantised input the app would have to feed
       # differently, so the input type is printed rather than assumed.
       - name: Check the tablet model actually runs
-        if: hashFiles('web/models/person-320-int8.tflite') != ''
+        env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
+        if: hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
-          import json, pathlib
+          import json, os, pathlib
           import numpy as np
           from ai_edge_litert.interpreter import Interpreter
 
-          interpreter = Interpreter(model_path="web/models/person-320-int8.tflite")
+          subject = os.environ["SUBJECT"]
+
+          interpreter = Interpreter(model_path=f"web/models/{subject}-320-int8.tflite")
           interpreter.allocate_tensors()
           entry = interpreter.get_input_details()[0]
           exit_ = interpreter.get_output_details()[0]
@@ -214,7 +261,7 @@ jobs:
           # nobody - with no error anywhere, which is indistinguishable from a frame with
           # nobody in it. The rules below are the ones the Java uses, so a converter that
           # changes its mind again fails here instead of on the tablet.
-          spec = json.loads(pathlib.Path("web/models/person-320.json").read_text())
+          spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
           shape = [int(v) for v in entry["shape"]]
           if len(shape) != 4:
               raise SystemExit(f"the app can only read a four dimensional input: {shape}")
@@ -224,19 +271,19 @@ jobs:
                 f"input size {size}", flush=True)
           if size != spec["imgsz"]:
               raise SystemExit(
-                  f"the model wants {size} pixels but person-320.json says "
+                  f"the model wants {size} pixels but the class list says "
                   f"{spec['imgsz']}; the app would feed it the wrong picture")
 
           channels = min(found.shape[1], found.shape[2])
           if channels != 4 + len(spec["labels"]):
               raise SystemExit(
                   f"the head carries {channels} channels, which is four plus "
-                  f"{channels - 4} classes, but person-320.json lists "
+                  f"{channels - 4} classes, but the class list has "
                   f"{len(spec['labels'])} labels")
           if not all(0 <= c < len(spec["labels"]) for c in spec["keepClasses"]):
               raise SystemExit(
                   f"keepClasses {spec['keepClasses']} points outside the label list")
-          print("the tablet model and person-320.json agree", flush=True)
+          print("the tablet model and its class list agree", flush=True)
           PY
 
       # A model that exports cleanly and finds nobody is worse than no model, so the
@@ -254,12 +301,16 @@ jobs:
       # is printed rather than judged, because judging it needs footage from the drone this
       # is going to fly on.
       - name: Check the browser model actually runs
+        env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
           .venv-onnx/bin/python - <<'PY'
-          import urllib.request, pathlib, numpy as np, onnxruntime as ort
+          import os, urllib.request, pathlib, numpy as np, onnxruntime as ort
           from ultralytics import YOLO
 
-          session = ort.InferenceSession("web/models/person-320.onnx",
+          subject = os.environ["SUBJECT"]
+
+          session = ort.InferenceSession(f"web/models/{subject}-320.onnx",
                                          providers=["CPUExecutionProvider"])
           shape = session.get_inputs()[0].shape
           print("input:", shape, flush=True)
@@ -304,7 +355,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: detector-models
-          path: web/models/person-320*
+          path: web/models/*-320*
           if-no-files-found: error
 
       - name: Commit it
@@ -313,7 +364,7 @@ jobs:
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          git add web/models/person-320* || true
+          git add web/models/*-320* || true
           if git diff --cached --quiet; then
             echo "nothing changed"
             exit 0
@@ -348,9 +399,11 @@ jobs:
       # ONNX file reported success, and the missing tablet model was found by hand days
       # later. If it is not here, this run was not a success.
       - name: Did the tablet model come out
+        env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
-          if [ ! -s web/models/person-320-int8.tflite ]; then
-            echo "::error::No web/models/person-320-int8.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite int8' step above for the reason."
+          if [ ! -s web/models/${SUBJECT}-320-int8.tflite ]; then
+            echo "::error::No web/models/${SUBJECT}-320-int8.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite int8' step above for the reason."
             exit 1
           fi
-          ls -lh web/models/person-320-int8.tflite
+          ls -lh web/models/${SUBJECT}-320-int8.tflite
