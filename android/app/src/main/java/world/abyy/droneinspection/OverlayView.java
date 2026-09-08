@@ -49,6 +49,12 @@ public class OverlayView extends View {
     private long findingsAt;
     private String status = "";
 
+    // Two sources, drawn together and aged differently. Tracks come from the detector on
+    // this device and are current to the last frame; findings come from a provider seconds
+    // ago. Showing them with the same weight would present one as being as fresh as the
+    // other, which is the whole thing this overlay exists not to do.
+    private List<Tracker.Track> tracks = new ArrayList<>();
+
     public OverlayView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         boxPaint.setStyle(Paint.Style.STROKE);
@@ -58,6 +64,12 @@ public class OverlayView extends View {
         statusBackground.setColor(0xCC000000);
         statusBackground.setStyle(Paint.Style.FILL);
         setWillNotDraw(false);
+    }
+
+    /** Replace the live tracks. Called on every detected frame. */
+    public void setTracks(List<Tracker.Track> next) {
+        tracks = next == null ? new ArrayList<>() : next;
+        invalidate();
     }
 
     /** Replace what is drawn. An empty list clears the overlay. */
@@ -75,6 +87,7 @@ public class OverlayView extends View {
 
     public void clear() {
         findings = new ArrayList<>();
+        tracks = new ArrayList<>();
         findingsAt = 0;
         invalidate();
     }
@@ -95,6 +108,15 @@ public class OverlayView extends View {
         render(canvas, getWidth(), getHeight());
     }
 
+    /** Same hash as colourIndex() in web/js/vlm.js, so a label keeps one colour anywhere. */
+    private static int colourIndex(String label) {
+        int hash = 0;
+        for (int i = 0; i < label.length(); i++) {
+            hash = (hash * 31 + label.charAt(i)) % 4096;
+        }
+        return hash;
+    }
+
     private void render(Canvas canvas, int width, int height) {
         long age = findingsAt == 0 ? 0 : System.currentTimeMillis() - findingsAt;
         boolean stale = findingsAt != 0 && age > STALE_AFTER_MS;
@@ -105,6 +127,30 @@ public class OverlayView extends View {
         boxPaint.setStrokeWidth(stroke);
         labelPaint.setTextSize(textSize);
         statusPaint.setTextSize(textSize * 0.85f);
+
+        // Live tracks first, at full weight, with the identity on the label. These are
+        // current: they came from this device on the last frame it managed.
+        for (Tracker.Track track : tracks) {
+            int colour = PALETTE[colourIndex(track.label) % PALETTE.length];
+            boxPaint.setColor(colour);
+            boxPaint.setAlpha(track.coasted() ? 120 : 255);
+
+            RectF box = new RectF(track.box[0], track.box[1], track.box[2], track.box[3]);
+            canvas.drawRect(box, boxPaint);
+
+            String text = track.label + " #" + track.id;
+            labelPaint.getTextBounds(text, 0, text.length(), textBounds);
+            float pad = stroke * 2;
+            float top = Math.max(0, box.top - textBounds.height() - pad * 2);
+
+            labelBackground.setColor(colour);
+            labelBackground.setAlpha(track.coasted() ? 120 : 255);
+            canvas.drawRect(box.left, top,
+                    box.left + textBounds.width() + pad * 2, top + textBounds.height() + pad * 2,
+                    labelBackground);
+            labelPaint.setAlpha(track.coasted() ? 120 : 255);
+            canvas.drawText(text, box.left + pad, top + textBounds.height() + pad, labelPaint);
+        }
 
         if (!stale) {
             int alpha = findingsAt != 0 && age > DIM_AFTER_MS ? 130 : 255;

@@ -17,6 +17,9 @@ plugins {
 // Versions used further down. Declared here because a Groovy build script runs top to
 // bottom: a def below the dependencies block that uses it is simply not in scope yet.
 def media3Version = '1.5.1'
+// MediaPipe Tasks Vision for Android: the same detector the web app runs, native, so the
+// drone's RTSP feed is tracked on every frame instead of sampled through an API.
+def mediapipeVersion = '0.10.14'
 def kotlinVersion = '1.9.25'
 
 // The web app is the source of truth; this module never edits it in place.
@@ -89,7 +92,9 @@ android {
         resources.excludes += ['**/*.map']
     }
     androidResources {
-        noCompress += ['wasm', 'onnx']
+        // MediaPipe memory-maps the model out of the APK; a compressed asset cannot be
+        // mapped and it falls back to unpacking it, which costs startup time and RAM.
+        noCompress += ['wasm', 'onnx', 'tflite']
     }
 }
 
@@ -102,6 +107,8 @@ dependencies {
     // out as, so the video path is native and Media3 is what speaks it.
     implementation "androidx.media3:media3-exoplayer:$media3Version"
     implementation "androidx.media3:media3-exoplayer-rtsp:$media3Version"
+
+    implementation "com.google.mediapipe:tasks-vision:$mediapipeVersion"
 }
 
 /*

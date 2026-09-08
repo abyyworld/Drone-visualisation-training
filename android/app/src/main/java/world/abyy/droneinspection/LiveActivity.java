@@ -63,6 +63,22 @@ public class LiveActivity extends AppCompatActivity {
     private static final long RECORD_INTERVAL_MS = 1000 / BoxRecorder.FRAME_RATE;
     private static final int RECORD_LONG_EDGE = 1280;
 
+    /**
+     * What the frame is scaled to before detection.
+     *
+     * The model works at 448 px, so handing it a 1080p frame only costs a bigger downscale
+     * inside MediaPipe. 640 keeps small subjects resolvable without paying for pixels the
+     * model throws away.
+     */
+    private static final int DETECT_LONG_EDGE = 640;
+
+    /**
+     * Floor on the gap between detections, so a fast tablet leaves the decoder some room.
+     * The real gap is the length of the last detection, which is longer than this on
+     * everything except a very quick device.
+     */
+    private static final long MIN_DETECT_GAP_MS = 40;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private TextureView video;
@@ -75,10 +91,48 @@ public class LiveActivity extends AppCompatActivity {
     private ExoPlayer player;
     private LiveAnalyser analyser;
     private BoxRecorder recorder;
+    private NativeDetector detector;
+    private final Tracker tracker = new Tracker();
 
     private List<Finding> findings = new ArrayList<>();
     private String lastError = "";
     private long framesDropped;
+    private long detectionsRun;
+    private long detectStartedAt;
+
+    /**
+     * The live loop: detect, track, draw, repeat as fast as this tablet manages.
+     *
+     * Rescheduled by the length of the last detection rather than on a fixed interval. A
+     * fixed one either wastes a fast device or queues up behind a slow one, and a queue it
+     * can never clear is how a live view stops being live.
+     */
+    private final Runnable detectTick = new Runnable() {
+        @Override
+        public void run() {
+            long gap = MIN_DETECT_GAP_MS;
+            if (detector != null) {
+                Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
+                if (frame != null) {
+                    try {
+                        overlay.setTracks(tracker.update(detector.detect(frame)));
+                        detectionsRun++;
+                    } catch (RuntimeException failure) {
+                        lastError = getString(R.string.detector_stopped,
+                                String.valueOf(failure.getMessage()));
+                        detector.close();
+                        detector = null;
+                    } finally {
+                        frame.recycle();
+                    }
+                    gap = Math.max(MIN_DETECT_GAP_MS, detector == null
+                            ? MIN_DETECT_GAP_MS : detector.lastInferenceMillis());
+                }
+                refreshStatus();
+            }
+            handler.postDelayed(this, gap);
+        }
+    };
 
     private final Runnable analysisTick = new Runnable() {
         @Override
@@ -133,6 +187,14 @@ public class LiveActivity extends AppCompatActivity {
             }
         });
 
+        // The detector that ships with the app. It runs on every frame it can manage and
+        // is what makes this screen live rather than a slideshow of provider answers.
+        StringBuilder failure = new StringBuilder();
+        detector = NativeDetector.open(this, failure);
+        if (detector == null) {
+            lastError = failure.toString();
+        }
+
         analyser = new LiveAnalyser(this, new LiveAnalyser.Listener() {
             @Override
             public void onReady() {
@@ -159,6 +221,12 @@ public class LiveActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         openStream();
+        tracker.reset();
+        detectionsRun = 0;
+        detectStartedAt = System.currentTimeMillis();
+        handler.post(detectTick);
+        // The provider still runs, on its slow interval, for what the on-device model
+        // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.
         handler.post(analysisTick);
     }
 
@@ -166,6 +234,7 @@ public class LiveActivity extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
         handler.removeCallbacks(analysisTick);
+        handler.removeCallbacks(detectTick);
         // The recording is deliberately not stopped here: a controller screen that blanks
         // for a moment must not silently end a recording that is still wanted. It is ended
         // by the button, or by the activity being destroyed.
@@ -185,6 +254,10 @@ public class LiveActivity extends AppCompatActivity {
         if (analyser != null) {
             analyser.destroy();
             analyser = null;
+        }
+        if (detector != null) {
+            detector.close();
+            detector = null;
         }
         super.onDestroy();
     }
@@ -378,6 +451,18 @@ public class LiveActivity extends AppCompatActivity {
             line.append("  ·  connecting to ").append(Settings.stream(this));
         }
 
+        // The live half: what is being tracked right now, and how many distinct people
+        // have gone past since the screen opened. Two different numbers, and confusing
+        // them is the classic mistake.
+        if (detector != null) {
+            float seconds = Math.max(1, System.currentTimeMillis() - detectStartedAt) / 1000f;
+            line.append("  ·  ").append(String.format(java.util.Locale.UK, "%.1f", detectionsRun / seconds))
+                    .append("/s, ").append(detector.lastInferenceMillis()).append(" ms");
+            line.append("  ·  ").append(getString(R.string.people_readout,
+                    tracker.countOf("person"), tracker.countSeen("person")));
+        }
+
+        // The slow half: a provider, for what the on-device model has no class for.
         if (!Settings.canAnalyse()) {
             line.append("  ·  ").append(getString(R.string.no_key_no_boxes));
         } else if (analyser != null && analyser.lastLatencyMillis() > 0) {
@@ -395,7 +480,7 @@ public class LiveActivity extends AppCompatActivity {
         }
 
         status.setText(line.toString());
-        overlay.setStatus(findings.isEmpty() ? "" : findings.size() + " marked");
+        overlay.setStatus(findings.isEmpty() ? "" : findings.size() + " marked by the provider");
     }
 
     /**

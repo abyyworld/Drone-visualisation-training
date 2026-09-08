@@ -22,6 +22,8 @@ public final class Finding {
     public final String label;
     public final String certainty;
     public final String note;
+    /** Set by the native detector, which has a calibrated score; unused by the API path. */
+    public float confidence;
     public final float x0;
     public final float y0;
     public final float x1;

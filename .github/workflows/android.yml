@@ -60,6 +60,17 @@ jobs:
       # Prints the resolved dependency graph before the build runs. The first real failure
       # was a duplicate Kotlin stdlib arriving transitively through AndroidX, and the only
       # way to see where a version comes from is to look at the tree.
+      # MediaPipe for Android lives only on Google's Maven, which is unreachable from the
+      # environment this was written in - so the version could not be checked there. If it
+      # is wrong, this prints the versions that do exist rather than leaving a resolution
+      # error with no way forward.
+      - name: Available MediaPipe versions
+        run: |
+          curl -sS --max-time 60 \
+            https://dl.google.com/dl/android/maven2/com/google/mediapipe/tasks-vision/maven-metadata.xml \
+            | tr '<' '\n' | grep -o '^version>.*' | sed 's/version>//' | tail -12 \
+            || echo "could not read the version list"
+
       - name: Resolved dependencies
         working-directory: android
         run: ./gradlew :app:dependencies --configuration debugRuntimeClasspath --no-daemon --console=plain < /dev/null || true
