@@ -60,14 +60,63 @@ public final class NativeDetector {
             "person", "bicycle", "car", "motorcycle", "bus", "truck", "boat", "train",
             "airplane"));
 
-    private final ObjectDetector detector;
+    /**
+     * How many real frames the GPU has to get right before it is trusted with the job.
+     *
+     * A frame where the CPU found nothing proves nothing either way, so only frames with
+     * something in them are counted.
+     */
+    private static final int PROBE_FRAMES = 8;
+
+    /** The GPU must find at least this share of what the CPU found, over the probe. */
+    private static final float PROBE_RECALL = 0.9f;
+
+    /** And be at least this much faster, or the risk buys nothing. */
+    private static final float PROBE_SPEEDUP = 1.3f;
+
+    private final ObjectDetector cpu;
+
+    /**
+     * The GPU detector, on trial.
+     *
+     * WHY IT IS ON TRIAL AND NOT SIMPLY USED
+     *     The GPU delegate is worth two to nine times the speed on this class of hardware,
+     *     which on a Snapdragon-660 controller is the difference between a third of a
+     *     second a frame and a tenth. It is also the delegate that, in this project's web
+     *     build, returned an *empty list* on a photograph of a person filling half the
+     *     frame - no error, no warning, nothing. An empty list is indistinguishable from a
+     *     frame with nobody in it, which is the one failure this application must never
+     *     have, and there is no way to detect it from a single result.
+     *
+     *     So it is not chosen by declaration. Both run side by side on the first few real
+     *     frames, and the GPU is adopted only if it finds what the CPU found and is
+     *     genuinely faster. If it does not, it is closed and never used again, and the
+     *     status line says which one is running.
+     */
+    @Nullable
+    private ObjectDetector gpu;
+
+    private boolean gpuAdopted;
+    private int probedFrames;
+    private int cpuFoundTotal;
+    private int gpuFoundTotal;
+    private long cpuNanosTotal;
+    private long gpuNanosTotal;
+
     private long lastTimestamp = -1;
     // Written by whichever thread runs detection, read by the main thread for the status
     // line. One word, one writer, so volatile is the whole of the synchronisation needed.
     private volatile long lastInferenceMs;
+    private volatile String delegateName = "CPU";
 
-    private NativeDetector(ObjectDetector detector) {
-        this.detector = detector;
+    private NativeDetector(ObjectDetector cpu, @Nullable ObjectDetector gpu) {
+        this.cpu = cpu;
+        this.gpu = gpu;
+    }
+
+    /** Which delegate is actually running, for the status line. */
+    public String delegate() {
+        return delegateName;
     }
 
     /**
@@ -77,27 +126,41 @@ public final class NativeDetector {
      */
     @Nullable
     public static NativeDetector open(Context context, StringBuilder failure) {
+        ObjectDetector processor;
         try {
-            BaseOptions base = BaseOptions.builder()
-                    .setModelAssetPath(MODEL_ASSET)
-                    .setDelegate(Delegate.CPU)
-                    .build();
-
-            ObjectDetector.ObjectDetectorOptions options =
-                    ObjectDetector.ObjectDetectorOptions.builder()
-                            .setBaseOptions(base)
-                            .setRunningMode(RunningMode.VIDEO)
-                            .setScoreThreshold(0.35f)
-                            .setMaxResults(60)
-                            .build();
-
-            return new NativeDetector(ObjectDetector.createFromOptions(context, options));
+            processor = build(context, Delegate.CPU);
         } catch (RuntimeException problem) {
             failure.append("The on-device detector could not start: ")
                     .append(problem.getMessage() == null
                             ? problem.getClass().getSimpleName() : problem.getMessage());
             return null;
         }
+
+        // Opened alongside, not instead. If it will not even load - which is common enough
+        // on older drivers - that is simply the end of it and the CPU carries on.
+        ObjectDetector accelerated = null;
+        try {
+            accelerated = build(context, Delegate.GPU);
+        } catch (RuntimeException | Error unavailable) {
+            accelerated = null;
+        }
+        return new NativeDetector(processor, accelerated);
+    }
+
+    private static ObjectDetector build(Context context, Delegate delegate) {
+        BaseOptions base = BaseOptions.builder()
+                .setModelAssetPath(MODEL_ASSET)
+                .setDelegate(delegate)
+                .build();
+
+        ObjectDetector.ObjectDetectorOptions options =
+                ObjectDetector.ObjectDetectorOptions.builder()
+                        .setBaseOptions(base)
+                        .setRunningMode(RunningMode.VIDEO)
+                        .setScoreThreshold(0.35f)
+                        .setMaxResults(60)
+                        .build();
+        return ObjectDetector.createFromOptions(context, options);
     }
 
     /** Milliseconds the last frame took, for the status line and for pacing. */
@@ -138,6 +201,84 @@ public final class NativeDetector {
         return findings;
     }
 
+    /**
+     * Run one frame, and while the GPU is on trial, run it on both and keep score.
+     *
+     * The trial costs a few frames of doing the work twice, at startup, once. What it buys
+     * is the difference between believing a delegate's claim and having watched it agree
+     * with a known-good answer on this device, on this stream, on real frames.
+     */
+    private ObjectDetectorResult run(MPImage image, long timestamp) {
+        if (gpuAdopted && gpu != null) {
+            return gpu.detectForVideo(image, timestamp);
+        }
+
+        long startedCpu = System.nanoTime();
+        ObjectDetectorResult fromCpu = cpu.detectForVideo(image, timestamp);
+        long cpuNanos = System.nanoTime() - startedCpu;
+
+        if (gpu == null) {
+            return fromCpu;
+        }
+
+        int found = fromCpu.detections().size();
+        if (found == 0) {
+            // Proves nothing either way. Both agreeing on an empty frame is exactly what a
+            // broken delegate looks like.
+            return fromCpu;
+        }
+
+        try {
+            long startedGpu = System.nanoTime();
+            // A timestamp of its own: this detector has its own video clock and rejects one
+            // that does not advance.
+            ObjectDetectorResult fromGpu = gpu.detectForVideo(image, timestamp);
+            gpuNanosTotal += System.nanoTime() - startedGpu;
+            gpuFoundTotal += fromGpu.detections().size();
+        } catch (RuntimeException | Error broken) {
+            closeGpu("GPU (failed)");
+            return fromCpu;
+        }
+
+        cpuNanosTotal += cpuNanos;
+        cpuFoundTotal += found;
+        probedFrames++;
+
+        if (probedFrames >= PROBE_FRAMES) {
+            decide();
+        }
+        return fromCpu;
+    }
+
+    /** The verdict on the GPU, taken once, on the evidence. */
+    private void decide() {
+        boolean findsThem = gpuFoundTotal >= cpuFoundTotal * PROBE_RECALL;
+        boolean faster = gpuNanosTotal > 0
+                && cpuNanosTotal >= gpuNanosTotal * PROBE_SPEEDUP;
+
+        if (findsThem && faster) {
+            gpuAdopted = true;
+            delegateName = "GPU";
+            return;
+        }
+        // Named so the status line can say why. A delegate that is fast and blind is the
+        // dangerous one, and it is worth being able to see that it was caught.
+        closeGpu(findsThem ? "CPU (GPU no faster)" : "CPU (GPU missed people)");
+    }
+
+    private void closeGpu(String reason) {
+        delegateName = reason;
+        if (gpu != null) {
+            try {
+                gpu.close();
+            } catch (RuntimeException | Error ignored) {
+                // Closing a delegate that has already fallen over is not worth reporting.
+            }
+            gpu = null;
+        }
+        gpuAdopted = false;
+    }
+
     /** One detector pass, with its boxes mapped back into the frame they came from. */
     private List<Finding> detectIn(Bitmap image1, float offsetX, float offsetY,
                                    float scaleX, float scaleY) {
@@ -148,7 +289,7 @@ public final class NativeDetector {
         lastTimestamp = timestamp;
 
         MPImage image = new BitmapImageBuilder(image1).build();
-        ObjectDetectorResult result = detector.detectForVideo(image, timestamp);
+        ObjectDetectorResult result = run(image, timestamp);
 
         List<Finding> findings = new ArrayList<>();
         for (Detection detection : result.detections()) {
@@ -190,6 +331,10 @@ public final class NativeDetector {
     }
 
     public void close() {
-        detector.close();
+        cpu.close();
+        if (gpu != null) {
+            gpu.close();
+            gpu = null;
+        }
     }
 }

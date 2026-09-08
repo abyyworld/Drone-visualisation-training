@@ -1268,7 +1268,11 @@ public class LiveActivity extends AppCompatActivity {
         if (current != null) {
             float seconds = Math.max(1, System.currentTimeMillis() - detectStartedAt) / 1000f;
             line.append("  ·  ").append(String.format(java.util.Locale.UK, "%.1f", detectionsRun / seconds))
-                    .append("/s, ").append(current.lastInferenceMillis()).append(" ms");
+                    .append("/s, ").append(current.lastInferenceMillis()).append(" ms")
+                    // Which delegate won the trial. Worth saying out loud: it is the single
+                    // biggest thing deciding that millisecond figure, and it is decided on
+                    // this device rather than declared here.
+                    .append(", ").append(current.delegate());
             // The counts come off the work thread with the boxes. The main thread never
             // asks the tracker anything, because the tracker is being written to over there.
             line.append("  ·  ").append(getString(R.string.people_readout,
