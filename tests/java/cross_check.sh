@@ -18,9 +18,13 @@ root="$(cd "$here/../.." && pwd)"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
+# Tiles is compiled alongside FireScan: both exist twice, once in Java for the drone's feed
+# and once in JavaScript for the browser, and both are compared below.
 javac -nowarn -d "$out" \
   "$here/android/graphics/Bitmap.java" \
+  "$here/stub/Finding.java" \
   "$root/android/app/src/main/java/world/abyy/droneinspection/FireScan.java" \
+  "$root/android/app/src/main/java/world/abyy/droneinspection/Tiles.java" \
   "$here/Cross.java"
 
 java -cp "$out" Cross > "$out/java.txt"

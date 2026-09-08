@@ -65,11 +65,34 @@ public class Cross {
       int wall = 190 + ((x + y) % 2);
       return new int[]{wall, wall + 1, wall - 1};
     });
+    tiles();
     run("still", 1, (x, y, f) -> {
       if (!inside(x, y, FIRE)) return ground(x, y);
       boolean burning = ((x * 3 + y * 5) % 10) > 2;
       return burning ? new int[]{255, 140, 30} : new int[]{120, 40, 10};
     });
+  }
+
+  /** The tile grid and the merge, printed so the JavaScript can be compared against it. */
+  static void tiles() throws Exception {
+    Class<?> cls = Class.forName("world.abyy.droneinspection.Tiles");
+    Method region = cls.getDeclaredMethod("region", int.class, int.class, int.class);
+    region.setAccessible(true);
+    Method overlap = cls.getDeclaredMethod("overlap", float[].class, float[].class);
+    overlap.setAccessible(true);
+
+    StringBuilder line = new StringBuilder("tiles:");
+    for (int i = 0; i < 6; i++) {
+      float[] r = (float[]) region.invoke(null, i, 1920, 1080);
+      line.append(String.format(Locale.UK, " [%.1f %.1f %.1f %.1f]", r[0], r[1], r[2], r[3]));
+    }
+    System.out.println(line);
+
+    float[] a = {100, 100, 140, 190};
+    float[] b = {104, 98, 144, 188};
+    float[] far = {400, 100, 440, 190};
+    System.out.println(String.format(Locale.UK, "overlap: %.4f %.4f",
+        (float) overlap.invoke(null, a, b), (float) overlap.invoke(null, a, far)));
   }
 
   static void run(String name, int frames, Painter p) throws Exception {

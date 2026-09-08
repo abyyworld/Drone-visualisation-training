@@ -99,7 +99,29 @@ async function init() {
  */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then(() => {
+    // The worker adds the two headers that put this page in a cross-origin isolated
+    // context, which is what lets the detector use more than one thread - see isolate() in
+    // sw.js. Headers only apply to responses the worker served, so the very first load of
+    // a new install is not isolated: it has to be reloaded once, and once only.
+    if (!self.crossOriginIsolated && navigator.serviceWorker.controller && !reloadedForThreads()) {
+      sessionStorage.setItem(RELOAD_KEY, '1');
+      window.location.reload();
+    }
+  }).catch(() => {});
+}
+
+const RELOAD_KEY = 'isolation-reload';
+
+/** Has this tab already reloaded itself once for isolation? Never do it twice. */
+function reloadedForThreads() {
+  try {
+    return sessionStorage.getItem(RELOAD_KEY) === '1';
+  } catch {
+    // Private browsing with storage denied. Not reloading is the safe answer: the page
+    // works single-threaded, where a reload loop would make it work not at all.
+    return true;
+  }
 }
 
 async function loadManifest() {

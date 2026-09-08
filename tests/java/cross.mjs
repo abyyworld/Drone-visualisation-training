@@ -25,5 +25,13 @@ run('nothing',20,(x,y,f)=>ground(x+f,y));
 run('office',24,(x,y,f)=>{ const shift=f*3;
   if(Math.abs(x-(30+shift))<26&&y>30) return [46,40,38];
   const w=190+((x+y)%2); return [w,w+1,w-1];});
+import { tileRegion, overlap } from '../../web/js/tiles.js';
+{
+  const parts=[]; for(let i=0;i<6;i++){const r=tileRegion(i,1920,1080);
+    parts.push(`[${r.x.toFixed(1)} ${r.y.toFixed(1)} ${r.width.toFixed(1)} ${r.height.toFixed(1)}]`);}
+  console.log('tiles: '+parts.join(' '));
+  const a=[100,100,140,190], b=[104,98,144,188], far=[400,100,440,190];
+  console.log(`overlap: ${overlap(a,b).toFixed(4)} ${overlap(a,far).toFixed(4)}`);
+}
 run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
   return ((x*3+y*5)%10)>2?[255,140,30]:[120,40,10];});

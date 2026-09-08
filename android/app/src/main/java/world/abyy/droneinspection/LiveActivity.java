@@ -169,6 +169,8 @@ public class LiveActivity extends AppCompatActivity {
     private volatile boolean scansForFire;
     /** Reused pixel buffer for the appearance signatures, so each frame is one allocation. */
     private int[] signatureScratch;
+    /** Which tile gets the close look this pass. Cycles; see Tiles. */
+    private int tileTurn;
     private volatile int peopleInView;
     private volatile int peopleSeen;
     private volatile long detectionsRun;
@@ -291,7 +293,12 @@ public class LiveActivity extends AppCompatActivity {
         NativeDetector current = detector;
         if (current != null) {
             try {
-                List<Finding> found = current.detect(frame);
+                // Tiled when there is something small to find: a crowd, or a fire front
+                // with people at it. A turbine or a panel fills the frame and gains
+                // nothing from a close look at a sixth of it. See Tiles.
+                List<Finding> found = scansForFire || "crowd".equals(Settings.domain(LiveActivity.this))
+                        ? current.detectTiled(frame, tileTurn++)
+                        : current.detect(frame);
                 // A colour signature per person, so someone who leaves the frame and comes
                 // back is recognised rather than counted a second time. See Reid.
                 signPeople(found, frame);

@@ -20,8 +20,33 @@
 
 import { FireScan } from './firescan.js';
 import { describe } from './reid.js';
+import { TILE_COUNT, merge, tileRegion, toFrame } from './tiles.js';
 
 const SIGNATURE_WIDTH = 320;
+
+/**
+ * TILING, AND WHY A CROWD NEEDS IT
+ *
+ * The detector's input is 448 pixels square. A 1920-wide frame is squeezed into that, so a
+ * person forty pixels tall in the original arrives nine pixels tall at the model. Nine
+ * pixels is below what any detector can find, which is why a crowd shot returns five people
+ * and not fifty: they are not being missed by a threshold, they are not being shown to the
+ * model at all.
+ *
+ * So the frame is also cut into a grid and each piece is detected on its own, at its own
+ * resolution. A sixth of a 1920-wide frame is 640 across, which the model squeezes by 1.4
+ * rather than 4.3, and that same person now arrives at twenty-eight pixels. Same model,
+ * same weights, three times the size on the thing being looked for.
+ *
+ * One tile per pass, cycling, rather than all six at once. Six detections in a row would be
+ * six times the latency, and the full-frame pass that runs every time is what keeps every
+ * track alive between them - the tiles only add the small distant people the full frame
+ * cannot resolve. Over a couple of seconds every part of the frame has been looked at
+ * closely, and the boxes never stop moving in the meantime.
+ */
+let tileIndex = 0;
+let tileCanvas = null;
+let tileContext = null;
 
 let detector = null;
 let fire = new FireScan();
@@ -30,7 +55,6 @@ let modelPath = '';
 let delegate = 'CPU';
 let scoreThreshold = 0.35;
 let lastInferenceMs = 0;
-let timestamp = 0;
 
 const KEEP = new Set([
   'person', 'bicycle', 'car', 'motorcycle', 'bus', 'truck', 'boat', 'train', 'airplane',
@@ -88,33 +112,34 @@ async function load() {
     baseOptions: { modelAssetPath: modelPath, delegate },
     scoreThreshold,
     maxResults: 60,
-    runningMode: 'VIDEO',
+    // IMAGE, not VIDEO. VIDEO mode carries state from one call to the next, which is
+    // exactly wrong when consecutive calls are different crops of the same frame: it would
+    // read a tile as the whole scene having jumped. IMAGE is stateless and needs no
+    // monotonic timestamp, which this loop cannot promise anyway.
+    runningMode: 'IMAGE',
   });
   return detector;
 }
 
-async function handleFrame({ bitmap, scanFire, wantSignatures }) {
+async function handleFrame({ bitmap, scanFire, wantSignatures, tiled }) {
   await load();
 
-  timestamp += 1;
   const started = performance.now();
-  const result = detector.detectForVideo(bitmap, timestamp);
-  lastInferenceMs = performance.now() - started;
 
-  const found = [];
-  for (const detection of result?.detections ?? []) {
-    const category = detection.categories?.[0];
-    if (!category) continue;
-    const label = String(category.categoryName ?? '').toLowerCase();
-    if (!KEEP.has(label)) continue;
-    const { originX, originY, width, height } = detection.boundingBox;
-    found.push({
-      label,
-      confidence: category.score,
-      classId: colourIndex(label),
-      box: [originX, originY, originX + width, originY + height],
-    });
+  // The whole frame every time: it is what keeps every track alive, and it finds anyone
+  // large enough to survive the downscale.
+  let found = collect(detector.detect(bitmap));
+
+  // Then one tile, at its own resolution, for the people the full frame cannot resolve.
+  if (tiled) {
+    const tile = nextTile(bitmap);
+    if (tile) {
+      const fromTile = collect(detector.detect(tile.bitmap))
+        .map((finding) => ({ ...finding, box: toFrame(finding.box, tile.region, tile.scaleX, tile.scaleY) }));
+      found = merge(found, fromTile);
+    }
   }
+  lastInferenceMs = performance.now() - started;
 
   const pixels = readPixels(bitmap, wantSignatures || scanFire);
   if (wantSignatures && pixels) attachSignatures(found, pixels, bitmap);
@@ -140,6 +165,57 @@ async function handleFrame({ bitmap, scanFire, wantSignatures }) {
     regions,
     inferenceMs: lastInferenceMs,
   });
+}
+
+/** Turn one detector result into findings, in whatever pixels it was given. */
+function collect(result) {
+  const found = [];
+  for (const detection of result?.detections ?? []) {
+    const category = detection.categories?.[0];
+    if (!category) continue;
+    const label = String(category.categoryName ?? '').toLowerCase();
+    if (!KEEP.has(label)) continue;
+    const { originX, originY, width, height } = detection.boundingBox;
+    found.push({
+      label,
+      confidence: category.score,
+      classId: colourIndex(label),
+      box: [originX, originY, originX + width, originY + height],
+    });
+  }
+  return found;
+}
+
+/**
+ * Crop the next tile in the cycle, at its own resolution.
+ *
+ * Round robin rather than all at once, so one pass costs one extra detection rather than
+ * six. Over a couple of seconds every part of the frame has had a close look, and the
+ * full-frame pass that runs every time keeps the tracks alive in between.
+ */
+function nextTile(bitmap) {
+  const region = tileRegion(tileIndex, bitmap.width, bitmap.height);
+  tileIndex = (tileIndex + 1) % TILE_COUNT;
+  if (region.width < 32 || region.height < 32) return null;
+
+  // Drawn at its own size rather than blown up: the model downscales to its own input
+  // whatever it is given, and handing it more pixels than the crop has adds nothing.
+  const drawWidth = Math.max(64, Math.round(region.width));
+  const drawHeight = Math.max(64, Math.round(region.height));
+  if (!tileCanvas || tileCanvas.width !== drawWidth || tileCanvas.height !== drawHeight) {
+    tileCanvas = new OffscreenCanvas(drawWidth, drawHeight);
+    tileContext = tileCanvas.getContext('2d', { willReadFrequently: false });
+  }
+  tileContext.drawImage(
+    bitmap, region.x, region.y, region.width, region.height, 0, 0, drawWidth, drawHeight,
+  );
+
+  return {
+    bitmap: tileCanvas,
+    region,
+    scaleX: region.width / drawWidth,
+    scaleY: region.height / drawHeight,
+  };
 }
 
 /** One small copy of the frame, shared by every signature in it. */

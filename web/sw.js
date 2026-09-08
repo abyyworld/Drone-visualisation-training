@@ -38,7 +38,7 @@
  *     deleted on activate, so a stale shell cannot outlive a release.
  */
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const SHELL_CACHE = `inspection-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `inspection-assets-${CACHE_VERSION}`;
 
@@ -63,6 +63,7 @@ const SHELL = [
   'js/firescan.js',
   'js/reid.js',
   'js/detect-worker.js',
+  'js/tiles.js',
   'js/heic.js',
   'prompts/inspection.json',
   'models/manifest.json',
@@ -105,11 +106,47 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (IMMUTABLE.test(url.pathname)) {
-    event.respondWith(cacheFirst(request, ASSET_CACHE));
+    event.respondWith(isolate(cacheFirst(request, ASSET_CACHE)));
     return;
   }
-  event.respondWith(networkFirst(request, SHELL_CACHE));
+  event.respondWith(isolate(networkFirst(request, SHELL_CACHE)));
 });
+
+/**
+ * Put the page in a cross-origin isolated context, which is what unlocks its speed.
+ *
+ * WHY THIS IS HERE AND NOT IN A SERVER CONFIG
+ *     MediaPipe's WebAssembly build is multi-threaded, and a browser will only give a page
+ *     threads - SharedArrayBuffer - when that page is cross-origin isolated. Isolation is
+ *     asserted by two HTTP response headers, and GitHub Pages serves static files with no
+ *     way to set headers. Without them the detector silently falls back to one thread, and
+ *     one thread is the difference between about 360 milliseconds a frame and about a
+ *     hundred. It is not a small tuning gain; it is most of the speed the model has.
+ *
+ *     A service worker sits between the page and the network and can add the headers to
+ *     responses it serves, which is the standard way around exactly this limitation. The
+ *     page checks `crossOriginIsolated` on load and reloads itself once if a worker is now
+ *     controlling it but isolation has not taken effect yet.
+ *
+ *     credentialless rather than require-corp: it does not demand that every cross-origin
+ *     resource opt in with a header of its own, which the CDN serving the runtime cannot be
+ *     asked to do. If a browser does not support it nothing breaks - the page is simply not
+ *     isolated, and runs on one thread as it does today.
+ */
+async function isolate(pending) {
+  const response = await pending;
+  if (!response || response.status === 0 || response.type === 'opaque') return response;
+
+  const headers = new Headers(response.headers);
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);

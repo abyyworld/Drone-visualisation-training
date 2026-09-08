@@ -111,15 +111,69 @@ public final class NativeDetector {
      * Boxes come back in pixels of the bitmap passed in.
      */
     public List<Finding> detect(Bitmap frame) {
+        long started = System.nanoTime();
+        List<Finding> findings = detectIn(frame, 0f, 0f, 1f, 1f);
+        lastInferenceMs = (System.nanoTime() - started) / 1_000_000;
+        return findings;
+    }
+
+    /**
+     * Detect in one frame, and in one tile of it, and merge the two.
+     *
+     * WHY A CROWD NEEDS THE TILE
+     *     The model's input is 448 pixels square, so a 1920-wide frame is squeezed by more
+     *     than four and a person forty pixels tall arrives at nine. Nine pixels is below
+     *     what any detector can find. That is why a crowd shot returns five people rather
+     *     than fifty: they are not being missed by a threshold, they are never shown to the
+     *     model at a size it can work with.
+     *
+     *     A sixth of the frame is 640 across and squeezes by 1.4, so the same person
+     *     arrives at twenty-eight pixels.
+     *
+     *     One tile a pass, cycling, rather than all six: six detections in a row is six
+     *     times the latency, and the full-frame pass that runs every time is what keeps the
+     *     tracks alive between close looks.
+     *
+     * @param tile which tile of the cycle to look at closely
+     */
+    public List<Finding> detectTiled(Bitmap frame, int tile) {
+        long started = System.nanoTime();
+        List<Finding> findings = detectIn(frame, 0f, 0f, 1f, 1f);
+
+        float[] region = Tiles.region(tile, frame.getWidth(), frame.getHeight());
+        int x = Math.max(0, Math.round(region[0]));
+        int y = Math.max(0, Math.round(region[1]));
+        int width = Math.min(frame.getWidth() - x, Math.round(region[2]));
+        int height = Math.min(frame.getHeight() - y, Math.round(region[3]));
+
+        if (width >= 32 && height >= 32) {
+            Bitmap crop = null;
+            try {
+                crop = Bitmap.createBitmap(frame, x, y, width, height);
+                findings = Tiles.merge(findings, detectIn(crop, x, y, 1f, 1f));
+            } catch (RuntimeException | OutOfMemoryError ignored) {
+                // The full-frame findings still stand; only the close look is lost.
+            } finally {
+                if (crop != null && crop != frame) {
+                    crop.recycle();
+                }
+            }
+        }
+        lastInferenceMs = (System.nanoTime() - started) / 1_000_000;
+        return findings;
+    }
+
+    /** One detector pass, with its boxes mapped back into the frame they came from. */
+    private List<Finding> detectIn(Bitmap image1, float offsetX, float offsetY,
+                                   float scaleX, float scaleY) {
         // MediaPipe rejects a timestamp that does not advance, and two calls can land in
-        // the same millisecond on a fast device.
+        // the same millisecond on a fast device. The tile pass is a second call in the same
+        // millisecond by construction, so this matters here rather than being belt braces.
         long timestamp = Math.max(lastTimestamp + 1, System.currentTimeMillis());
         lastTimestamp = timestamp;
 
-        long started = System.nanoTime();
-        MPImage image = new BitmapImageBuilder(frame).build();
+        MPImage image = new BitmapImageBuilder(image1).build();
         ObjectDetectorResult result = detector.detectForVideo(image, timestamp);
-        lastInferenceMs = (System.nanoTime() - started) / 1_000_000;
 
         List<Finding> findings = new ArrayList<>();
         for (Detection detection : result.detections()) {
@@ -138,7 +192,8 @@ public final class NativeDetector {
                     label,
                     certaintyOf(top.score()),
                     "",
-                    box.left, box.top, box.right, box.bottom));
+                    offsetX + box.left * scaleX, offsetY + box.top * scaleY,
+                    offsetX + box.right * scaleX, offsetY + box.bottom * scaleY));
             findings.get(findings.size() - 1).confidence = top.score();
         }
         return findings;

@@ -39,6 +39,13 @@ jobs:
       - name: Tracking
         run: node tests/test_track.mjs
 
+      # Cutting a frame into tiles and putting the findings back together. This is what
+      # turns five people in a crowd shot into fifty, and it is arithmetic, so it is
+      # testable: a tile mapped back wrong puts a box beside a person, and a merge that is
+      # too shy counts one person twice.
+      - name: Tiling
+        run: node tests/test_tiles.mjs
+
       # Flame and smoke, and more to the point the four things that are neither: a red
       # panel, a red vehicle driving past, a sunset and an overcast sky. Those are the
       # cases that decide whether the feature is usable or a nuisance.

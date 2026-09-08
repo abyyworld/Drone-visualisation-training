@@ -85,6 +85,9 @@ export class LiveView {
     this.worker = null;
     this.workerBusy = false;
     this.workerInference = 0;
+    // Off for a turbine or a panel, where the subject fills the frame and there is nothing
+    // small to find. On for a crowd or a fire, where there is.
+    this.tiled = true;
     this.detections = 0;
     this.startedAt = 0;
     this.recorder = null;
@@ -107,6 +110,7 @@ export class LiveView {
    */
   setSubject(subject) {
     this.subject = subject;
+    this.tiled = subject === 'crowd' || subject === 'wildfire';
     this.fire.reset();
     this.fireRegions = [];
     this.worker?.postMessage({ type: 'reset' });
@@ -343,6 +347,9 @@ export class LiveView {
           bitmap,
           scanFire: this.scansForFire(),
           wantSignatures: true,
+          // Tiling is what finds the people who are only a few pixels tall, which is most
+          // of a crowd from any altitude. It costs one extra detection per pass.
+          tiled: this.tiled,
         }, [bitmap]);
       } catch {
         this.workerBusy = false;
