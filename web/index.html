@@ -68,6 +68,7 @@
     </div>
 
     <p id="live-count-readout" class="live__count" hidden></p>
+    <p id="live-fire" class="live__fire" role="status" hidden></p>
 
     <div id="live-stage" class="live__stage" hidden>
       <video id="live-video" class="live__video" playsinline muted></video>
@@ -77,7 +78,8 @@
     <p id="live-status" class="live__status" role="status"></p>
     <p class="field__hint">
       The drone's own feed arrives over RTSP, which no browser can open. That is what the
-      Android app's camera screen is for; this is the tablet's or laptop's own camera.
+      Android app's camera screen is for, and it runs the same two engines on the drone's
+      picture frame by frame; this is the tablet's or laptop's own camera.
     </p>
   </section>
 
@@ -85,12 +87,14 @@
     <div class="engine__head">
       <h2 class="engine__title">Analysis engine</h2>
       <p class="engine__blurb">
-        <strong>People &amp; vehicles</strong> runs on this device: free, offline, fast enough
-        to follow a video and give each person a number that stays with them. It finds people,
-        cars and trucks, and cannot find fire, smoke or blade damage - those are not classes it
-        was trained on. A <strong>provider API</strong> has no fixed class list and will describe
-        damage no detector was taught, but it costs money per image, sends each one to that
-        provider, and takes seconds - so it cannot track anything.
+        <strong>On device</strong> is free, offline and fast enough to follow a video and give
+        each person a number that stays with them. It runs two engines together: a trained
+        detector for people and vehicles, and a flame and smoke scanner that works from colour
+        and from how a region behaves over time rather than from a model, so what it marks is a
+        candidate to look at rather than a verdict. Blade cracks, corrosion and panel soiling
+        are outside both. A <strong>provider API</strong> has no fixed class list and will
+        describe damage no detector was taught, but it costs money per image, sends each one to
+        that provider, and takes seconds - so it cannot track anything.
       </p>
     </div>
 
@@ -98,7 +102,7 @@
       <div class="field">
         <label for="engine-provider">Engine</label>
         <select id="engine-provider">
-          <option value="ondevice">On-device: people &amp; vehicles (free, offline)</option>
+          <option value="ondevice">On-device: people, vehicles, flame &amp; smoke (free, offline)</option>
           <option value="local">On-device: trained defect models</option>
           <option value="anthropic">Anthropic Claude</option>
           <option value="gemini">Google Gemini</option>

@@ -17,6 +17,7 @@ import { extractFrames, VIDEO_DEFAULTS } from './video.js';
 import { classify as classifyFile, ACCEPT_ATTRIBUTE } from './formats.js';
 import { zip } from './zip.js';
 import { detectOnDevice, configureOnDevice, handles as onDeviceHandles } from './ondevice.js';
+import { FireScan } from './firescan.js';
 import { Tracker } from './track.js';
 import { LiveView } from './live.js';
 import { configureHeic } from './heic.js';
@@ -48,6 +49,7 @@ const state = {
   // One tracker per batch of video frames. Photographs are unrelated to each other, so it
   // is reset before every batch and only consulted for frames.
   tracker: new Tracker(),
+  fire: new FireScan(),
 };
 
 const el = {};
@@ -64,6 +66,7 @@ async function init() {
     'drop-blocked', 'engine-key-link',
     'live-start', 'live-stop', 'live-record', 'live-camera', 'live-stage', 'live-video',
     'live-overlay', 'live-status', 'live-count', 'live-trails', 'live-count-readout',
+    'live-fire',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -290,7 +293,31 @@ function renderLiveStatus(message, stats) {
   if (stats.recording) parts.push('RECORDING');
   el['live-status'].textContent = parts.join('  ·  ');
 
+  renderFireBanner(stats);
+
   if (!el['live-count-readout'].hidden) renderPeopleCount(stats);
+}
+
+/**
+ * The flame and smoke line.
+ *
+ * Present only while there is something to say. It counts regions, not fires: one fire seen
+ * as two regions is two boxes and one fire, and the scanner has no way to tell those apart,
+ * so it does not claim to. The wording is "candidate" throughout, because that is what a
+ * colour and motion rule can honestly produce - the operator, or a provider model pointed
+ * at the frame, decides what it is.
+ */
+function renderFireBanner(stats) {
+  const banner = el['live-fire'];
+  if (!banner) return;
+
+  const said = [];
+  if (stats.flame) said.push(`${stats.flame} flame region${stats.flame === 1 ? '' : 's'}`);
+  if (stats.smoke) said.push(`${stats.smoke} smoke region${stats.smoke === 1 ? '' : 's'}`);
+
+  banner.hidden = said.length === 0;
+  if (!said.length) return;
+  banner.textContent = `${said.join(' and ')} marked. Candidates from colour and motion. Look before acting.`;
 }
 
 /**
@@ -562,6 +589,46 @@ async function countPeople(image, existing) {
 }
 
 /**
+ * Look for flame and smoke in one image.
+ *
+ * Sequential frames share one scanner, so a clip gets the time evidence the method depends
+ * on; a photograph on its own does not, and comes back with a capped confidence saying so.
+ * Never allowed to throw: a failure here loses the fire regions, and losing the people and
+ * vehicles as well because of it would be the worse outcome.
+ */
+function scanForFire(image, sequential) {
+  if (!sequential) state.fire.reset();
+  try {
+    return state.fire.scan(image, image.width, image.height).map((region) => ({
+      label: region.label,
+      classId: region.classId,
+      confidence: Number(region.confidence.toFixed(3)),
+      box: region.box.map((v) => Math.round(v)),
+      note: fireNote(region),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** What the scanner actually saw, in a sentence, so the box can be argued with. */
+function fireNote(region) {
+  if (!region.temporal) {
+    return `${region.label} colour in a single frame. With one frame there is no motion to `
+      + 'measure, which is the evidence that separates fire from anything else this colour, '
+      + 'so this is a region to look at rather than a reading. Confirm it before acting.';
+  }
+  if (region.label === 'smoke') {
+    return 'A desaturated region drifting across the detail behind it, which it is veiling '
+      + `(${Math.round(region.evidence.edgeDrop * 100)}% of the texture that was there). `
+      + 'Confirm it before acting.';
+  }
+  return 'Flame colour that changes on '
+    + `${Math.round(region.evidence.flicker * 100)}% of frames rather than holding still, `
+    + 'which is what separates it from something merely this colour. Confirm it before acting.';
+}
+
+/**
  * Analyse one image with the detector that ships with the app.
  *
  * No gate is consulted. The gate exists to stop a defect detector emitting confident boxes
@@ -590,6 +657,12 @@ async function analyseOnDevice(image, base) {
         : `#${t.id}, seen in ${t.seen} frame${t.seen === 1 ? '' : 's'}`,
     }));
   }
+
+  // Flame and smoke, computed rather than detected - see firescan.js. Appended after the
+  // tracker rather than through it: a fire has no identity to follow. It is not one thing
+  // moving through the shot, it is a region that grows, splits and dies, and giving it a
+  // number would say something about it that is not true.
+  for (const region of scanForFire(image, base.track)) detections.push(region);
 
   const requested = el['domain-override'].value;
   const domain = onDeviceHandles(requested) && requested !== 'auto' ? requested : 'crowd';
@@ -787,6 +860,10 @@ async function handleFiles(files) {
   // as unrelated photographs. That is what turns a box per frame into a thing with an
   // identity that can be counted once and followed.
   state.tracker.reset();
+  // The flame scanner keeps its own window of frames, and it measures how a region changes
+  // over that window. Carrying one clip's window into the next would have it comparing a
+  // frame against something filmed somewhere else.
+  state.fire.reset();
 
   for (const [index, item] of work.entries()) {
     setProgress(

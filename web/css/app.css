@@ -489,6 +489,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Flame and smoke, when there is any. Loud enough to catch an eye that is on the video
+   rather than on the text, and worded as a candidate rather than a finding, because that is
+   what colour and motion can honestly produce. */
+.live__fire {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border-left: 4px solid #ff5a1f;
+  background: rgba(255, 90, 31, 0.12);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .live__count .live__caveat {
   display: block;
   margin-top: 4px;

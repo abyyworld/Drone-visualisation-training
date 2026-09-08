@@ -140,10 +140,21 @@
       "truck": 3.0,
       "boat": 2.0,
       "train": 3.0,
-      "airplane": 3.0
+      "airplane": 3.0,
+      "flame": 9.0,
+      "smoke": 7.0
     },
-    "displayName": "People and vehicles",
-    "notes": "COCO classes only. It finds people and vehicles; it cannot find fire, smoke, cracks, corrosion or soiling, because those are not classes it was trained on.",
-    "zeroDetectionNote": "Nothing was marked in this frame. This detector looks only for people and vehicles - fire, smoke and damage are outside what it knows - and a person a few pixels across, which is what a person is from altitude, is the case it misses first. An empty result describes what it looked for in one frame, and nothing beyond that."
+    "displayName": "People, vehicles, flame and smoke",
+    "notes": "Two engines, side by side. A COCO detector finds people and vehicles. Flame and smoke are computed from colour and from how the region behaves over time rather than from a trained model, so they are candidate regions for an operator to confirm, not a verdict. Cracks, corrosion and soiling are outside both engines and still need a provider model.",
+    "zeroDetectionNote": "Nothing was marked in this frame. This engine looks for people, vehicles, flame colour and smoke; damage to a structure is outside what it knows. A person a few pixels across, which is what a person is from altitude, is the case it misses first, and a fire too small or too far to hold a region will not be marked either. Treat an empty frame as a frame that needs a look, not as a reading about the scene.",
+    "firescan": {
+      "method": "colour rules with temporal confirmation",
+      "labels": [
+        "flame",
+        "smoke"
+      ],
+      "stillConfidenceCap": 0.6,
+      "notes": "Flame is flame colour that changes on most frames rather than holding still, which is what separates a fire from a red vehicle or a sunset. Smoke is a desaturated region that drifts and veils the texture behind it. A single photograph carries no motion, so a still is capped below the confidence a stream can earn."
+    }
   }
 }

@@ -28,6 +28,7 @@
 
 import { detectFrame, warmUp, inferenceMillis } from './ondevice.js';
 import { Tracker } from './track.js';
+import { FireScan } from './firescan.js';
 import { colorFor } from './render.js';
 
 const PALETTE_ALPHA_COASTED = 0.45;
@@ -47,6 +48,11 @@ export class LiveView {
     this.canvas = canvas;
     this.onStatus = onStatus;
     this.tracker = new Tracker();
+    // Flame and smoke run beside the detector on the same frames. They cost about a
+    // millisecond, because they work on a 160-wide copy, so this is not a trade against
+    // detection rate - see firescan.js.
+    this.fire = new FireScan();
+    this.fireRegions = [];
     this.stream = null;
     this.running = false;
     this.detecting = false;
@@ -104,6 +110,8 @@ export class LiveView {
     await this.video.play();
 
     this.tracker.reset();
+    this.fire.reset();
+    this.fireRegions = [];
     this.detections = 0;
     this.startedAt = performance.now();
     this.running = true;
@@ -176,6 +184,17 @@ export class LiveView {
         this.onStatus(`Detection stopped: ${error.message}`);
         return;
       }
+
+      // Deliberately outside that try. If the model fails the run is over; if the flame
+      // scan fails it is one frame of one of two engines, and taking the whole live view
+      // down over it would be the wrong trade.
+      try {
+        this.fireRegions = this.fire.scan(
+          this.video, this.video.videoWidth, this.video.videoHeight,
+        );
+      } catch {
+        this.fireRegions = [];
+      }
     }
 
     const took = performance.now() - started;
@@ -193,6 +212,8 @@ export class LiveView {
     ctx.lineWidth = lineWidth;
     ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
+
+    this.drawFire(ctx, lineWidth, fontSize);
 
     for (const track of this.tracker.open()) {
       const colour = colorFor(track.classId ?? 0);
@@ -229,6 +250,40 @@ export class LiveView {
     }
   }
 
+  /**
+   * Flame and smoke regions, drawn underneath the tracked boxes and drawn differently.
+   *
+   * A dashed outline with no identity number, because these are not things being followed -
+   * they are areas that look and behave like burning. Drawn first so a person standing in
+   * front of a fire still gets a solid box over the top of it.
+   */
+  drawFire(ctx, lineWidth, fontSize) {
+    for (const region of this.fireRegions) {
+      const colour = region.label === 'smoke' ? '#9aa3ad' : '#ff5a1f';
+      const [x0, y0, x1, y1] = region.box;
+
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = colour;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = colour;
+      ctx.setLineDash([lineWidth * 4, lineWidth * 2]);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.setLineDash([]);
+
+      const label = `${region.label} ${Math.round(region.confidence * 100)}%`;
+      const padding = lineWidth * 2;
+      const width = ctx.measureText(label).width;
+      const top = Math.min(this.canvas.height - fontSize - padding * 2, y1 + padding);
+      ctx.fillStyle = colour;
+      ctx.fillRect(x0, top, width + padding * 2, fontSize + padding * 2);
+      ctx.fillStyle = '#000000';
+      ctx.fillText(label, x0 + padding, top + padding);
+      ctx.restore();
+    }
+  }
+
   report() {
     const seconds = (performance.now() - this.startedAt) / 1000;
     const open = this.tracker.open();
@@ -245,6 +300,10 @@ export class LiveView {
       people: counts.get('person') ?? 0,
       peopleTotal: this.tracker.countSeen('person'),
       seenTotal: this.tracker.nextId - 1,
+      // Regions rather than a count. Two boxes on one fire is two regions and one fire, and
+      // reporting it as "2 fires" would be inventing a number the method cannot support.
+      flame: this.fireRegions.filter((r) => r.label === 'flame').length,
+      smoke: this.fireRegions.filter((r) => r.label === 'smoke').length,
       recording: Boolean(this.recorder),
     });
   }

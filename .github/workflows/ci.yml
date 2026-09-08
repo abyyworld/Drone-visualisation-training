@@ -39,6 +39,12 @@ jobs:
       - name: Tracking
         run: node tests/test_track.mjs
 
+      # Flame and smoke, and more to the point the four things that are neither: a red
+      # panel, a red vehicle driving past, a sunset and an overcast sky. Those are the
+      # cases that decide whether the feature is usable or a nuisance.
+      - name: Flame and smoke
+        run: node tests/test_firescan.mjs
+
       - name: Run browser tests
         run: node tests/test_web.mjs
 
