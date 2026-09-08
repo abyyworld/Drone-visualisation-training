@@ -339,7 +339,7 @@ public class LiveActivity extends AppCompatActivity {
             List<Finding> merged = whole;
             if (current != null) {
                 try {
-                    merged = Tiles.merge(whole, current.detectRegion(tile, region));
+                    merged = Tiles.merge(whole, current.detectRegion(tile, inFrame(region, frame)));
                 } catch (RuntimeException ignored) {
                     // The whole-frame findings still stand; only the close look is lost.
                 }
@@ -351,6 +351,25 @@ public class LiveActivity extends AppCompatActivity {
             frame.recycle();
             detectBusy = false;
         }
+    }
+
+    /**
+     * The region rectangle, moved out of the video's pixels and into the analysed frame's.
+     *
+     * These are two different sizes and it matters. Tiles.region works in the video's own
+     * pixels, because that is what it is dividing up, while the whole-frame pass reads back
+     * at DETECT_LONG_EDGE and its findings are in that smaller picture's pixels. The two
+     * lists are then merged and drawn against the analysed frame.
+     *
+     * Handing the region across unconverted put every close look three times too far out,
+     * so it fell outside the frame and was dropped - which meant the tiling pass, the whole
+     * point of which is the person too small to see in the wide shot, silently contributed
+     * nothing at all. That is the distant person this application exists to catch.
+     */
+    private float[] inFrame(float[] region, Bitmap frame) {
+        float toX = frame.getWidth() / (float) Math.max(1, videoPixelWidth);
+        float toY = frame.getHeight() / (float) Math.max(1, videoPixelHeight);
+        return new float[]{region[0] * toX, region[1] * toY, region[2] * toX, region[3] * toY};
     }
 
     private List<Finding> safeDetect(NativeDetector current, Bitmap frame) {

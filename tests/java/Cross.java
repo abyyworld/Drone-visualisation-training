@@ -1,4 +1,5 @@
 import android.graphics.Bitmap;
+import world.abyy.droneinspection.Yolo;
 import java.lang.reflect.*;
 import java.util.*;
 
@@ -71,6 +72,7 @@ public class Cross {
       boolean burning = ((x * 3 + y * 5) % 10) > 2;
       return burning ? new int[]{255, 140, 30} : new int[]{120, 40, 10};
     });
+    yolo();
   }
 
   /** The tile grid and the merge, printed so the JavaScript can be compared against it. */
@@ -93,6 +95,55 @@ public class Cross {
     float[] far = {400, 100, 440, 190};
     System.out.println(String.format(Locale.UK, "overlap: %.4f %.4f",
         (float) overlap.invoke(null, a, b), (float) overlap.invoke(null, a, far)));
+  }
+
+  /**
+   * The YOLO decode, against the same numbers web/js/yolo.js is given.
+   *
+   * The head is built from arithmetic rather than read from a file so that both languages
+   * can produce the identical array without one shipping the other anything. The mixing is
+   * written to wrap the same way in both: JavaScript's >>> converts to a 32-bit unsigned
+   * first, which is what a Java int already does.
+   */
+  static void yolo() throws Exception {
+    final int CHANNELS = 15, ANCHORS = 2100;
+    float[] head = new float[CHANNELS * ANCHORS];
+    for (int i = 0; i < head.length; i++) head[i] = value(i);
+
+    System.out.println("yolo-all: " + said(Yolo.decodeHead(
+        head, CHANNELS, ANCHORS, 0.25, 0.45, null)));
+    System.out.println("yolo-people: " + said(Yolo.decodeHead(
+        head, CHANNELS, ANCHORS, 0.25, 0.45, Yolo.classes(0, 1))));
+
+    float[] perAnchor = new float[CHANNELS * ANCHORS];
+    for (int i = 0; i < perAnchor.length; i++) perAnchor[i] = value(i * 7 + 3);
+    System.out.println("yolo-transposed: " + said(Yolo.decodeHead(
+        Yolo.toChannelMajor(perAnchor, ANCHORS, CHANNELS),
+        CHANNELS, ANCHORS, 0.25, 0.45, Yolo.classes(0, 1))));
+
+    double[] a = {100, 100, 140, 190}, b = {104, 98, 144, 188}, far = {400, 100, 440, 190};
+    System.out.println(String.format(Locale.UK, "yolo-iou: %.6f %.6f %.6f",
+        Yolo.iou(a, b), Yolo.iou(a, far), Yolo.iou(a, a)));
+
+    double[] back = Yolo.unletterbox(new double[]{12, 30, 300, 290}, 0.3333, 0, 46.5, 1920, 1080);
+    System.out.println(String.format(Locale.UK, "yolo-unletterbox: %.6f %.6f %.6f %.6f",
+        back[0], back[1], back[2], back[3]));
+  }
+
+  static float value(int i) {
+    return (float) (((i * 1103515245 + 12345) >>> 8 & 0xffff) / 65535.0);
+  }
+
+  /** The count, then the first six, which is enough to catch an ordering change. */
+  static String said(List<Yolo.Detection> found) {
+    StringBuilder out = new StringBuilder().append(found.size()).append(' ');
+    for (int i = 0; i < Math.min(6, found.size()); i++) {
+      Yolo.Detection d = found.get(i);
+      if (i > 0) out.append(" | ");
+      out.append(String.format(Locale.UK, "%d:%.6f[%.6f %.6f %.6f %.6f]",
+          d.classId, d.confidence, d.box[0], d.box[1], d.box[2], d.box[3]));
+    }
+    return out.toString();
   }
 
   static void run(String name, int frames, Painter p) throws Exception {

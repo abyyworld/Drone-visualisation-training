@@ -35,3 +35,45 @@ import { tileRegion, overlap } from '../../web/js/tiles.js';
 }
 run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
   return ((x*3+y*5)%10)>2?[255,140,30]:[120,40,10];});
+
+// The YOLO decode, which exists twice for the same reason the flame scanner does. This
+// half is the reference; Yolo.java is compared against it below.
+{
+  const { decodeHead, iou, unletterbox } = await import('../../web/js/yolo.js');
+
+  // A head made of arithmetic rather than of random numbers, so both languages can build
+  // the identical array without one having to ship the other a file.
+  const CHANNELS = 15, ANCHORS = 2100;
+  const value = (i) => Math.fround((((i * 1103515245 + 12345) >>> 8) & 0xffff) / 65535);
+  const head = new Float32Array(CHANNELS * ANCHORS);
+  for (let i = 0; i < head.length; i += 1) head[i] = value(i);
+
+  const say = (d) => `${d.classId}:${d.confidence.toFixed(6)}`
+    + `[${d.box.map((v) => v.toFixed(6)).join(' ')}]`;
+
+  const all = decodeHead(head, CHANNELS, ANCHORS, { confThreshold: 0.25, iouThreshold: 0.45 });
+  console.log(`yolo-all: ${all.length} ${all.slice(0, 6).map(say).join(' | ')}`);
+
+  const people = decodeHead(head, CHANNELS, ANCHORS,
+    { confThreshold: 0.25, iouThreshold: 0.45, keepClasses: [0, 1] });
+  console.log(`yolo-people: ${people.length} ${people.slice(0, 6).map(say).join(' | ')}`);
+
+  // The transposed layout. The TFLite converter emits [1, anchors, 4+nc] where ONNX gives
+  // [1, 4+nc, anchors], so the Java rearranges before decoding; this is the same
+  // rearrangement written the obvious way, which is what it has to agree with.
+  const perAnchor = new Float32Array(CHANNELS * ANCHORS);
+  for (let i = 0; i < perAnchor.length; i += 1) perAnchor[i] = value(i * 7 + 3);
+  const majored = new Float32Array(CHANNELS * ANCHORS);
+  for (let a = 0; a < ANCHORS; a += 1) {
+    for (let c = 0; c < CHANNELS; c += 1) majored[c * ANCHORS + a] = perAnchor[a * CHANNELS + c];
+  }
+  const transposed = decodeHead(majored, CHANNELS, ANCHORS,
+    { confThreshold: 0.25, iouThreshold: 0.45, keepClasses: [0, 1] });
+  console.log(`yolo-transposed: ${transposed.length} ${transposed.slice(0, 6).map(say).join(' | ')}`);
+
+  const a = [100, 100, 140, 190], b = [104, 98, 144, 188], far = [400, 100, 440, 190];
+  console.log(`yolo-iou: ${iou(a, b).toFixed(6)} ${iou(a, far).toFixed(6)} ${iou(a, a).toFixed(6)}`);
+  console.log('yolo-unletterbox: '
+    + unletterbox([12, 30, 300, 290], 0.3333, 0, 46.5, 1920, 1080)
+      .map((v) => v.toFixed(6)).join(' '));
+}

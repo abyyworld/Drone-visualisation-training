@@ -18,13 +18,16 @@ root="$(cd "$here/../.." && pwd)"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
-# Tiles is compiled alongside FireScan: both exist twice, once in Java for the drone's feed
-# and once in JavaScript for the browser, and both are compared below.
+# Tiles and Yolo are compiled alongside FireScan. All three exist twice, once in Java for
+# the drone's feed and once in JavaScript for the browser, and all three are compared
+# below. Yolo is the box decode, where a mistake does not raise an error: it draws boxes
+# beside people, or finds nobody at all and looks exactly like an empty frame.
 javac -nowarn -d "$out" \
   "$here/android/graphics/Bitmap.java" \
   "$here/stub/Finding.java" \
   "$root/android/app/src/main/java/world/abyy/droneinspection/FireScan.java" \
   "$root/android/app/src/main/java/world/abyy/droneinspection/Tiles.java" \
+  "$root/android/app/src/main/java/world/abyy/droneinspection/Yolo.java" \
   "$here/Cross.java"
 
 java -cp "$out" Cross > "$out/java.txt"

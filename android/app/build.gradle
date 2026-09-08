@@ -17,9 +17,14 @@ plugins {
 // Versions used further down. Declared here because a Groovy build script runs top to
 // bottom: a def below the dependencies block that uses it is simply not in scope yet.
 def media3Version = '1.5.1'
-// MediaPipe Tasks Vision for Android: the same detector the web app runs, native, so the
-// drone's RTSP feed is tracked on every frame instead of sampled through an API.
-def mediapipeVersion = '0.10.14'
+// LiteRT, the TensorFlow Lite runtime, driven directly rather than through a wrapper.
+//
+// MediaPipe Tasks Vision was here and could not stay. Its ObjectDetector only accepts a
+// model with the box decoding built into the graph, and the aerial people model this app
+// now runs is a YOLO head: raw numbers that have to be decoded afterwards. It also exposes
+// only CPU and GPU, so the Hexagon DSP - the one part of this tablet's chip built for an
+// int8 model - was unreachable. The interpreter reaches it through NNAPI.
+def litertVersion = '2.16.1'
 def kotlinVersion = '1.9.25'
 
 // The web app is the source of truth; this module never edits it in place.
@@ -108,7 +113,9 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer:$media3Version"
     implementation "androidx.media3:media3-exoplayer-rtsp:$media3Version"
 
-    implementation "com.google.mediapipe:tasks-vision:$mediapipeVersion"
+    // The detector. The GPU artifact carries the GPU delegate; NNAPI's is in the core one.
+    implementation "org.tensorflow:tensorflow-lite:$litertVersion"
+    implementation "org.tensorflow:tensorflow-lite-gpu:$litertVersion"
 }
 
 /*
