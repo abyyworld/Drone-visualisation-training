@@ -1,11 +1,11 @@
 {
   "$comment": [
     "Source of truth for the models the web app loads. Editing this file is how you deploy a",
-    "retrained model \u2014 no JavaScript changes needed. Drop the .onnx next to this file, update",
+    "retrained model - no JavaScript changes needed. Drop the .onnx next to this file, update",
     "`file`, `labels` and `imgsz` to match what you exported, and the app picks it up.",
     "",
     "A model whose `file` is missing or fails to load is reported in the UI as unavailable;",
-    "the app stays usable for whatever else did load. Keep every file well under ~15 MB \u2014 it",
+    "the app stays usable for whatever else did load. Keep every file well under ~15 MB - it",
     "downloads to the visitor's browser. Export with `python3 tools/export_onnx.py`, which",
     "int8-quantises by default.",
     "",
@@ -66,13 +66,30 @@
     "zeroDetectionNote": "Found none of the visible-light defect classes. RGB cannot show hotspots, cell defects, bypass-diode failure or offline modules; those need thermal infrared."
   },
   "crowd": {
-    "file": "crowd.onnx",
+    "file": "person-320.onnx",
     "task": "detect",
-    "imgsz": 960,
-    "labels": [],
+    "imgsz": 320,
+    "labels": [
+      "person",
+      "person",
+      "bicycle",
+      "car",
+      "van",
+      "truck",
+      "tricycle",
+      "awning-tricycle",
+      "bus",
+      "motor",
+      "others"
+    ],
+    "keepClasses": [
+      0,
+      1
+    ],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
     "severityWeights": {
+      "person": 0.0,
       "person_down": 5.0,
       "blocked_exit": 4.0,
       "crush_risk": 4.0,
@@ -86,8 +103,8 @@
       "moderate_density": 1.0
     },
     "displayName": "Crowd",
-    "notes": "Regions under pressure, not individual people. At event density a person is a few pixels wide and overlaps their neighbours, so no model can box them one by one, and a number would read as a count this image cannot support.",
-    "zeroDetectionNote": "None of the pressure patterns above were found in this frame. That is a null result about this frame only: it is not a finding that the crowd is safe, and conditions change faster than any single image."
+    "notes": "Trained on aerial imagery, so a figure a few pixels tall seen from above is what it was built for rather than what it struggles with. It also knows vehicles, and they are dropped before overlapping boxes are resolved, so a van standing beside someone can never suppress the person. Read the tally, not the band: people carry no severity, and the band scores only the pressure patterns the provider engine describes. The tally is of the boxes in this frame, which is not the same as everyone present: anyone hidden behind someone else is one box, and a figure smaller than a few pixels is not marked at all.",
+    "zeroDetectionNote": "No figure in this frame passed the threshold. That is a null result about one frame at one moment, not a reading about the place: at altitude a person can be too few pixels across to mark, and someone under a tree, a canopy or a vehicle cannot be seen from above at all."
   },
   "wildfire": {
     "file": "wildfire.onnx",

@@ -609,8 +609,9 @@ async function refreshModels() {
  *     place this number is shown says so.
  */
 async function countPeople(image, existing) {
-  // The on-device engine has already looked; counting its own findings again would be a
-  // second inference for an answer already on the table.
+  // A detector that reports people has already looked, so counting its findings again
+  // would be a second inference for an answer already on the table. An empty array is
+  // still an answer, which is why this tests for the argument rather than its length.
   if (existing) return existing.filter((d) => d.label === 'person').length;
 
   try {
@@ -992,7 +993,17 @@ async function analyseImage(image, base) {
       domain: domain.key, displayName: spec.displayName ?? domain.key,
       notes: spec.notes, zeroDetectionNote: spec.zeroDetectionNote,
       gate: domain.gate, detections, score, severity,
-      people: await countPeople(image),
+      // Only a model that reports people is allowed to answer for them. When it does,
+      // asking the on-device detector as well would be a second inference for an answer
+      // already on the table, and two detectors could disagree about the same frame.
+      // When it does not - a defect model on a turbine has no idea what a person is -
+      // the count still has to come from somewhere, because someone standing at the base
+      // of a turbine is the most important thing in that frame and has nothing to do with
+      // which engine was chosen for the defects.
+      people: await countPeople(
+        image,
+        spec.labels?.includes('person') ? detections : null,
+      ),
     };
   } catch (error) {
     return { ...base, image, status: 'error', message: error.message };

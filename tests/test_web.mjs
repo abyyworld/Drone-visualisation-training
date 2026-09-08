@@ -117,12 +117,21 @@ async function buildSite() {
     severityWeights: { corrosion: 2.0, crack: 3.0, surface_peeling: 1.5 },
   };
 
-  // Same reasoning for crowd: its shipped labels are empty until a model exists, and the
-  // fixture has its own four. The manifest's crowd weights are real and are used as they
-  // are, because the arithmetic above depends on them.
+  // Crowd is the one entry that now points at a real shipped model, and this suite is not
+  // the place to exercise it: the fixture .onnx has four classes of its own at the fixture
+  // size, and the scoring arithmetic above is written against those. So the file, the
+  // input size and the classes are all pinned to the fixture here, and `keepClasses` is
+  // dropped - the real entry keeps only the two person classes, which would filter the
+  // fixture's classes away to nothing.
   manifest.crowd = {
     ...manifest.crowd,
+    file: 'crowd.onnx',
+    imgsz: 960,
+    keepClasses: undefined,
     labels: ['dense_packing', 'counterflow', 'choke_point', 'person_down'],
+    severityWeights: {
+      dense_packing: 2.0, counterflow: 2.5, choke_point: 3.0, person_down: 5.0,
+    },
   };
 
   manifest.wildfire = {
@@ -232,8 +241,9 @@ async function main() {
     // picked the right one, rather than falling through to the first that matched.
     check('the four-class gate routed yellow to crowd, not turbine',
       (await crowd.locator('.card__meta').first().textContent()).includes('Crowd'));
-    check('the card says it marks regions rather than individuals',
-      (await crowd.locator('.card__note').textContent()).includes('not individual people'));
+    check('the card says what a tally of boxes is and is not',
+      (await crowd.locator('.card__note').textContent())
+        .includes('not the same as everyone present'));
 
     console.log('\nWildfire image (magenta)');
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'wildfire_magenta.png'));

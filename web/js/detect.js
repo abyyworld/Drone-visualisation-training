@@ -61,6 +61,11 @@ function decode(output, spec) {
   const options = {
     confThreshold: spec.confThreshold ?? 0.25,
     iouThreshold: spec.iouThreshold ?? 0.45,
+    // Dropped before non-max suppression rather than after. A model trained on aerial
+    // imagery knows vehicles as well as people, and a van suppressed against a person
+    // standing next to it would lose the person - which is the one thing that must not
+    // happen. Filtering first means suppression only ever compares people with people.
+    keepClasses: spec.keepClasses,
   };
 
   if (dims.length !== 3) {

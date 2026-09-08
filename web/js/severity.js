@@ -32,7 +32,7 @@ const LABELS = {
   turbine: { none: 'No defects found', minor: 'Minor wear', moderate: 'Moderate damage', severe: 'Severe damage' },
   solar: { none: 'No defects found', minor: 'Minor wear', moderate: 'Moderate damage', severe: 'Severe damage' },
   crowd: {
-    none: 'No pressure patterns in this frame',
+    none: 'No pressure pattern scored in this frame',
     minor: 'Worth watching',
     moderate: 'Under pressure',
     severe: 'Needs someone now',
@@ -71,7 +71,7 @@ const OVERALL = {
     severe: 'Crowd pressure needing someone now',
     moderate: 'Crowd under pressure in places',
     minor: 'Some areas worth watching',
-    none: 'No pressure patterns in the frames reviewed',
+    none: 'No pressure pattern scored in the frames reviewed',
   },
   wildfire: {
     severe: 'Active fire with people or property in the frames',
