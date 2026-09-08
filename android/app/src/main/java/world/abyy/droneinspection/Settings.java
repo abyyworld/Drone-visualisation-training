@@ -27,6 +27,7 @@ public final class Settings {
     private static final String KEY_INTERVAL = "intervalSeconds";
     private static final String KEY_PROVIDER = "provider";
     private static final String KEY_MODEL = "model";
+    private static final String KEY_SENSITIVITY = "sensitivityPercent";
 
     /**
      * Seconds between frames sent for analysis.
@@ -37,6 +38,35 @@ public final class Settings {
      * changes over tens of seconds, not milliseconds.
      */
     public static final int DEFAULT_INTERVAL_SECONDS = 2;
+
+    /**
+     * How sure the detector has to be, as a percentage, before it marks something.
+     *
+     * Adjustable because one number cannot serve both ends of this. Measured against
+     * VisDrone's labels: at 25 the detector marks half the people standing and a third of
+     * those in another pose, and about three boxes in ten are not people at all, mostly
+     * street furniture. At 50 almost every box is a person and it has lost three quarters of
+     * those standing and eleven in twelve of those sitting down. Which of those is the right
+     * mistake depends on the site, so it is the operator's to make and not a constant here.
+     *
+     * The floor is deliberate. Below 20 the decode after the model starts to cost real time:
+     * the model pass is 6.5 ms whatever this is set to, and the decode goes from a quarter of
+     * a millisecond at 25 to nearly two at 15. Nothing here is allowed to make the tablet
+     * slower or hotter, so the range stops where that begins.
+     */
+    public static final int DEFAULT_SENSITIVITY = 25;
+    public static final int MIN_SENSITIVITY = 20;
+    public static final int MAX_SENSITIVITY = 60;
+
+    public static int sensitivityPercent(Context context) {
+        int saved = prefs(context).getInt(KEY_SENSITIVITY, DEFAULT_SENSITIVITY);
+        return Math.max(MIN_SENSITIVITY, Math.min(MAX_SENSITIVITY, saved));
+    }
+
+    /** As the detector wants it: a score between zero and one. */
+    public static float confidence(Context context) {
+        return sensitivityPercent(context) / 100f;
+    }
 
     /** Not persisted. See the class comment. */
     private static String apiKey = "";
@@ -69,8 +99,10 @@ public final class Settings {
     }
 
     public static void save(Context context, String stream, String domain, String provider,
-                            String model, int intervalSeconds) {
+                            String model, int intervalSeconds, int sensitivityPercent) {
         prefs(context).edit()
+                .putInt(KEY_SENSITIVITY, Math.max(MIN_SENSITIVITY,
+                        Math.min(MAX_SENSITIVITY, sensitivityPercent)))
                 .putString(KEY_STREAM, stream.trim())
                 .putString(KEY_DOMAIN, domain)
                 .putString(KEY_PROVIDER, provider)

@@ -24,6 +24,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
+        <TextView style="@style/FieldLabel" android:text="@string/field_sensitivity" />
+        <TextView
+            android:id="@+id/sensitivity_readout"
+            style="@style/FieldHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+        <SeekBar
+            android:id="@+id/sensitivity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+        <TextView style="@style/FieldHint" android:text="@string/hint_sensitivity" />
+
         <TextView style="@style/FieldLabel" android:text="@string/field_provider" />
         <Spinner
             android:id="@+id/provider"

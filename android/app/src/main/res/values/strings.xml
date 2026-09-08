@@ -3,6 +3,9 @@
     <string name="app_name">Drone Inspection</string>
     <string name="no_browser">No app on this tablet can open that link.</string>
     <string name="and_the_log">\nTally in %1$s: %2$d different people.</string>
+    <string name="field_sensitivity">How sure before it marks somebody</string>
+    <string name="sensitivity_readout">%1$d percent</string>
+    <string name="hint_sensitivity">Lower marks more people and more things that are not people. Higher marks almost only people, and loses the ones sitting down first. Costs no speed either way.</string>
     <string name="saved_to">saved to %1$s</string>
     <string name="log_failed">The flight log could not be written: %1$s. The recording is unaffected.</string>
     <string name="choose_files">Choose pictures or video</string>

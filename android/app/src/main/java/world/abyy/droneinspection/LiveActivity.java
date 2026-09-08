@@ -791,6 +791,9 @@ public class LiveActivity extends AppCompatActivity {
         NativeDetector current = detector;
         if (current != null) {
             current.setPeopleOnly("crowd".equals(Settings.domain(this)));
+            // Read here rather than at startup, so coming back from the settings screen
+            // applies it without restarting the stream.
+            current.setConfidence(Settings.confidence(this));
         }
         handler.post(detectTick);
         // The provider still runs, on its slow interval, for what the on-device model

@@ -4,7 +4,9 @@ import android.os.Bundle;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.SeekBar;
 import android.widget.Spinner;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
@@ -36,9 +38,34 @@ public class LiveSettingsActivity extends AppCompatActivity {
         Spinner domain = findViewById(R.id.domain);
         Spinner provider = findViewById(R.id.provider);
         Button save = findViewById(R.id.save);
+        SeekBar sensitivity = findViewById(R.id.sensitivity);
+        TextView sensitivityReadout = findViewById(R.id.sensitivity_readout);
 
         domain.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, DOMAINS));
         provider.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, PROVIDERS));
+
+        // The bar counts from the floor rather than from zero, because below that floor the
+        // decode after the model starts to cost real time and nothing here is allowed to
+        // make the tablet slower.
+        sensitivity.setMax(Settings.MAX_SENSITIVITY - Settings.MIN_SENSITIVITY);
+        sensitivity.setProgress(Settings.sensitivityPercent(this) - Settings.MIN_SENSITIVITY);
+        sensitivityReadout.setText(getString(R.string.sensitivity_readout,
+                Settings.sensitivityPercent(this)));
+        sensitivity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                sensitivityReadout.setText(getString(R.string.sensitivity_readout,
+                        progress + Settings.MIN_SENSITIVITY));
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
 
         stream.setText(Settings.stream(this));
         model.setText(Settings.model(this));
@@ -62,7 +89,8 @@ public class LiveSettingsActivity extends AppCompatActivity {
                 seconds = Settings.DEFAULT_INTERVAL_SECONDS;
             }
             Settings.save(this, uri, (String) domain.getSelectedItem(),
-                    (String) provider.getSelectedItem(), model.getText().toString(), seconds);
+                    (String) provider.getSelectedItem(), model.getText().toString(), seconds,
+                    sensitivity.getProgress() + Settings.MIN_SENSITIVITY);
             Settings.setApiKey(key.getText().toString());
             finish();
         });

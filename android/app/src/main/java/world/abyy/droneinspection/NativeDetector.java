@@ -124,7 +124,11 @@ public final class NativeDetector {
     /** From person-320.json, so the app and the model cannot disagree about the classes. */
     private final String[] labels;
     private final Set<Integer> personClasses;
-    private final double confThreshold;
+    /**
+     * Adjustable while flying, from the settings screen. Only ever read by the thread that
+     * runs detection, and one word written by another, so volatile is the whole of it.
+     */
+    private volatile double confThreshold;
     private final double iouThreshold;
     /** The file beside the model would not parse, so its class names came from here. */
     private final boolean usingDefaults;
@@ -220,6 +224,17 @@ public final class NativeDetector {
         this.canvas = new Canvas(square);
         this.pixels = new int[inputSize * inputSize];
         this.head = new float[outputChannels * outputAnchors];
+    }
+
+    /**
+     * How sure to be before marking something.
+     *
+     * Costs nothing to change. The model pass is the same work whatever this is; only the
+     * decode after it sees more or fewer candidates, and across the whole usable range that
+     * is a fraction of a millisecond against a cycle of two hundred.
+     */
+    public void setConfidence(double confidence) {
+        confThreshold = confidence;
     }
 
     /** Look for people only, or for everything the model knows. */
