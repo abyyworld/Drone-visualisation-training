@@ -129,6 +129,8 @@ public final class NativeDetector {
     private final double iouThreshold;
 
     private final int inputSize;
+    /** True when the input is [1, 3, size, size] rather than [1, size, size, 3]. */
+    private final boolean inputPlanar;
     private final DataType inputType;
     private final float inputScale;
     private final int inputZeroPoint;
@@ -169,8 +171,21 @@ public final class NativeDetector {
         this.keep = personClasses;
 
         Tensor entry = cpu.getInputTensor(0);
-        // NHWC, which is what every TFLite vision export uses.
-        this.inputSize = entry.shape()[1];
+        int[] entryShape = entry.shape();
+        // Channels first or channels last, read off the tensor rather than assumed.
+        //
+        // The assumption cost a build. Nearly every TFLite vision model is [1, size, size,
+        // 3], so this took the second dimension as the size - and this converter emits
+        // [1, 3, 320, 320], so the size came out as 3. A three pixel square scaled up to
+        // the model, the rest of the buffer left at zero, and a detector that finds nobody
+        // and cannot say why. Which is the failure this whole file is written against.
+        this.inputPlanar = entryShape[1] == 3 && entryShape[3] != 3;
+        this.inputSize = inputPlanar ? entryShape[2] : entryShape[1];
+        if (inputSize < 32) {
+            throw new IllegalStateException(
+                    "the model wants an input this app cannot read: "
+                            + java.util.Arrays.toString(entryShape));
+        }
         this.inputType = entry.dataType();
         Tensor.QuantizationParams entryQuant = entry.quantizationParams();
         // A scale of zero means the tensor is not quantised, whatever its type says.
@@ -428,24 +443,34 @@ public final class NativeDetector {
     private void fillInput() {
         input.rewind();
         boolean quantised = inputType == DataType.UINT8 || inputType == DataType.INT8;
-        for (int pixel : pixels) {
-            int r = (pixel >> 16) & 0xFF;
-            int g = (pixel >> 8) & 0xFF;
-            int b = pixel & 0xFF;
-            if (quantised) {
-                // The converter's own scale and zero point, read off the tensor rather than
-                // assumed: an int8 export and a uint8 one want the same bytes shifted by
-                // 128, and guessing gives the model a picture it has never seen.
-                input.put(quantise(r));
-                input.put(quantise(g));
-                input.put(quantise(b));
-            } else {
-                input.putFloat(r / 255f);
-                input.putFloat(g / 255f);
-                input.putFloat(b / 255f);
+        if (inputPlanar) {
+            // Every red, then every green, then every blue. Interleaving them into a
+            // channels-first tensor is not an error either: it is a picture of noise, and
+            // a model shown noise reports an empty scene.
+            for (int shift = 16; shift >= 0; shift -= 8) {
+                for (int pixel : pixels) {
+                    put((pixel >> shift) & 0xFF, quantised);
+                }
+            }
+        } else {
+            for (int pixel : pixels) {
+                put((pixel >> 16) & 0xFF, quantised);
+                put((pixel >> 8) & 0xFF, quantised);
+                put(pixel & 0xFF, quantised);
             }
         }
         input.rewind();
+    }
+
+    private void put(int channel, boolean quantised) {
+        if (quantised) {
+            // The converter's own scale and zero point, read off the tensor rather than
+            // assumed: an int8 export and a uint8 one want the same bytes shifted by 128,
+            // and guessing gives the model a picture it has never seen.
+            input.put(quantise(channel));
+        } else {
+            input.putFloat(channel / 255f);
+        }
     }
 
     private byte quantise(int channel) {

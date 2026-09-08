@@ -183,6 +183,7 @@ jobs:
         if: hashFiles('web/models/person-320-int8.tflite') != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
+          import json, pathlib
           import numpy as np
           from ai_edge_litert.interpreter import Interpreter
 
@@ -202,6 +203,40 @@ jobs:
           print("ran, and gave back:", found.shape, flush=True)
           if found.ndim != 3:
               raise SystemExit(f"the tablet model has an output the app cannot read: {found.shape}")
+
+          # The contract between this file and NativeDetector.java, checked here because
+          # this is the only place both the model and a runtime to interrogate it exist.
+          #
+          # This is not belt and braces. The app took the input size from the second
+          # dimension, which is right for almost every TFLite vision model and wrong for
+          # this converter: it emits [1, 3, 320, 320], so the size came out as 3. The app
+          # then built a three pixel square, left the rest of the tensor at zero, and found
+          # nobody - with no error anywhere, which is indistinguishable from a frame with
+          # nobody in it. The rules below are the ones the Java uses, so a converter that
+          # changes its mind again fails here instead of on the tablet.
+          spec = json.loads(pathlib.Path("web/models/person-320.json").read_text())
+          shape = [int(v) for v in entry["shape"]]
+          if len(shape) != 4:
+              raise SystemExit(f"the app can only read a four dimensional input: {shape}")
+          planar = shape[1] == 3 and shape[3] != 3
+          size = shape[2] if planar else shape[1]
+          print(f"layout: {'channels first' if planar else 'channels last'}, "
+                f"input size {size}", flush=True)
+          if size != spec["imgsz"]:
+              raise SystemExit(
+                  f"the model wants {size} pixels but person-320.json says "
+                  f"{spec['imgsz']}; the app would feed it the wrong picture")
+
+          channels = min(found.shape[1], found.shape[2])
+          if channels != 4 + len(spec["labels"]):
+              raise SystemExit(
+                  f"the head carries {channels} channels, which is four plus "
+                  f"{channels - 4} classes, but person-320.json lists "
+                  f"{len(spec['labels'])} labels")
+          if not all(0 <= c < len(spec["labels"]) for c in spec["keepClasses"]):
+              raise SystemExit(
+                  f"keepClasses {spec['keepClasses']} points outside the label list")
+          print("the tablet model and person-320.json agree", flush=True)
           PY
 
       # A model that exports cleanly and finds nobody is worse than no model, so the
