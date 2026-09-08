@@ -38,10 +38,9 @@ jobs:
 
       # Two environments, not one, and this is not fussiness.
       #
-      # The ONNX export needs a current `onnx`, which needs ml_dtypes 0.5 or newer. The
-      # TFLite export needs TensorFlow, which pins ml_dtypes to 0.4. Installed together the
-      # second wins and the first dies with "module 'ml_dtypes' has no attribute
-      # 'float4_e2m1fn'", which is what happened on the first run. They cannot share a
+      # The ONNX export needs a current `onnx`. The TFLite export goes through
+      # `litert-torch`, which pins an older torch than ultralytics otherwise installs.
+      # Together, the second resolution wins and the first breaks. They cannot share an
       # environment, so they are not asked to.
       - name: Install the ONNX toolchain
         run: |
@@ -51,15 +50,26 @@ jobs:
             torch torchvision
           .venv-onnx/bin/pip install ultralytics onnx onnxslim onnxruntime
 
+      # Everything the TFLite export touches, resolved in ONE pip pass.
+      #
+      # This is the fix for the failure that produced no .tflite while the job stayed
+      # green. Ultralytics no longer converts through TensorFlow and onnx2tf; it converts
+      # through `litert-torch`, and when that is missing it installs it *during* the
+      # export, into the interpreter already running. litert-torch pins torch 2.13, so the
+      # torch that had already been imported was swapped underneath the process, and the
+      # export died on `'_OpNamespace' 'aten' object has no attribute 'cholesky'` - which
+      # is not a model problem at all, it is a half-replaced torch.
+      #
+      # So litert-torch is installed up front, in the same resolution as ultralytics, and
+      # the auto-installer is switched off so that a missing dependency is a loud failure
+      # here rather than a mutation later.
       - name: Install the TFLite toolchain
-        continue-on-error: true
         run: |
           python -m venv .venv-tflite
           .venv-tflite/bin/pip install --upgrade pip
           .venv-tflite/bin/pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-            torch torchvision
-          .venv-tflite/bin/pip install ultralytics tensorflow onnx2tf onnx_graphsurgeon \
-            sng4onnx ai-edge-litert onnxslim
+            ultralytics litert-torch ai-edge-litert onnx onnxslim
+          .venv-tflite/bin/python -c "import torch, litert_torch; print('torch', torch.__version__)"
 
       # Tried in order, best first. The VisDrone ones are trained on the exact problem:
       # people seen from a drone. The COCO fallbacks are not, but are still a better small
@@ -142,8 +152,15 @@ jobs:
           print("wrote", out / "person-320.onnx", flush=True)
           PY
 
+      # Left able to fail without stopping the job, on purpose: the ONNX model is what the
+      # browser uses and it is worth landing on its own. The job is still failed at the
+      # very end if no .tflite came out, so a missing tablet model can never read as a
+      # green run again.
       - name: Export TFLite int8, for the tablet
         continue-on-error: true
+        env:
+          # No installing things into a running interpreter. See the toolchain step above.
+          YOLO_AUTOINSTALL: 'false'
         run: |
           .venv-tflite/bin/python - <<'PY'
           import pathlib, shutil
@@ -157,6 +174,34 @@ jobs:
           out.mkdir(parents=True, exist_ok=True)
           shutil.copy(tflite, out / "person-320-int8.tflite")
           print("wrote", out / "person-320-int8.tflite", flush=True)
+          PY
+
+      # The tablet model, actually loaded and run, before it is published. An int8 export
+      # can come out of the converter with a quantised input the app would have to feed
+      # differently, so the input type is printed rather than assumed.
+      - name: Check the tablet model actually runs
+        if: hashFiles('web/models/person-320-int8.tflite') != ''
+        run: |
+          .venv-tflite/bin/python - <<'PY'
+          import numpy as np
+          from ai_edge_litert.interpreter import Interpreter
+
+          interpreter = Interpreter(model_path="web/models/person-320-int8.tflite")
+          interpreter.allocate_tensors()
+          entry = interpreter.get_input_details()[0]
+          exit_ = interpreter.get_output_details()[0]
+          print("input:", entry["shape"], entry["dtype"], flush=True)
+          print("output:", exit_["shape"], exit_["dtype"], flush=True)
+          print("input quantisation:", entry["quantization"], flush=True)
+          print("output quantisation:", exit_["quantization"], flush=True)
+
+          interpreter.set_tensor(entry["index"],
+                                 np.zeros(entry["shape"], dtype=entry["dtype"]))
+          interpreter.invoke()
+          found = interpreter.get_tensor(exit_["index"])
+          print("ran, and gave back:", found.shape, flush=True)
+          if found.ndim != 3:
+              raise SystemExit(f"the tablet model has an output the app cannot read: {found.shape}")
           PY
 
       # A model that exports cleanly and finds nobody is worse than no model, so the
@@ -173,7 +218,7 @@ jobs:
       # will not run, or an output of the wrong shape. What the model finds in each picture
       # is printed rather than judged, because judging it needs footage from the drone this
       # is going to fly on.
-      - name: Check the export actually runs
+      - name: Check the browser model actually runs
         run: |
           .venv-onnx/bin/python - <<'PY'
           import urllib.request, pathlib, numpy as np, onnxruntime as ort
@@ -259,3 +304,18 @@ jobs:
           done
           echo "::error::could not push the converted model after three attempts"
           exit 1
+
+      # The last word on whether this run did its job.
+      #
+      # The browser model and the tablet model are exported by different toolchains, and
+      # the tablet one is allowed to fail on its own so that the browser one still lands.
+      # What must never happen again is that failing quietly: the run that produced only an
+      # ONNX file reported success, and the missing tablet model was found by hand days
+      # later. If it is not here, this run was not a success.
+      - name: Did the tablet model come out
+        run: |
+          if [ ! -s web/models/person-320-int8.tflite ]; then
+            echo "::error::No web/models/person-320-int8.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite int8' step above for the reason."
+            exit 1
+          fi
+          ls -lh web/models/person-320-int8.tflite
