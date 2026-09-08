@@ -97,6 +97,8 @@ public class LiveActivity extends AppCompatActivity {
     private List<Finding> findings = new ArrayList<>();
     private String lastError = "";
     private long framesDropped;
+    private final FireScan fireScan = new FireScan();
+    private List<FireScan.Region> fireRegions = new ArrayList<>();
     private long detectionsRun;
     private long detectStartedAt;
 
@@ -111,22 +113,35 @@ public class LiveActivity extends AppCompatActivity {
         @Override
         public void run() {
             long gap = MIN_DETECT_GAP_MS;
-            if (detector != null) {
-                Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
-                if (frame != null) {
-                    try {
-                        overlay.setTracks(tracker.update(detector.detect(frame)));
-                        detectionsRun++;
-                    } catch (RuntimeException failure) {
-                        lastError = getString(R.string.detector_stopped,
-                                String.valueOf(failure.getMessage()));
-                        detector.close();
-                        detector = null;
-                    } finally {
-                        frame.recycle();
+            Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
+            if (frame != null) {
+                try {
+                    if (detector != null) {
+                        try {
+                            overlay.setTracks(tracker.update(detector.detect(frame)),
+                                    frame.getWidth(), frame.getHeight());
+                            detectionsRun++;
+                            gap = Math.max(MIN_DETECT_GAP_MS, detector.lastInferenceMillis());
+                        } catch (RuntimeException failure) {
+                            lastError = getString(R.string.detector_stopped,
+                                    String.valueOf(failure.getMessage()));
+                            detector.close();
+                            detector = null;
+                        }
                     }
-                    gap = Math.max(MIN_DETECT_GAP_MS, detector == null
-                            ? MIN_DETECT_GAP_MS : detector.lastInferenceMillis());
+
+                    // Its own catch, and outside the detector's null check on purpose. The
+                    // two engines are independent: if the model fails to load or dies, the
+                    // flame and smoke scan carries on, because it needs no model. Losing
+                    // both because one broke would be the worse outcome.
+                    try {
+                        fireRegions = fireScan.scan(frame);
+                    } catch (RuntimeException | OutOfMemoryError ignored) {
+                        fireRegions = new ArrayList<>();
+                    }
+                    overlay.setFire(fireRegions);
+                } finally {
+                    frame.recycle();
                 }
                 refreshStatus();
             }
@@ -222,6 +237,11 @@ public class LiveActivity extends AppCompatActivity {
         super.onStart();
         openStream();
         tracker.reset();
+        // The flame scanner measures how a region changes over a window of frames. Carrying
+        // one stream's window into the next would compare a frame against something filmed
+        // somewhere else.
+        fireScan.reset();
+        fireRegions = new ArrayList<>();
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
         handler.post(detectTick);
@@ -460,6 +480,22 @@ public class LiveActivity extends AppCompatActivity {
                     .append("/s, ").append(detector.lastInferenceMillis()).append(" ms");
             line.append("  ·  ").append(getString(R.string.people_readout,
                     tracker.countOf("person"), tracker.countSeen("person")));
+        }
+
+        // Flame and smoke, when there is any. Regions, not fires: one fire seen as two
+        // regions is two boxes and one fire, and the scanner cannot tell those apart, so
+        // it does not claim to.
+        int flame = 0;
+        int smoke = 0;
+        for (FireScan.Region region : fireRegions) {
+            if (FireScan.FLAME.equals(region.label)) {
+                flame++;
+            } else {
+                smoke++;
+            }
+        }
+        if (flame > 0 || smoke > 0) {
+            line.append("  ·  ").append(getString(R.string.fire_readout, flame, smoke));
         }
 
         // The slow half: a provider, for what the on-device model has no class for.

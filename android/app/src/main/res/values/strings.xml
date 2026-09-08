@@ -41,4 +41,7 @@
     <!-- Two numbers, because they answer different questions: who is in view now, and how
          many distinct people have gone past since the screen opened. -->
     <string name="people_readout">people: %1$d in view, %2$d seen</string>
+    <!-- Regions, and the word candidate, because colour and motion cannot produce more
+         than that. What it marks is for an operator to look at, not a verdict. -->
+    <string name="fire_readout">candidates: %1$d flame, %2$d smoke</string>
 </resources>

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# The flame and smoke scanner exists twice: web/js/firescan.js runs in the browser and in
+# the APK's web view, android/.../FireScan.java runs on the drone's RTSP feed. Two
+# implementations of one method is a standing invitation to drift, and drift here means the
+# app marks a region on the tablet that the report of the same footage does not.
+#
+# So both are run over the same eight painted frames and the output is compared exactly:
+# same labels, same confidences to two places, same boxes. A change to one that is not
+# mirrored in the other fails here rather than in the field.
+#
+#   bash tests/java/cross_check.sh
+#
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+out="$(mktemp -d)"
+trap 'rm -rf "$out"' EXIT
+
+javac -nowarn -d "$out" \
+  "$here/android/graphics/Bitmap.java" \
+  "$root/android/app/src/main/java/world/abyy/droneinspection/FireScan.java" \
+  "$here/Cross.java"
+
+java -cp "$out" Cross > "$out/java.txt"
+node "$here/cross.mjs" > "$out/js.txt"
+
+if diff -u "$out/java.txt" "$out/js.txt"; then
+  echo
+  echo "Java and JavaScript agree on all $(wc -l < "$out/js.txt") cases."
+else
+  echo
+  echo "The Java port and the JavaScript disagree. One of them has been changed alone."
+  exit 1
+fi

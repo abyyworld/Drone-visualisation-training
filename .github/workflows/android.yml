@@ -43,6 +43,14 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Before anything is built: the flame and smoke scanner exists twice, once in
+      # JavaScript for the web app and once in Java for the drone's feed, and this runs the
+      # same painted frames through both and compares them exactly. Two implementations of
+      # one method drift, and drift here means the tablet marks a region that the report of
+      # the same footage does not.
+      - name: Flame and smoke, Java against JavaScript
+        run: bash tests/java/cross_check.sh
+
       # The build must never be able to ask a question. The first run of this workflow sat
       # on the Build step for twenty-five minutes: the Android Gradle Plugin will download
       # a missing SDK platform, and when the licence has not been accepted it waits on

@@ -3,6 +3,7 @@ package world.abyy.droneinspection;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -43,6 +44,8 @@ public class OverlayView extends View {
     private final Paint labelBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint firePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint fireOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Rect textBounds = new Rect();
 
     private List<Finding> findings = new ArrayList<>();
@@ -54,6 +57,14 @@ public class OverlayView extends View {
     // ago. Showing them with the same weight would present one as being as fresh as the
     // other, which is the whole thing this overlay exists not to do.
     private List<Tracker.Track> tracks = new ArrayList<>();
+    // The size of the frame those tracks were found in. Their boxes are in that frame's
+    // pixels, and this view is a different size - usually three times larger, because
+    // detection runs on a 640-pixel copy of a 1080-pixel screen. Without these the boxes
+    // draw at a third scale in the top-left corner.
+    private int trackFrameWidth;
+    private int trackFrameHeight;
+
+    private List<FireScan.Region> fire = new ArrayList<>();
 
     public OverlayView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -63,12 +74,27 @@ public class OverlayView extends View {
         statusPaint.setColor(Color.WHITE);
         statusBackground.setColor(0xCC000000);
         statusBackground.setStyle(Paint.Style.FILL);
+        firePaint.setStyle(Paint.Style.FILL);
+        fireOutline.setStyle(Paint.Style.STROKE);
+        fireOutline.setPathEffect(new DashPathEffect(new float[]{16f, 10f}, 0f));
         setWillNotDraw(false);
     }
 
-    /** Replace the live tracks. Called on every detected frame. */
-    public void setTracks(List<Tracker.Track> next) {
+    /**
+     * Replace the live tracks. Called on every detected frame.
+     *
+     * The frame size comes with them because the boxes are in its pixels, not this view's.
+     */
+    public void setTracks(List<Tracker.Track> next, int frameWidth, int frameHeight) {
         tracks = next == null ? new ArrayList<>() : next;
+        trackFrameWidth = frameWidth;
+        trackFrameHeight = frameHeight;
+        invalidate();
+    }
+
+    /** Replace the flame and smoke regions. Already normalised, so no frame size needed. */
+    public void setFire(List<FireScan.Region> next) {
+        fire = next == null ? new ArrayList<>() : next;
         invalidate();
     }
 
@@ -88,6 +114,7 @@ public class OverlayView extends View {
     public void clear() {
         findings = new ArrayList<>();
         tracks = new ArrayList<>();
+        fire = new ArrayList<>();
         findingsAt = 0;
         invalidate();
     }
@@ -117,6 +144,47 @@ public class OverlayView extends View {
         return hash;
     }
 
+    /**
+     * Flame and smoke regions: a dashed outline and a wash, with no identity number.
+     *
+     * No number because these are not things being followed. A fire is not one object
+     * moving through the shot, it is a region that grows, splits and dies, and giving it a
+     * number would claim something about it that is not true. The percentage is the
+     * scanner's own confidence, and the label is the class, so the box can be argued with.
+     */
+    private void drawFire(Canvas canvas, int width, int height, float stroke, float textSize) {
+        for (FireScan.Region region : fire) {
+            int colour = FireScan.SMOKE.equals(region.label) ? 0xFF9AA3AD : 0xFFFF5A1F;
+            RectF box = new RectF(
+                    region.x0 * width, region.y0 * height,
+                    region.x1 * width, region.y1 * height);
+
+            firePaint.setColor(colour);
+            firePaint.setAlpha(40);
+            canvas.drawRect(box, firePaint);
+
+            fireOutline.setColor(colour);
+            fireOutline.setStrokeWidth(stroke);
+            canvas.drawRect(box, fireOutline);
+
+            String text = region.label + "  " + Math.round(region.confidence * 100) + "%";
+            labelPaint.setTextSize(textSize);
+            labelPaint.getTextBounds(text, 0, text.length(), textBounds);
+            float pad = stroke * 2;
+            float top = Math.min(height - textBounds.height() - pad * 2, box.bottom + pad);
+
+            labelBackground.setColor(colour);
+            labelBackground.setAlpha(255);
+            canvas.drawRect(box.left, top,
+                    box.left + textBounds.width() + pad * 2, top + textBounds.height() + pad * 2,
+                    labelBackground);
+            labelPaint.setColor(Color.BLACK);
+            labelPaint.setAlpha(255);
+            canvas.drawText(text, box.left + pad, top + textBounds.height() + pad, labelPaint);
+            labelPaint.setColor(Color.WHITE);
+        }
+    }
+
     private void render(Canvas canvas, int width, int height) {
         long age = findingsAt == 0 ? 0 : System.currentTimeMillis() - findingsAt;
         boolean stale = findingsAt != 0 && age > STALE_AFTER_MS;
@@ -128,14 +196,22 @@ public class OverlayView extends View {
         labelPaint.setTextSize(textSize);
         statusPaint.setTextSize(textSize * 0.85f);
 
-        // Live tracks first, at full weight, with the identity on the label. These are
+        // Flame and smoke underneath everything, so a person standing in front of a fire
+        // still gets a solid box over the top of it.
+        drawFire(canvas, width, height, stroke, textSize);
+
+        // Live tracks next, at full weight, with the identity on the label. These are
         // current: they came from this device on the last frame it managed.
+        float trackScaleX = trackFrameWidth > 0 ? width / (float) trackFrameWidth : 1f;
+        float trackScaleY = trackFrameHeight > 0 ? height / (float) trackFrameHeight : 1f;
         for (Tracker.Track track : tracks) {
             int colour = PALETTE[colourIndex(track.label) % PALETTE.length];
             boxPaint.setColor(colour);
             boxPaint.setAlpha(track.coasted() ? 120 : 255);
 
-            RectF box = new RectF(track.box[0], track.box[1], track.box[2], track.box[3]);
+            RectF box = new RectF(
+                    track.box[0] * trackScaleX, track.box[1] * trackScaleY,
+                    track.box[2] * trackScaleX, track.box[3] * trackScaleY);
             canvas.drawRect(box, boxPaint);
 
             String text = track.label + " #" + track.id;
