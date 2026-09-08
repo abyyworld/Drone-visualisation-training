@@ -36,7 +36,9 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.LoadControl;
 import androidx.media3.exoplayer.rtsp.RtspMediaSource;
 
 import java.io.File;
@@ -114,6 +116,22 @@ public class LiveActivity extends AppCompatActivity {
      * sharper. See GlPipeline.requestRegion.
      */
     private static final int TILE_LONG_EDGE = 640;
+
+    /**
+     * How much video the player is allowed to hold, in milliseconds.
+     *
+     * Deliberately tiny. Every millisecond buffered is a millisecond the picture is behind
+     * the drone, and ExoPlayer's defaults hold 2.5 seconds before showing a first frame
+     * because they are written for films over the internet rather than for a radio link to
+     * a camera fifty metres away. Half a second is enough to absorb a dropped packet and
+     * short enough that a pilot is looking at now.
+     */
+    private static final int LIVE_MIN_BUFFER_MS = 100;
+    private static final int LIVE_MAX_BUFFER_MS = 500;
+
+    /** Show the first frame as soon as there is one, and never wait after a break. */
+    private static final int LIVE_START_MS = 0;
+    private static final int LIVE_RESTART_MS = 0;
 
     /**
      * Floor on the gap between detections, so a fast tablet leaves the decoder some room.
@@ -765,7 +783,30 @@ public class LiveActivity extends AppCompatActivity {
 
     private void openStream() {
         String uri = Settings.stream(this);
-        player = new ExoPlayer.Builder(this).build();
+        // A buffer sized for a live link, not for a film.
+        //
+        // WHY THE PICTURE WAS BEHIND THE DRONE
+        //     ExoPlayer's defaults are built for streaming video over the internet, where
+        //     holding a few seconds in hand is what stops a film stuttering when the
+        //     connection dips. They wait 2.5 seconds before showing anything and rebuild
+        //     that cushion after every hiccup, and a cushion is exactly a delay: the
+        //     picture on the screen is whatever the drone saw two and a half seconds ago.
+        //
+        //     Nothing about this link wants that. It is a dedicated radio to a camera on
+        //     the same network, and a pilot needs to see what the drone is looking at now,
+        //     not what it was looking at. Better to show the newest frame and occasionally
+        //     stutter than to be reliably late.
+        //
+        //     So: start on the first frame, hold at most half a second, and never wait to
+        //     accumulate anything after a break.
+        LoadControl live = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                        LIVE_MIN_BUFFER_MS, LIVE_MAX_BUFFER_MS,
+                        LIVE_START_MS, LIVE_RESTART_MS)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build();
+
+        player = new ExoPlayer.Builder(this).setLoadControl(live).build();
         if (usingGl && glPipeline != null && glPipeline.videoInput() != null) {
             // The player draws into the pipeline's own SurfaceTexture rather than into a
             // view. That texture is what goes to the screen and to the encoder, which is
