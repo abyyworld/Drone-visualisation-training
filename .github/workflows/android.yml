@@ -203,8 +203,64 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
 
-      - name: Attach it to the release
-        if: github.event_name == 'release'
+      # A permanent link to the newest build.
+      #
+      # WHY THIS EXISTS
+      #     An Actions artifact is reachable only through the run that made it, so every
+      #     build has a different URL, the file arrives as a zip that has to be unpacked
+      #     before it can be installed, and the whole thing expires in ninety days. Anyone
+      #     wanting the app has to be handed a fresh link each time and told which of the
+      #     old ones not to use.
+      #
+      #     A release tagged `latest`, updated in place, has one address that never changes
+      #     and serves the .apk directly:
+      #
+      #         .../releases/latest/download/drone-inspection.apk
+      #
+      #     That is the link in the README, and it is correct for every build from now on
+      #     without anyone editing anything.
+      #
+      # The asset is a stable name rather than a versioned one, because the URL above is
+      # built from the file name: a version in it would change the address every build,
+      # which is the problem being solved. The version is in the release notes instead.
+      - name: Publish it as the latest download
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.apk.outputs.path }}" --clobber
+        run: |
+          cp "${{ steps.apk.outputs.path }}" drone-inspection.apk
+
+          # Created once, then updated. `|| true` because the second build onwards will
+          # find it already there, which is not a failure.
+          gh release create latest \
+            --title "Latest build" \
+            --notes "The newest APK, rebuilt on every push to main." \
+            --latest || true
+
+          gh release edit latest \
+            --notes "Built from ${{ github.sha }} on $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          Version ${{ steps.version.outputs.name }}.
+
+          Download **drone-inspection.apk** below. Copy it to the tablet, open it with the
+          file manager, and allow installs from that source when Android asks." || true
+
+          gh release upload latest drone-inspection.apk --clobber
+
+      # The old builds, cleaned up as they are replaced.
+      #
+      # Artifacts pile up at 67 MB each and every one of them is a wrong version somebody
+      # can download by mistake. Only the newest is worth keeping, and the run that made it
+      # is the one running now.
+      - name: Delete the previous builds' artifacts
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | select(.workflow_run.id != ${{ github.run_id }}) | .id' \
+          | while read -r id; do
+              echo "removing artifact $id"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+            done

@@ -24,9 +24,16 @@ is less to maintain, because it updates itself.
 
 ### Get it
 
-Every push to `main` builds one. Repository -> **Actions** -> **Build Android APK** -> the
-most recent run -> **Artifacts** -> `drone-inspection-apk`. It is a zip; the `.apk` is
-inside.
+One link, and it never changes:
+
+**https://github.com/abyyworld/Drone-visualisation-training/releases/latest/download/drone-inspection.apk**
+
+That is the newest build, rebuilt on every push to `main`, served as the `.apk` itself
+rather than as a zip to unpack. The same link is on the front page of the README.
+
+(There is also an Actions artifact per build, under **Actions** -> **Build Android APK** ->
+a run -> **Artifacts**. Use it only to get a specific older build: it is a zip, it is tied
+to one run, and it expires after ninety days.)
 
 ### Install it
 

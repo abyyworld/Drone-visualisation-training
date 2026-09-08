@@ -5,7 +5,14 @@ video.
 Static site, no server, hosted on GitHub Pages, and installable on a tablet as an app with an
 icon.
 
-**Live:** https://abyyworld.github.io/Drone-visualisation-training/
+### [⬇ Download the app for the tablet (.apk)](https://github.com/abyyworld/Drone-visualisation-training/releases/latest/download/drone-inspection.apk)
+
+**Or open it in a browser:** https://abyyworld.github.io/Drone-visualisation-training/
+
+The download link above always serves the newest build and never changes. Copy the file to
+the tablet, open it with the file manager, and allow installs from that source when Android
+asks. Full instructions, and the reasons to prefer one route over the other, are in
+[`docs/INSTALL-tablet.md`](docs/INSTALL-tablet.md).
 
 ## Three engines
 
