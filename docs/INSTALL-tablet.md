@@ -38,10 +38,26 @@ inside.
 
 ### What is in it
 
-The web app, the ONNX runtime, and the icon. **Not** any detection model, because none is
-trained yet - the APK ships with the API engines working and the on-device engine reporting
-that it has no model, which is the truthful state. When a model lands in `web/models/`, the
-next APK contains it and the on-device engine starts working offline.
+The web app, a people-and-vehicle detector, the ONNX and MediaPipe runtimes, the HEIC
+decoder, and the icon. Everything needed to work with no signal and no API key, except the
+trained defect models, which do not exist yet.
+
+So out of the box, with no key and no connection:
+
+- **Camera** tracks people and vehicles on the drone's feed, live, on the tablet
+- **Analyse** finds them in photographs and video, counts them, and produces the report
+
+With an API key added in Settings, the provider engines also look for fire, smoke, blade
+damage and soiling - the things the on-device model has no class for. Those run on an
+interval of a few seconds, not per frame, and the overlay shows them dimmer and says how old
+they are.
+
+### It is about 65 MB
+
+Most of that is machine learning that has to be inside the file for the app to work with no
+signal: the people-and-vehicle detector, MediaPipe's runtime twice over (native for the
+camera screen, WebAssembly for the analysis screen), the ONNX runtime, and the HEIC decoder.
+An app that fetched those on demand would be a tenth the size and useless at a wind farm.
 
 ### It needs a current Android System WebView
 
@@ -155,16 +171,38 @@ happening again.
 
 ---
 
+## Before the first flight
+
+Open **Camera -> Settings** and set the **video stream** address. The default is
+`rtsp://192.168.144.25:8554/main.264`, which is SIYI's documented MK15 default, but confirm
+yours: a wrong address looks exactly like a drone that is switched off. From a laptop on the
+same link:
+
+```bash
+ffprobe -rtsp_transport tcp rtsp://192.168.144.25:8554/main.264
+```
+
+While you are there, set the **subject** (crowd, wildfire, turbine, solar). If you want fire,
+smoke or damage as well as people, add a provider and an API key; leave the key blank and
+everything still works, minus those.
+
 ## Using it in the field
 
-1. Fly the inspection and record video, or take stills.
-2. Copy them to the tablet, or shoot on the tablet.
-3. Open the app, pick the engine, drop the files in. A video is sampled into distinct,
-   in-focus frames automatically - `Frames per video` sets how many.
-4. Review the cards. **Print / save PDF report** produces the report.
-5. **Export JSON** saves the machine-readable record. Keep it: with
-   `tools/vlm_inspect.py` and `tools/vlm_to_yolo.py`, those records accumulate into the
-   training set for a detector that will eventually replace the API.
+**Camera.** Open it and the drone's picture appears with boxes on people and vehicles, each
+keeping a number as it moves. The status line shows how many are in view and how many
+distinct people have gone past since the screen opened. **Record** writes an MP4 with the
+boxes burned in; **Photo** saves a still the same way. Both land where Analyse can pick them
+up. The Menu button is hidden while recording, so a half-written file cannot be walked away
+from.
+
+**Analyse.** Drop in the recording, the stills, or anything off a phone - HEIC and MOV
+included. A video is reduced to its distinct, in-focus frames automatically. Review the
+cards, then **Print / save PDF report**.
+
+**Export JSON** saves the machine-readable record, and **Save as training data** saves a zip
+laid out for `tools/vlm_to_yolo.py`. Keep those: they accumulate into the dataset for a
+detector trained on your own imagery, which is the thing that eventually replaces the API
+entirely.
 
 ### The API key on a shared tablet
 
