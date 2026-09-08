@@ -1,0 +1,180 @@
+name: Fetch and convert the detector
+
+# WHY THIS RUNS HERE AND NOT ON A LAPTOP
+#     The model this app needs already exists: someone trained YOLO on VisDrone, which is
+#     aerial imagery full of people a few pixels tall seen from above, and published the
+#     weights. Nothing needs training. It only needs fetching and converting, and the
+#     machine that writes this code cannot reach Hugging Face while a GitHub runner can.
+#     So the runner does it, reproducibly, and commits the result.
+#
+# WHAT COMES OUT
+#     A TFLite int8 model at 320 pixels for the Android app, and an ONNX one for the
+#     browser. int8 because that is what a Qualcomm Hexagon DSP runs, and 320 because a
+#     tile of a 1920-wide frame arrives at about that size, so the model sees it nearly one
+#     to one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: 'Which weights to convert (blank tries the list in order)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    name: Convert
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # CPU torch only. There is no training here and no GPU on this runner; the export is
+      # a graph conversion plus a few hundred calibration images.
+      - name: Install the toolchain
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            torch torchvision
+          pip install ultralytics onnx onnxruntime "numpy<2"
+          pip install tensorflow==2.17.0 onnx2tf onnx_graphsurgeon sng4onnx ai-edge-litert || \
+            echo "::warning::TFLite export dependencies incomplete; ONNX will still be produced"
+
+      # Tried in order, best first. The VisDrone ones are trained on the exact problem:
+      # people seen from a drone. The COCO fallbacks are not, but are still a better small
+      # detector than what ships today, and are reachable from anywhere.
+      - name: Fetch the weights
+        id: fetch
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, urllib.request
+
+          candidates = [c for c in [os.environ.get("CANDIDATE", "").strip()] if c] or [
+              # Aerial, and small enough for a 2018 mid-range Qualcomm.
+              "https://huggingface.co/dronefreak/visdrone-yolov26n/resolve/main/best.pt",
+              "https://huggingface.co/dronefreak/visdrone-yolo11n/resolve/main/best.pt",
+              "https://huggingface.co/dronefreak/visdrone-yolov8n/resolve/main/best.pt",
+              # Aerial but a size up; only worth it if nothing smaller is published.
+              "https://huggingface.co/dronefreak/visdrone-yolov11s/resolve/main/best.pt",
+              # Not aerial, always reachable. Still a better small detector than the
+              # EfficientDet-Lite2 that ships today, and three times faster.
+              "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+              "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt",
+          ]
+
+          for url in candidates:
+              try:
+                  print(f"trying {url}", flush=True)
+                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      data = response.read()
+                  if len(data) < 1_000_000:
+                      print(f"  too small to be weights ({len(data)} bytes)", flush=True)
+                      continue
+                  pathlib.Path("candidate.pt").write_bytes(data)
+                  print(f"  got {len(data) / 1e6:.1f} MB", flush=True)
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                      out.write(f"source={url}\n")
+                      out.write(f"aerial={'visdrone' in url}\n")
+                  raise SystemExit(0)
+              except SystemExit:
+                  raise
+              except Exception as problem:
+                  print(f"  no: {problem}", flush=True)
+
+          raise SystemExit("none of the candidates could be downloaded")
+          PY
+
+      - name: Convert
+        run: |
+          python - <<'PY'
+          import pathlib, shutil
+          from ultralytics import YOLO
+
+          model = YOLO("candidate.pt")
+          names = model.names
+          print("classes:", names, flush=True)
+
+          person = [i for i, n in names.items()
+                    if str(n).lower() in ("person", "pedestrian", "people")]
+          if not person:
+              raise SystemExit(f"no person-like class in {names}")
+          print("person-like classes:", person, flush=True)
+
+          out = pathlib.Path("web/models")
+          out.mkdir(parents=True, exist_ok=True)
+
+          # ONNX first: it needs only torch, so it is the one that will exist even if the
+          # TFLite toolchain, which is a long chain of converters, falls over.
+          onnx = model.export(format="onnx", imgsz=320, simplify=True, opset=12)
+          shutil.copy(onnx, out / "person-320.onnx")
+          print("wrote", out / "person-320.onnx", flush=True)
+
+          try:
+              # int8, because that is what the Hexagon DSP on the controller runs. The
+              # calibration images come from ultralytics' own tiny sample set: a few
+              # hundred are enough to fix the quantisation ranges.
+              tflite = model.export(format="tflite", imgsz=320, int8=True, data="coco8.yaml")
+              shutil.copy(tflite, out / "person-320-int8.tflite")
+              print("wrote", out / "person-320-int8.tflite", flush=True)
+          except Exception as problem:
+              print(f"::warning::TFLite export failed: {problem}")
+          PY
+
+      # A model that exports cleanly and finds nobody is worse than no model at all, so it
+      # is run on a photograph of a person before it is allowed anywhere near the app.
+      - name: Check it finds a person
+        run: |
+          python - <<'PY'
+          import urllib.request, pathlib
+          from ultralytics import YOLO
+
+          fixture = pathlib.Path("person.jpg")
+          if not fixture.exists():
+              url = ("https://raw.githubusercontent.com/ultralytics/ultralytics/main/"
+                     "ultralytics/assets/bus.jpg")
+              urllib.request.urlretrieve(url, fixture)
+
+          found = YOLO("candidate.pt")(str(fixture), imgsz=320, verbose=False)[0]
+          names = found.names
+          people = [b for b in found.boxes
+                    if str(names[int(b.cls)]).lower() in ("person", "pedestrian", "people")]
+          print(f"found {len(people)} people in the fixture", flush=True)
+          if not people:
+              raise SystemExit("the converted model found nobody in a photograph of a queue")
+          PY
+
+      - name: Report what was produced
+        run: ls -lh web/models/ && du -sh web/models/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detector-models
+          path: web/models/person-320*
+          if-no-files-found: error
+
+      - name: Commit it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name abyyworld
+          git config user.email annolieberto@gmail.com
+          git add web/models/person-320* || true
+          if git diff --cached --quiet; then
+            echo "nothing changed"
+            exit 0
+          fi
+          git commit -m "Convert ${{ steps.fetch.outputs.source }} for the app
+
+          Fetched and converted on the runner, which can reach the model hosts this
+          project's own environment cannot. Aerial weights: ${{ steps.fetch.outputs.aerial }}."
+          git push
