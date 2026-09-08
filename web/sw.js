@@ -38,7 +38,7 @@
  *     deleted on activate, so a stale shell cannot outlive a release.
  */
 
-const CACHE_VERSION = 'v9';
+const CACHE_VERSION = 'v10';
 const SHELL_CACHE = `inspection-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `inspection-assets-${CACHE_VERSION}`;
 
@@ -60,6 +60,7 @@ const SHELL = [
   'js/ondevice.js',
   'js/track.js',
   'js/live.js',
+  'js/firescan.js',
   'js/heic.js',
   'prompts/inspection.json',
   'models/manifest.json',
