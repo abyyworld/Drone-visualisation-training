@@ -380,9 +380,8 @@ function renderPeopleCount(stats) {
   const caveat = document.createElement('span');
   caveat.className = 'live__caveat';
   caveat.textContent =
-    'People the detector found, which is fewer than the people there. Anyone small, '
-    + 'distant, overlapping someone else or turned away is missed, and more of them are '
-    + 'missed the higher the camera is. Treat it as a floor, not a measurement.';
+    'A floor: the people the detector could resolve. Small, distant or overlapping ones '
+    + 'are missed.';
   el['live-count-readout'].appendChild(caveat);
 }
 

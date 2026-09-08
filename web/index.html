@@ -45,9 +45,9 @@
     <div class="live__head">
       <h2 class="engine__title">Live tracking</h2>
       <p class="engine__blurb">
-        A camera on this device, tracked in real time. Each person or vehicle keeps a number
-        that follows it, survives a frame the detector missed, and is counted once rather
-        than once per frame. Runs entirely here: nothing is uploaded and no key is needed.
+        Real time, on this device. Everyone gets a number that stays with them, survives a
+        frame the detector missed, and is counted once - including after they leave the
+        frame and come back. Nothing is uploaded and no key is needed.
       </p>
     </div>
 
@@ -84,17 +84,13 @@
 
     <p id="live-status" class="live__status" role="status"></p>
     <p class="field__hint">
-      The subject decides which engines run. People and vehicles are tracked whatever it is
-      set to, because a person on a site matters whatever the site is. Flame and smoke are
-      only scanned for under <strong>Wildfire</strong>: the scan looks for a flat,
-      desaturated region that loses its texture as things move across it, which describes
-      smoke outdoors and describes a painted wall indoors, and telling the two apart is not
-      something the pixels can do. Saying what you are pointing at is.
+      People are tracked whatever the subject is set to. <strong>Wildfire</strong> also
+      scans for flame and smoke, and only it does: a flat grey region that loses its
+      texture is smoke outdoors and a painted wall indoors, and only you can say which.
     </p>
     <p class="field__hint">
-      The drone's own feed arrives over RTSP, which no browser can open. That is what the
-      Android app's camera screen is for, and it runs the same engines on the drone's
-      picture frame by frame; this is the tablet's or laptop's own camera.
+      This is the laptop's or tablet's own camera. The drone's feed is RTSP, which no
+      browser can open, so it runs in the Android app's camera screen with the same engines.
     </p>
   </section>
 
