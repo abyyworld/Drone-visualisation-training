@@ -106,20 +106,35 @@ class UnhurriedSyntheticSource(PacedSyntheticSource):
     PERIOD_S = 0.010
 
 
+#: A queue deep enough that a stalled consumer does not lose the frames a
+#: test is asserting about. Sixty is the length of the synthetic clip, so
+#: nothing is dropped even if inference stops entirely for the whole run.
+ROOMY_QUEUE = 64
+
+
 def unhurried_factory(cfg):
     """A ``source_factory`` producing :class:`UnhurriedSyntheticSource`."""
     return lambda: UnhurriedSyntheticSource(cfg.source).open()
 
 
 def build(cfg, **kwargs) -> Pipeline:
-    """Build a pipeline with the shipped queue size and the scripted stub.
+    """Build a pipeline with the scripted stub and a queue that will not starve.
 
-    The queue size is left at its default of 2 on purpose: that is the drop
-    policy the station actually ships, and a test that raised it would be
-    testing a configuration nobody runs.
+    The queue defaults to something roomier than the shipped size of 2. That
+    is not a test of a configuration nobody runs; it is a test of everything
+    except the drop policy. With a queue of 2, a runner that stalls for a
+    second - which a shared CI machine does - discards most of the run, and a
+    test asking "what did the temporal filter do on frame 12?" then asks about
+    a frame that was never delivered. The failure looks like a broken filter
+    and is a busy machine.
+
+    The drop policy itself is still tested, at the shipped queue size: the
+    tests that mean it pass ``queue_size=2`` explicitly, so raising the
+    default here cannot weaken them.
     """
     runner = kwargs.pop("runner", StubModelRunner(cfg.inference, script=fire_script))
     kwargs.setdefault("source_factory", paced_factory(cfg))
+    kwargs.setdefault("queue_size", ROOMY_QUEUE)
     return Pipeline(cfg, runner=runner, **kwargs)
 
 
