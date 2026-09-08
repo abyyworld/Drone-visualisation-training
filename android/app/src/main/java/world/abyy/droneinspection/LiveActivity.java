@@ -260,6 +260,30 @@ public class LiveActivity extends AppCompatActivity {
 
     private List<Finding> findings = new ArrayList<>();
     private String lastError = "";
+
+    /**
+     * The tally, written to a file beside the recording while one is running.
+     *
+     * Tied to recording rather than to the screen being open, so that starting a recording
+     * is the one deliberate act that says "keep this flight". A live view left running on a
+     * bench does not quietly fill the tablet.
+     */
+    private volatile FlightLog flightLog;
+
+    /** Save an annotated still each time the total passes another of these. */
+    private static final int EVIDENCE_EVERY = 10;
+
+    /**
+     * And no more than this many per flight.
+     *
+     * A busy square could otherwise write a full resolution JPEG every few seconds for
+     * twenty minutes, which is the sort of thing that fills a tablet during the one flight
+     * you needed it for.
+     */
+    private static final int EVIDENCE_LIMIT = 20;
+
+    private int evidenceSaved;
+    private int evidenceAt;
     private long framesDropped;
     private volatile List<FireScan.Region> fireRegions = new ArrayList<>();
     private long detectStartedAt;
@@ -493,6 +517,20 @@ public class LiveActivity extends AppCompatActivity {
         peopleInView = tracker.countOf("person");
         peopleSeen = tracker.countSeen("person");
         fireRegions = fire;
+
+        // Written from this thread on purpose. It is file I/O, and the main thread is the
+        // one drawing the video.
+        FlightLog log = flightLog;
+        if (log != null) {
+            log.record(peopleInView, peopleSeen);
+            if (peopleSeen >= evidenceAt + EVIDENCE_EVERY && evidenceSaved < EVIDENCE_LIMIT) {
+                evidenceAt = peopleSeen - (peopleSeen % EVIDENCE_EVERY);
+                evidenceSaved++;
+                int at = peopleSeen;
+                handler.post(() -> saveFrame(new File(outputDirectory(),
+                        "flight-" + timestamp() + "-" + at + "-people.jpg"), false));
+            }
+        }
 
         final List<Tracker.Track> finalTracks = tracks;
         final List<FireScan.Region> finalFire = fire;
@@ -1226,7 +1264,8 @@ public class LiveActivity extends AppCompatActivity {
         recordWidth = Math.max(2, Math.round(videoPixelWidth * scale)) & ~1;
         recordHeight = Math.max(2, Math.round(videoPixelHeight * scale)) & ~1;
 
-        File file = new File(outputDirectory(), "flight-" + timestamp() + ".mp4");
+        String stamp = timestamp();
+        File file = new File(outputDirectory(), "flight-" + stamp + ".mp4");
         BoxRecorder starting = new BoxRecorder(file, recordWidth, recordHeight, false);
         String problem = starting.startAndWait();
         if (problem != null) {
@@ -1237,6 +1276,7 @@ public class LiveActivity extends AppCompatActivity {
         }
         recorder = starting;
         framesDropped = 0;
+        openFlightLog(stamp);
         glPipeline.startRecording(starting.input(), recordWidth, recordHeight,
                 BoxRecorder.FRAME_RATE, starting::drainNow);
 
@@ -1260,10 +1300,12 @@ public class LiveActivity extends AppCompatActivity {
         recordHeight = probe.getHeight();
         probe.recycle();
 
-        File file = new File(outputDirectory(), "flight-" + timestamp() + ".mp4");
+        String stamp = timestamp();
+        File file = new File(outputDirectory(), "flight-" + stamp + ".mp4");
         recorder = new BoxRecorder(file, recordWidth, recordHeight);
         recorder.start();
         framesDropped = 0;
+        openFlightLog(stamp);
         nextRecordAt = SystemClock.uptimeMillis();
         handler.post(recordTick);
 
@@ -1284,6 +1326,16 @@ public class LiveActivity extends AppCompatActivity {
             // renders into a surface that has gone.
             pipeline.stopRecording();
         }
+        FlightLog log = flightLog;
+        flightLog = null;
+        String tally = "";
+        if (log != null) {
+            log.close();
+            // Named in the toast because a file nobody knows about is a file nobody opens.
+            tally = getString(R.string.and_the_log, log.file().getName(), log.highestSeen());
+        }
+        final String savedTally = tally;
+
         BoxRecorder finishing = recorder;
         recorder = null;
         recordButton.setText(R.string.start_recording);
@@ -1298,15 +1350,44 @@ public class LiveActivity extends AppCompatActivity {
             if (problem != null) {
                 lastError = getString(R.string.recording_failed, problem);
             } else {
-                Toast.makeText(this, getString(R.string.recording_saved, file.getName()),
+                Toast.makeText(this,
+                        getString(R.string.recording_saved, file.getName()) + savedTally,
                         Toast.LENGTH_LONG).show();
             }
             refreshStatus();
         }));
     }
 
+    /**
+     * Start a table of what this flight finds, beside the video it belongs to.
+     *
+     * The same name as the recording, so a flight is one video and one table rather than two
+     * things to pair up afterwards. A log that will not open is reported and the flight
+     * carries on: losing the numbers is a nuisance, losing the footage is the flight.
+     */
+    private void openFlightLog(String stamp) {
+        evidenceSaved = 0;
+        evidenceAt = 0;
+        FlightLog log = new FlightLog(new File(outputDirectory(), "flight-" + stamp + ".csv"));
+        if (log.failure() != null) {
+            lastError = getString(R.string.log_failed, log.failure());
+            return;
+        }
+        flightLog = log;
+    }
+
     private void takeSnapshot() {
-        File file = new File(outputDirectory(), "frame-" + timestamp() + ".jpg");
+        saveFrame(new File(outputDirectory(), "frame-" + timestamp() + ".jpg"), true);
+    }
+
+    /**
+     * One frame with its boxes drawn on, written to a file.
+     *
+     * @param announce whether to say so. The operator pressing the button wants to know it
+     *                 worked; the automatic ones taken as the tally passes each landmark
+     *                 would be a toast every few seconds, over the video, during a flight.
+     */
+    private void saveFrame(File file, boolean announce) {
         requestFrame(SNAPSHOT_LONG_EDGE, frame -> {
             // The boxes are drawn here, on whichever thread delivered the frame, and the
             // JPEG is written here too. Neither belongs on the main thread: compressing a
@@ -1317,13 +1398,18 @@ public class LiveActivity extends AppCompatActivity {
                 try (FileOutputStream out = new FileOutputStream(file)) {
                     frame.compress(Bitmap.CompressFormat.JPEG, 92, out);
                 }
-                handler.post(() -> Toast.makeText(this,
-                        getString(R.string.snapshot_saved, file.getName()),
-                        Toast.LENGTH_LONG).show());
+                if (announce) {
+                    handler.post(() -> Toast.makeText(this,
+                            getString(R.string.snapshot_saved, file.getName()),
+                            Toast.LENGTH_LONG).show());
+                }
             } catch (IOException | RuntimeException writing) {
-                handler.post(() -> Toast.makeText(this,
-                        getString(R.string.snapshot_failed, String.valueOf(writing.getMessage())),
-                        Toast.LENGTH_LONG).show());
+                if (announce) {
+                    handler.post(() -> Toast.makeText(this,
+                            getString(R.string.snapshot_failed,
+                                    String.valueOf(writing.getMessage())),
+                            Toast.LENGTH_LONG).show());
+                }
             } finally {
                 frame.recycle();
             }
