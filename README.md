@@ -18,20 +18,32 @@ asks. Full instructions, and the reasons to prefer one route over the other, are
 
 | | On device | Trained defect models | Provider API |
 |---|---|---|---|
-| Where it runs | This device, MediaPipe plus a computed flame scan | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
+| Where it runs | This device: a detector plus a computed flame scan | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
 | Ready now | **Yes** | No, needs a dataset | With a key |
 | Cost | Nothing | Nothing | Per image |
 | Offline | Yes | Yes | No |
 | Images leave the device | Never | Never | Yes |
 | Speed | 5-15 per second | Similar | One every few seconds |
 | **Tracks across frames** | **Yes** | Possible | No, and never will |
-| Finds | person, car, truck, bus, bicycle, and flame and smoke regions | its trained classes | anything it can describe |
+| Finds | people, and vehicles in the browser, plus flame and smoke regions | its trained classes | anything it can describe |
 | Cannot find | cracks, corrosion, soiling | anything outside its classes | - |
 
 **On device** is the default because it is the only one ready without a key or a dataset.
-It is two engines at once. A COCO-trained EfficientDet-Lite2 finds people and vehicles - see
-[`web/models/DETECTOR.md`](web/models/DETECTOR.md) for what it covers, its limits at
-altitude, and why it is that model rather than a YOLO one (the licence).
+It is two engines at once, and the detector half is not the same model in both places.
+
+On the tablet it is YOLO finetuned on **VisDrone**, which is aerial footage full of people a
+few pixels tall seen from overhead. That is this job rather than an approximation of it, and
+somebody else had already done the work and published the weights. 2.8 MB, 320 px, int8,
+driven through LiteRT so that NNAPI can reach the Snapdragon's DSP. Ultralytics releases
+these weights under **AGPL-3.0**, which is a deliberate choice made possible by this being a
+public repository and a demonstration rather than a product. See
+[`web/models/PERSON-320.md`](web/models/PERSON-320.md).
+
+In the browser the live view still runs a COCO-trained EfficientDet-Lite2 through MediaPipe,
+which finds people and vehicles at ground level and loses people from altitude. See
+[`web/models/DETECTOR.md`](web/models/DETECTOR.md). The **Crowd** inspection type in the
+analysis screen runs the aerial model instead, so a drone still can be compared between the
+two on one machine.
 
 Flame and smoke are computed rather than detected, because there is no permissively licensed
 model for them to ship. Colour finds the candidates; time decides. Fire burns in place and
@@ -54,9 +66,10 @@ the video, detection runs as fast as the device manages, and the tracker coasts 
 Nothing queues behind itself, so a slow device degrades instead of spiralling.
 
 **People are counted on every subject**, not just crowd - someone at the base of a turbine
-or near a fire is the most important thing in the frame. The count always comes from the
-same on-device detector whatever engine ran the analysis, so a batch done by a provider and
-one done on the device mean the same thing. It appears as a footnote on each card, under the
+or near a fire is the most important thing in the frame. A model that reports people answers
+for them itself; one that does not, such as a defect model on a turbine blade, has no idea
+what a person is, so the count comes from the on-device detector instead. Either way one
+frame gets one answer rather than two that can disagree. It appears as a footnote on each card, under the
 batch summary, in the JSON export and in the PDF.
 
 **People count** is a toggle on the live view. Two numbers, because they answer different

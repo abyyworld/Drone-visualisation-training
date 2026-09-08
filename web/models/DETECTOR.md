@@ -2,6 +2,11 @@
 
 EfficientDet-Lite2, int8, 448x448, trained on COCO. **Apache-2.0.**
 
+> **The browser's detector, not the tablet's.** The live view in the APK runs the aerial
+> model in [`PERSON-320.md`](PERSON-320.md) instead: this one loses people from altitude,
+> which is the whole job there. What follows still describes what the browser runs, and why
+> the licence question below was decided the other way for a demonstration.
+
     https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/1/efficientdet_lite2.tflite
 
 ## Why this one

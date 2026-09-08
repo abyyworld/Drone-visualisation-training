@@ -45,7 +45,7 @@ to one run, and it expires after ninety days.)
 
 ### What is in it
 
-The web app, a people-and-vehicle detector, the ONNX and MediaPipe runtimes, the HEIC
+The web app, two detectors, the ONNX and MediaPipe runtimes, the HEIC
 decoder, and the icon. Everything needed to work with no signal and no API key, except the
 trained defect models, which do not exist yet.
 
@@ -69,7 +69,7 @@ of a few seconds, not per frame, and the overlay shows them dimmer and says how 
 ### It is about 65 MB
 
 Most of that is machine learning that has to be inside the file for the app to work with no
-signal: the people-and-vehicle detector, MediaPipe's runtime twice over (native for the
+signal: both detectors, MediaPipe's runtime (for the
 camera screen, WebAssembly for the analysis screen), the ONNX runtime, and the HEIC decoder.
 An app that fetched those on demand would be a tenth the size and useless at a wind farm.
 
