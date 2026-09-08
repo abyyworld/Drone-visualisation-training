@@ -12,6 +12,7 @@
 
 import { getSession } from './runtime.js';
 import { letterbox } from './preprocess.js';
+import { decodeHead, decodeRows, unletterbox } from './yolo.js';
 
 /**
  * Run detection on one image.
@@ -46,121 +47,37 @@ export async function detect(key, spec, modelUrl, image, onProgress) {
   return mapped.sort((a, b) => b.confidence - a.confidence);
 }
 
+/**
+ * Turn one model output into detections, whichever way it was exported.
+ *
+ * The arithmetic lives in yolo.js because the Android app has to do exactly the same thing
+ * to exactly the same numbers, and a decode that disagrees between the two does not raise
+ * an error - it draws boxes beside people on one of them, or finds nobody at all, which
+ * looks identical to an empty scene.
+ */
 function decode(output, spec) {
   const dims = output.dims;
   const labels = spec.labels ?? [];
-  const confThreshold = spec.confThreshold ?? 0.25;
+  const options = {
+    confThreshold: spec.confThreshold ?? 0.25,
+    iouThreshold: spec.iouThreshold ?? 0.45,
+  };
 
-  // End-to-end export: already NMS'd, one row per detection.
-  if (dims.length === 3 && dims[2] === 6) {
-    const [, count] = dims;
-    const values = output.data;
-    const detections = [];
-    for (let i = 0; i < count; i += 1) {
-      const offset = i * 6;
-      const confidence = values[offset + 4];
-      if (confidence < confThreshold) continue;
-      const classId = Math.round(values[offset + 5]);
-      detections.push({
-        classId,
-        label: labels[classId] ?? `class_${classId}`,
-        confidence,
-        box: [values[offset], values[offset + 1], values[offset + 2], values[offset + 3]],
-      });
-    }
-    return detections;
-  }
-
-  // Classic head: [1, 4+nc, anchors], channel-major.
   if (dims.length !== 3) {
     throw new Error(`unsupported model output shape [${dims}]`);
   }
-  const [, channels, anchors] = dims;
-  const numClasses = channels - 4;
-  if (numClasses < 1) {
-    throw new Error(`model output [${dims}] has no class channels`);
-  }
-  if (labels.length && labels.length !== numClasses) {
+
+  // End-to-end export: already suppressed, one row per detection.
+  const raw = dims[2] === 6
+    ? decodeRows(output.data, dims[1], options)
+    : decodeHead(output.data, dims[1], dims[2], options);
+
+  if (dims[2] !== 6 && labels.length && labels.length !== dims[1] - 4) {
     throw new Error(
-      `manifest lists ${labels.length} labels but the model predicts ${numClasses} classes`,
+      `manifest lists ${labels.length} labels but the model predicts ${dims[1] - 4} classes`,
     );
   }
-
-  const values = output.data;
-  const detections = [];
-
-  for (let i = 0; i < anchors; i += 1) {
-    let bestScore = 0;
-    let bestClass = -1;
-    for (let c = 0; c < numClasses; c += 1) {
-      const score = values[(4 + c) * anchors + i];
-      if (score > bestScore) {
-        bestScore = score;
-        bestClass = c;
-      }
-    }
-    if (bestClass < 0 || bestScore < confThreshold) continue;
-
-    const cx = values[i];
-    const cy = values[anchors + i];
-    const w = values[anchors * 2 + i];
-    const h = values[anchors * 3 + i];
-
-    detections.push({
-      classId: bestClass,
-      label: labels[bestClass] ?? `class_${bestClass}`,
-      confidence: bestScore,
-      box: [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2],
-    });
-  }
-
-  return nms(detections, spec.iouThreshold ?? 0.45);
+  return raw.map((d) => ({ ...d, label: labels[d.classId] ?? `class_${d.classId}` }));
 }
 
-/** Greedy per-class non-maximum suppression. */
-function nms(detections, iouThreshold) {
-  const kept = [];
 
-  for (const classId of new Set(detections.map((d) => d.classId))) {
-    const candidates = detections
-      .filter((d) => d.classId === classId)
-      .sort((a, b) => b.confidence - a.confidence);
-
-    while (candidates.length) {
-      const best = candidates.shift();
-      kept.push(best);
-      for (let i = candidates.length - 1; i >= 0; i -= 1) {
-        if (iou(best.box, candidates[i].box) > iouThreshold) candidates.splice(i, 1);
-      }
-    }
-  }
-
-  return kept;
-}
-
-function iou(a, b) {
-  const x0 = Math.max(a[0], b[0]);
-  const y0 = Math.max(a[1], b[1]);
-  const x1 = Math.min(a[2], b[2]);
-  const y1 = Math.min(a[3], b[3]);
-
-  const width = x1 - x0;
-  const height = y1 - y0;
-  if (width <= 0 || height <= 0) return 0;
-
-  const intersection = width * height;
-  const areaA = (a[2] - a[0]) * (a[3] - a[1]);
-  const areaB = (b[2] - b[0]) * (b[3] - b[1]);
-  const union = areaA + areaB - intersection;
-  return union > 0 ? intersection / union : 0;
-}
-
-/** Undo the letterbox transform, back to original-image pixels, clamped to bounds. */
-function unletterbox(box, scale, padX, padY, width, height) {
-  return [
-    Math.max(0, (box[0] - padX) / scale),
-    Math.max(0, (box[1] - padY) / scale),
-    Math.min(width, (box[2] - padX) / scale),
-    Math.min(height, (box[3] - padY) / scale),
-  ];
-}

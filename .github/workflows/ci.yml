@@ -46,6 +46,12 @@ jobs:
       - name: Tiling
         run: node tests/test_tiles.mjs
 
+      # Decoding a YOLO head. The same arithmetic runs in Java on the tablet, and getting
+      # it wrong is silent: a transposed layout finds nobody, which looks exactly like an
+      # empty scene, and an anchor stride out by one puts boxes beside people.
+      - name: YOLO decode
+        run: node tests/test_yolo.mjs
+
       # Flame and smoke, and more to the point the four things that are neither: a red
       # panel, a red vehicle driving past, a sunset and an overcast sky. Those are the
       # cases that decide whether the feature is usable or a nuisance.

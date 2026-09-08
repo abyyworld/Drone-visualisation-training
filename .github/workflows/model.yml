@@ -107,7 +107,7 @@ jobs:
           person = [i for i, n in names.items()
                     if str(n).lower() in ("person", "pedestrian", "people")]
           if not person:
-              raise SystemExit(f"no person-like class in {names}")
+              raise SystemExit(f"this model has no person-like class: {names}")
           print("person-like classes:", person, flush=True)
 
           out = pathlib.Path("web/models")
