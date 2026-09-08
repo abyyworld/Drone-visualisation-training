@@ -1,0 +1,11 @@
+{
+  "imgsz": 320,
+  "labels": [
+    "fireorsmoke"
+  ],
+  "keepClasses": [
+    0
+  ],
+  "confThreshold": 0.25,
+  "iouThreshold": 0.45
+}
