@@ -61,6 +61,27 @@ a still is capped at 0.60 confidence and says why. See
 a number that follows it, trails behind it, survives a frame the detector missed, and is
 counted once rather than once per frame. Record and it saves the video with the boxes on it.
 
+### What a flight leaves behind
+
+Press record and three kinds of file land in the app's own Movies directory, all named after
+the same timestamp, which the tablet's file manager and the analysis screen's file picker
+can both see:
+
+| | |
+|---|---|
+| `flight-<time>.mp4` | the video, with the boxes drawn into it |
+| `flight-<time>.csv` | one row per detection: seconds in, how many were in view, how many different people had been seen by then. The last line is the total. |
+| `flight-<time>-<n>-people.jpg` | a still with its boxes, saved as the total passes each ten, up to twenty of them |
+
+The two numbers in the table are different questions and it keeps them apart: a running
+total that goes down is nonsense, and an in-view count that only ever climbs is a lie. The
+stills are capped because a busy square would otherwise write a full-resolution photograph
+every few seconds for the whole flight.
+
+Nothing here can interrupt a flight. A log that will not open is reported once and the
+recording carries on, because losing the numbers is a nuisance and losing the footage is the
+flight.
+
 Detection and drawing are decoupled - drawing runs every animation frame so boxes move with
 the video, detection runs as fast as the device manages, and the tracker coasts between.
 Nothing queues behind itself, so a slow device degrades instead of spiralling.
