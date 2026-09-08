@@ -49,12 +49,24 @@ const CELL = 8;
 const HISTORY = 14;
 const MIN_HISTORY = 4;
 
-// How fast a cell forgets how much texture it used to have. Deliberately far slower than
-// the flicker window: a plume that drifts in and then sits there would otherwise become its
-// own baseline within a second and stop being reported, which is the exact moment an
-// operator most needs the box. At 0.995 a frame the memory half-lives in about fifteen
-// seconds, so a settled plume stays flagged and a genuinely flat grey wall fades out.
-const EDGE_DECAY = 0.995;
+/**
+ * How much less texture a cell must have than the scene around it to read as veiled.
+ *
+ * This is a spatial comparison, not a temporal one, and the change matters. It used to
+ * compare each cell against its own past, which sounds right and has a cold start that
+ * cannot be fixed: whatever is in frame when the camera opens becomes the baseline. Point a
+ * webcam at an office with someone already standing in it and their edges are recorded as
+ * the wall's texture; when they move, the wall reads as having lost detail it never had.
+ * That is the 82 percent smoke box on a painted wall, and no decay rate fixes it, because
+ * the wrong number was written before there was any history to weigh it against.
+ *
+ * Comparing against the rest of the same frame has no such start. Smoke is a region with
+ * much less detail than the scene it sits in: a plume over a hillside is flat against
+ * texture. A painted wall is flat against a room that is also flat, so there is no contrast
+ * and no claim to make. Whether the whole picture is low-detail is answered by the frame
+ * itself, immediately, on the first frame as reliably as on the thousandth.
+ */
+const SMOKE_EDGE_RATIO = 0.4;
 
 // Flame colour, from the published rules.
 const R_MIN = 110;          // Chen's R_T
@@ -78,10 +90,26 @@ const FLICKER_DELTA = 0.06;
 const FLICKER_RATE_FLOOR = 0.45;
 const FLAME_STILL_FLOOR = 0.15;
 const SMOKE_RATIO_FLOOR = 0.35;
-const SMOKE_EDGE_DROP_FLOOR = 0.20;
 const SMOKE_MOVE_FLOOR = 0.35;
 const SMOKE_STILL_FLOOR = 0.50;
 const SMOKE_STILL_EDGE_MAX = 6;
+
+/**
+ * How much detail a cell must have had before losing it counts as evidence.
+ *
+ * The smoke rule's strongest signal is that the texture behind a region has gone. That
+ * measure is meaningless where there was no texture: a painted wall's gradient energy is
+ * about one luma level, so an ordinary flicker of one level reads as a fifty percent drop
+ * and the wall qualifies as smoke. Which is what happened - a webcam pointed at an office
+ * marked the wall behind someone's head at 82 percent.
+ *
+ * Eight is comfortably above camera noise on a flat surface and comfortably below anything
+ * with real detail in it: a painted wall runs one to five, the forest floor in the tests
+ * runs twenty to forty. The gap between those is wide, so the exact number matters less
+ * than being inside it. Below this the whole scene is flat, and a flat region inside a flat
+ * scene says nothing at all - which is the honest answer for a room with a white wall.
+ */
+const SCENE_EDGE_MIN = 8;
 
 // A confidence ceiling for a region found without any time evidence behind it.
 const STILL_CEILING_FLAME = 0.60;
@@ -106,7 +134,6 @@ export class FireScan {
     this.cols = 0;
     this.rows = 0;
     this.history = [];   // one array of samples per cell, oldest first
-    this.edgeBase = null;   // per cell, how much texture it used to have
     this.frames = 0;
   }
 
@@ -120,18 +147,18 @@ export class FireScan {
    *                  evidence:object, temporal:boolean}>}
    *   Boxes normalised to 0..1, so the caller scales them to whatever it is drawing on.
    */
-  scanPixels(data, width, height) {
+  scanPixels(data, width, height, occluders = []) {
     const small = downsample(data, width, height, this.workWidth);
     const grid = this.measure(small);
     this.remember(grid);
-    return this.regions(grid);
+    return this.regions(grid, occluders);
   }
 
   /**
    * Scan whatever the DOM has: a video element, a canvas, an image, an ImageBitmap.
    * Boxes come back in pixels of `width` x `height`, matching every other engine here.
    */
-  scan(source, width, height) {
+  scan(source, width, height, occluders = []) {
     const ratio = height > 0 && width > 0 ? height / width : 0.75;
     const w = this.workWidth;
     const h = Math.max(1, Math.round(w * ratio));
@@ -143,7 +170,7 @@ export class FireScan {
     this.context.drawImage(source, 0, 0, w, h);
     const frame = this.context.getImageData(0, 0, w, h);
 
-    return this.scanPixels(frame.data, w, h).map((finding) => ({
+    return this.scanPixels(frame.data, w, h, occluders).map((finding) => ({
       ...finding,
       box: [
         finding.box[0] * width, finding.box[1] * height,
@@ -161,7 +188,6 @@ export class FireScan {
       this.cols = cols;
       this.rows = rows;
       this.history = Array.from({ length: cols * rows }, () => []);
-      this.edgeBase = new Float32Array(cols * rows).fill(-1);
       this.frames = 0;
     }
 
@@ -251,8 +277,14 @@ export class FireScan {
   }
 
   /** Score every cell, then join the ones that pass into regions. */
-  regions(grid) {
+  regions(grid, occluders = []) {
     const { cols, rows } = grid;
+
+    // How much detail this scene has at all. A region is only "veiled" relative to
+    // something, and this is that something.
+    let sceneEdge = 0;
+    for (const value of grid.edge) sceneEdge += value;
+    sceneEdge /= Math.max(1, grid.edge.length);
     const flameScore = new Float32Array(cols * rows);
     const smokeScore = new Float32Array(cols * rows);
     const evidence = new Array(cols * rows);
@@ -294,13 +326,10 @@ export class FireScan {
         move /= seen - 1;
       }
 
-      // Texture is compared against the cell's own decaying memory, not against the frames
-      // still in the flicker window - see EDGE_DECAY. The comparison is made against the
-      // memory as it stood before this frame, so a cell whose detail has just returned
-      // reports no drop rather than a spurious one.
-      const prior = this.edgeBase[c] < 0 ? edgeNow : this.edgeBase[c] * EDGE_DECAY;
-      const edgeDrop = prior > 0.5 ? clamp01((prior - edgeNow) / prior) : 0;
-      this.edgeBase[c] = Math.max(edgeNow, prior);
+      // Texture, against the rest of this same frame. See SMOKE_EDGE_RATIO.
+      const edgeDrop = sceneEdge >= SCENE_EDGE_MIN
+        ? clamp01((sceneEdge - edgeNow) / sceneEdge)
+        : 0;
 
       evidence[c] = {
         flameMean, flicker, flickerRate, occupancy, smokeNow, edgeDrop, move, hasTime,
@@ -331,7 +360,7 @@ export class FireScan {
           );
         }
         if (smokeNow >= SMOKE_RATIO_FLOOR
-          && edgeDrop >= SMOKE_EDGE_DROP_FLOOR
+          && edgeDrop >= 1 - SMOKE_EDGE_RATIO
           && move >= SMOKE_MOVE_FLOOR) {
           smokeScore[c] = clamp01(
             0.40 * clamp01(smokeNow / 0.60)
@@ -356,7 +385,7 @@ export class FireScan {
       ...join(flameScore, cols, rows, MIN_CELLS_FLAME, FLAME, this.cell, temporal, evidence),
       ...join(smokeScore, cols, rows, MIN_CELLS_SMOKE, SMOKE, this.cell, temporal, evidence),
     ];
-    return dropSky(found, cols, rows);
+    return dropExplained(found, cols, rows, occluders);
   }
 }
 
@@ -431,10 +460,20 @@ function join(score, cols, rows, minCells, label, cell, temporal, evidence) {
  * handheld camera, can pass the movement test too. What they cannot do is be small. A grey
  * region that spans the frame and hangs off the top edge is weather; a plume is a shape.
  */
-function dropSky(found, cols, rows) {
+function dropExplained(found, cols, rows, occluders) {
   const flames = found.filter((f) => f.label === FLAME);
   return found.filter((finding) => {
     if (finding.label !== SMOKE) return true;
+
+    // Something the detector is already tracking is standing there.
+    //
+    // The smoke rule's strongest evidence is that the texture behind a region has gone:
+    // smoke veils what it drifts across. A person walking in front of a wall does exactly
+    // the same thing to that patch of wall, and a webcam pointed at an office marked a
+    // painted wall as smoke at 82 percent for precisely this reason. When a tracked object
+    // covers the region, the missing texture already has an explanation, and a second one
+    // is not needed.
+    if (occluders.some((box) => covers(box, finding.box, 0.5))) return false;
     const [x0, y0, x1, y1] = finding.box;
     const width = x1 - x0;
     const height = y1 - y0;
@@ -452,6 +491,15 @@ function dropSky(found, cols, rows) {
     if (y0 <= 1 / rows && width >= 0.80) return false;
     return width * height <= 0.60;
   });
+}
+
+/** How much of `region` lies inside `box`, as a fraction, against a threshold. */
+function covers(box, region, fraction) {
+  const width = Math.min(box[2], region[2]) - Math.max(box[0], region[0]);
+  const height = Math.min(box[3], region[3]) - Math.max(box[1], region[1]);
+  if (width <= 0 || height <= 0) return false;
+  const area = (region[2] - region[0]) * (region[3] - region[1]);
+  return area > 0 && (width * height) / area >= fraction;
 }
 
 function overlaps(a, b) {

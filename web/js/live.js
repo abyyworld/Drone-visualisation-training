@@ -63,10 +63,38 @@ export class LiveView {
     // number on the box already says which thing is which.
     this.showTrails = false;
     this.countPeople = false;
+    // Which subject the camera is pointed at, and therefore which engines run. See
+    // setSubject(): running the flame scan indoors is how a white wall became smoke.
+    this.subject = 'crowd';
     this.detections = 0;
     this.startedAt = 0;
     this.recorder = null;
     this.recorded = [];
+  }
+
+  /**
+   * What this camera is looking at.
+   *
+   * Not cosmetic, and this is the lesson from a screenshot of an office: the flame and
+   * smoke scan was running on a webcam pointed at a person in front of a white wall, and
+   * marked the wall as smoke at 82 percent. It was not wrong by its own rules - a flat,
+   * desaturated, mid-brightness region that loses its texture when someone moves across it
+   * is exactly what the smoke rule describes. It was being asked a question that made no
+   * sense indoors.
+   *
+   * So the scan runs when the operator says they are looking for fire, and not otherwise.
+   * A subject is a statement about what is in front of the camera, and it is the cheapest
+   * and most reliable false-positive filter available: context no algorithm can infer.
+   */
+  setSubject(subject) {
+    this.subject = subject;
+    this.fire.reset();
+    this.fireRegions = [];
+  }
+
+  /** Does the flame and smoke scan apply to what we are looking at? */
+  scansForFire() {
+    return this.subject === 'wildfire';
   }
 
   /** Cameras the browser will admit to having, for the picker. */
@@ -177,7 +205,9 @@ export class LiveView {
       try {
         const found = detectFrame(this.video, timestamp);
         if (found) {
-          this.tracker.update(found);
+          // The clock goes in explicitly. The tracker lets a box go once it is older than a
+          // second and a half, and it can only know that if it is told what time it is.
+          this.tracker.update(found, performance.now());
           this.detections += 1;
         }
       } catch (error) {
@@ -188,12 +218,21 @@ export class LiveView {
       // Deliberately outside that try. If the model fails the run is over; if the flame
       // scan fails it is one frame of one of two engines, and taking the whole live view
       // down over it would be the wrong trade.
-      try {
-        this.fireRegions = this.fire.scan(
-          this.video, this.video.videoWidth, this.video.videoHeight,
-        );
-      } catch {
-        this.fireRegions = [];
+      if (this.scansForFire()) {
+        try {
+          // The tracked boxes go in with the frame. A smoke region mostly covered by
+          // something the detector is already following has its missing texture explained
+          // already, and does not need a second explanation invented for it.
+          const width = this.video.videoWidth;
+          const height = this.video.videoHeight;
+          const occluders = this.tracker.open().map((track) => [
+            track.box[0] / width, track.box[1] / height,
+            track.box[2] / width, track.box[3] / height,
+          ]);
+          this.fireRegions = this.fire.scan(this.video, width, height, occluders);
+        } catch {
+          this.fireRegions = [];
+        }
       }
     }
 

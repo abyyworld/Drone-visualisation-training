@@ -34,7 +34,13 @@ final class FireScan {
     private static final int CELL = 8;
     private static final int HISTORY = 14;
     private static final int MIN_HISTORY = 4;
-    private static final float EDGE_DECAY = 0.995f;
+    // How much less texture a cell must have than the scene around it to read as veiled.
+    // Spatial, not temporal: comparing a cell against its own past has a cold start that
+    // cannot be fixed, because whatever is in frame when the camera opens becomes the
+    // baseline. A person already standing against a wall writes their edges in as the
+    // wall's texture, and the wall then reads as having lost detail it never had. That is
+    // the 82 percent smoke box on an office wall. See the JavaScript for the full note.
+    private static final float SMOKE_EDGE_RATIO = 0.4f;
 
     private static final float R_MIN = 110f;
     private static final float S_T = 55f;
@@ -52,10 +58,12 @@ final class FireScan {
     private static final float FLICKER_RATE_FLOOR = 0.45f;
 
     private static final float SMOKE_RATIO_FLOOR = 0.35f;
-    private static final float SMOKE_EDGE_DROP_FLOOR = 0.20f;
     private static final float SMOKE_MOVE_FLOOR = 0.35f;
     private static final float SMOKE_STILL_FLOOR = 0.50f;
     private static final float SMOKE_STILL_EDGE_MAX = 6f;
+    // Below this the whole scene is flat, and a flat region inside a flat scene says
+    // nothing at all, which is the honest answer for a room with a white wall.
+    private static final float SCENE_EDGE_MIN = 8f;
 
     private static final float STILL_CEILING_FLAME = 0.60f;
     private static final float STILL_CEILING_SMOKE = 0.45f;
@@ -100,7 +108,6 @@ final class FireScan {
     private int cols;
     private int rows;
     private List<Deque<Sample>> history = new ArrayList<>();
-    private float[] edgeBase = new float[0];
     private int[] pixels = new int[0];
     private long frames;
 
@@ -109,7 +116,6 @@ final class FireScan {
         cols = 0;
         rows = 0;
         history = new ArrayList<>();
-        edgeBase = new float[0];
         frames = 0;
     }
 
@@ -126,6 +132,17 @@ final class FireScan {
      * instead of taking a turn away from it.
      */
     List<Region> scan(Bitmap frame) {
+        return scan(frame, null);
+    }
+
+    /**
+     * Scan one frame, told what the detector is already following.
+     *
+     * The boxes matter for smoke: its strongest evidence is that the texture behind a
+     * region has gone, and a tracked object standing in front of that region explains the
+     * missing texture without any smoke being involved.
+     */
+    List<Region> scan(Bitmap frame, List<float[]> occluders) {
         if (frame == null || frame.getWidth() < 2 || frame.getHeight() < 2) {
             return new ArrayList<>();
         }
@@ -147,7 +164,7 @@ final class FireScan {
         if (scaled != frame) {
             scaled.recycle();
         }
-        return regions(measure(w, h));
+        return regions(measure(w, h), occluders);
     }
 
     // -----------------------------------------------------------------------------------
@@ -171,8 +188,6 @@ final class FireScan {
             for (int i = 0; i < cols * rows; i++) {
                 history.add(new ArrayDeque<Sample>(HISTORY));
             }
-            edgeBase = new float[cols * rows];
-            java.util.Arrays.fill(edgeBase, -1f);
             frames = 0;
         }
 
@@ -271,7 +286,15 @@ final class FireScan {
     // Scoring and region assembly
     // -----------------------------------------------------------------------------------
 
-    private List<Region> regions(Grid grid) {
+    private List<Region> regions(Grid grid, List<float[]> occluders) {
+        // How much detail this scene has at all. A region is only veiled relative to
+        // something, and this is that something.
+        float sceneEdge = 0;
+        for (float value : grid.edge) {
+            sceneEdge += value;
+        }
+        sceneEdge /= Math.max(1, grid.edge.length);
+
         float[] flameScore = new float[cols * rows];
         float[] smokeScore = new float[cols * rows];
         boolean temporal = false;
@@ -318,13 +341,10 @@ final class FireScan {
                 move /= seen - 1;
             }
 
-            // Texture is compared against the cell's own decaying memory, not against the
-            // frames in the flicker window. A plume that drifts in and then sits there
-            // would otherwise become its own baseline within a second and stop being
-            // reported, which is the moment an operator most needs the box.
-            float prior = edgeBase[c] < 0 ? edgeNow : edgeBase[c] * EDGE_DECAY;
-            float edgeDrop = prior > 0.5f ? clamp01((prior - edgeNow) / prior) : 0f;
-            edgeBase[c] = Math.max(edgeNow, prior);
+            // Texture, against the rest of this same frame. See SMOKE_EDGE_RATIO.
+            float edgeDrop = sceneEdge >= SCENE_EDGE_MIN
+                    ? clamp01((sceneEdge - edgeNow) / sceneEdge)
+                    : 0f;
 
             if (hasTime) {
                 // Rate, not amplitude. A red van crossing the shot swings a cell from no
@@ -342,7 +362,7 @@ final class FireScan {
                             + 0.10f * clamp01(flameNow / 0.25f));
                 }
                 if (smokeNow >= SMOKE_RATIO_FLOOR
-                        && edgeDrop >= SMOKE_EDGE_DROP_FLOOR
+                        && edgeDrop >= 1f - SMOKE_EDGE_RATIO
                         && move >= SMOKE_MOVE_FLOOR) {
                     smokeScore[c] = clamp01(
                             0.40f * clamp01(smokeNow / 0.60f)
@@ -367,7 +387,7 @@ final class FireScan {
         List<Region> found = new ArrayList<>();
         found.addAll(join(flameScore, MIN_CELLS_FLAME, FLAME, temporal));
         found.addAll(join(smokeScore, MIN_CELLS_SMOKE, SMOKE, temporal));
-        return dropSky(found);
+        return dropExplained(found, occluders);
     }
 
     /**
@@ -441,7 +461,7 @@ final class FireScan {
      * be shaped like a plume: that boundary is a hairline across the whole frame, and the
      * overcast above it hangs off the top edge.
      */
-    private List<Region> dropSky(List<Region> found) {
+    private List<Region> dropExplained(List<Region> found, List<float[]> occluders) {
         List<Region> flames = new ArrayList<>();
         for (Region region : found) {
             if (FLAME.equals(region.label)) {
@@ -457,6 +477,12 @@ final class FireScan {
             }
             float width = region.x1 - region.x0;
             float height = region.y1 - region.y0;
+
+            // Something the detector is already tracking is standing there, so the missing
+            // texture already has an explanation and a second one is not needed.
+            if (covered(occluders, region)) {
+                continue;
+            }
 
             boolean nearFlame = false;
             for (Region flame : flames) {
@@ -486,6 +512,25 @@ final class FireScan {
             kept.add(region);
         }
         return kept;
+    }
+
+    /** Is at least half of this region inside one of the boxes the detector is following? */
+    private static boolean covered(List<float[]> occluders, Region region) {
+        if (occluders == null || occluders.isEmpty()) {
+            return false;
+        }
+        float area = (region.x1 - region.x0) * (region.y1 - region.y0);
+        if (area <= 0) {
+            return false;
+        }
+        for (float[] box : occluders) {
+            float width = Math.min(box[2], region.x1) - Math.max(box[0], region.x0);
+            float height = Math.min(box[3], region.y1) - Math.max(box[1], region.y0);
+            if (width > 0 && height > 0 && (width * height) / area >= 0.5f) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static float clamp01(float value) {

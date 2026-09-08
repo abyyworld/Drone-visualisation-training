@@ -59,6 +59,12 @@ public class Cross {
       return ground(x, y);
     });
     run("nothing", 20, (x, y, f) -> ground(x + f, y));
+    run("office", 24, (x, y, f) -> {
+      int shift = f * 3;
+      if (Math.abs(x - (30 + shift)) < 26 && y > 30) return new int[]{46, 40, 38};
+      int wall = 190 + ((x + y) % 2);
+      return new int[]{wall, wall + 1, wall - 1};
+    });
     run("still", 1, (x, y, f) -> {
       if (!inside(x, y, FIRE)) return ground(x, y);
       boolean burning = ((x * 3 + y * 5) % 10) > 2;

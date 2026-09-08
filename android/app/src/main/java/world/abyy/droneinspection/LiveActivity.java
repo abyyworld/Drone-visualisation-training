@@ -162,6 +162,8 @@ public class LiveActivity extends AppCompatActivity {
     private volatile NativeDetector detector;
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
+    /** Read on the work thread, set on the main one when the subject changes. */
+    private volatile boolean scansForFire;
     private volatile int peopleInView;
     private volatile int peopleSeen;
     private volatile long detectionsRun;
@@ -235,6 +237,7 @@ public class LiveActivity extends AppCompatActivity {
     private void analyseFrame(Bitmap frame) {
         List<Tracker.Track> tracks = null;
         List<FireScan.Region> fire;
+        long now = System.currentTimeMillis();
         String failureText = null;
         int frameWidth = frame.getWidth();
         int frameHeight = frame.getHeight();
@@ -242,7 +245,9 @@ public class LiveActivity extends AppCompatActivity {
         NativeDetector current = detector;
         if (current != null) {
             try {
-                tracks = tracker.update(current.detect(frame));
+                // The clock goes in explicitly: the tracker lets a box go once it is older
+                // than a second and a half, and it can only know that if it is told.
+                tracks = tracker.update(current.detect(frame), now);
                 detectionsRun++;
             } catch (RuntimeException failure) {
                 failureText = getString(R.string.detector_stopped,
@@ -255,9 +260,31 @@ public class LiveActivity extends AppCompatActivity {
         // Its own catch, and outside the detector's null check on purpose. The two engines
         // are independent: if the model fails to load or dies, the flame and smoke scan
         // carries on, because it needs no model.
-        try {
-            fire = fireScan.scan(frame);
-        } catch (RuntimeException | OutOfMemoryError ignored) {
+        // Only when the operator says they are looking for fire.
+        //
+        // The scan looks for a flat, desaturated region that loses its texture as things
+        // move across it. Outdoors that describes smoke. Indoors it describes a painted
+        // wall with someone walking past it, and on a webcam pointed at an office it
+        // marked exactly that, at 82 percent. The pixels cannot tell those apart. The
+        // person holding the controller can, and the subject setting is them saying so.
+        if (scansForFire) {
+            try {
+                // The tracked boxes go in with the frame: a smoke region mostly covered by
+                // something already being followed has its missing texture explained.
+                List<float[]> occluders = new ArrayList<>();
+                if (tracks != null) {
+                    for (Tracker.Track track : tracks) {
+                        occluders.add(new float[]{
+                                track.box[0] / frameWidth, track.box[1] / frameHeight,
+                                track.box[2] / frameWidth, track.box[3] / frameHeight,
+                        });
+                    }
+                }
+                fire = fireScan.scan(frame, occluders);
+            } catch (RuntimeException | OutOfMemoryError ignored) {
+                fire = new ArrayList<>();
+            }
+        } else {
             fire = new ArrayList<>();
         }
         frame.recycle();
@@ -436,6 +463,7 @@ public class LiveActivity extends AppCompatActivity {
         detectBusy = false;
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
+        scansForFire = "wildfire".equals(Settings.domain(this));
         handler.post(detectTick);
         // The provider still runs, on its slow interval, for what the on-device model
         // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.

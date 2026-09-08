@@ -30,6 +30,20 @@ public final class Tracker {
     private static final double MAX_CENTRE_DRIFT = 1.6;
     private static final double MAX_SIZE_RATIO = 2.2;
     private static final int MAX_MISSES = 20;
+
+    /**
+     * How long a track may coast before it is let go, in milliseconds.
+     *
+     * Frames were the wrong unit, and this is the bug that showed. Twenty missed frames is
+     * about two and a half seconds at the eight detections a second a laptop manages, and
+     * fourteen seconds at the 1.4 a tablet manages on a 363 ms model. A spurious box sat on
+     * the screen, dashed and drifting, for a quarter of a minute after it had stopped being
+     * detected. A second and a half is a person walking behind something and out the other
+     * side; anything longer is a box describing the past.
+     *
+     * Kept in step with MAX_COAST_MS in web/js/track.js.
+     */
+    private static final long MAX_COAST_MS = 1500;
     private static final int CONFIRM_AFTER = 2;
     private static final int MAX_PATH = 60;
 
@@ -41,16 +55,19 @@ public final class Tracker {
         public float confidence;
         public int seen;
         public int missed;
+        /** When this track was last actually seen, rather than predicted. See MAX_COAST_MS. */
+        long lastSeenAt;
         public float[] velocity = {0f, 0f};
         public final List<float[]> path = new ArrayList<>();
         boolean counted;
 
-        Track(int id, String label, float[] box, float confidence) {
+        Track(int id, String label, float[] box, float confidence, long now) {
             this.id = id;
             this.label = label;
             this.box = box;
             this.confidence = confidence;
             this.seen = 1;
+            this.lastSeenAt = now;
             this.path.add(centre(box));
         }
 
@@ -65,6 +82,10 @@ public final class Tracker {
 
     /** Advance one frame. Returns the tracks worth drawing. */
     public List<Track> update(List<Finding> detections) {
+        return update(detections, System.currentTimeMillis());
+    }
+
+    public List<Track> update(List<Finding> detections, long now) {
         List<Pair> pairs = new ArrayList<>();
         for (Track track : tracks) {
             for (int i = 0; i < detections.size(); i++) {
@@ -93,17 +114,18 @@ public final class Tracker {
             usedDetections.add(pair.index);
 
             float[] previous = centre(pair.track.box);
-            float[] now = centre(pair.box);
+            float[] observedCentre = centre(pair.box);
             pair.track.box = pair.box;
             pair.track.confidence = detections.get(pair.index).confidence;
             pair.track.missed = 0;
             pair.track.seen += 1;
+            pair.track.lastSeenAt = now;
             // Smoothed, so one noisy frame does not send the coasting prediction sideways.
             pair.track.velocity = new float[]{
-                    pair.track.velocity[0] * 0.6f + (now[0] - previous[0]) * 0.4f,
-                    pair.track.velocity[1] * 0.6f + (now[1] - previous[1]) * 0.4f,
+                    pair.track.velocity[0] * 0.6f + (observedCentre[0] - previous[0]) * 0.4f,
+                    pair.track.velocity[1] * 0.6f + (observedCentre[1] - previous[1]) * 0.4f,
             };
-            pair.track.path.add(now);
+            pair.track.path.add(observedCentre);
             if (pair.track.path.size() > MAX_PATH) {
                 pair.track.path.remove(0);
             }
@@ -114,7 +136,8 @@ public final class Tracker {
                 continue;
             }
             Finding detection = detections.get(i);
-            tracks.add(new Track(nextId++, detection.label, boxOf(detection), detection.confidence));
+            tracks.add(new Track(nextId++, detection.label, boxOf(detection),
+                    detection.confidence, now));
         }
 
         for (Track track : tracks) {
@@ -137,7 +160,8 @@ public final class Tracker {
             }
         }
 
-        tracks.removeIf(t -> t.missed > MAX_MISSES);
+        // Both bounds, and the time one is the one that matters. See MAX_COAST_MS.
+        tracks.removeIf(t -> t.missed > MAX_MISSES || now - t.lastSeenAt > MAX_COAST_MS);
         return open();
     }
 

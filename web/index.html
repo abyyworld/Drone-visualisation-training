@@ -57,6 +57,13 @@
       <button id="live-record" class="button" hidden>Record</button>
       <select id="live-camera" class="live__camera" hidden aria-label="Camera"></select>
 
+      <select id="live-subject" class="live__camera" aria-label="What the camera is looking at">
+        <option value="crowd">Crowd: people and vehicles</option>
+        <option value="wildfire">Wildfire: people, flame and smoke</option>
+        <option value="turbine">Wind turbine: people and vehicles</option>
+        <option value="solar">Solar: people and vehicles</option>
+      </select>
+
       <label class="live__toggle">
         <input id="live-count" type="checkbox" checked>
         People count
@@ -77,8 +84,16 @@
 
     <p id="live-status" class="live__status" role="status"></p>
     <p class="field__hint">
+      The subject decides which engines run. People and vehicles are tracked whatever it is
+      set to, because a person on a site matters whatever the site is. Flame and smoke are
+      only scanned for under <strong>Wildfire</strong>: the scan looks for a flat,
+      desaturated region that loses its texture as things move across it, which describes
+      smoke outdoors and describes a painted wall indoors, and telling the two apart is not
+      something the pixels can do. Saying what you are pointing at is.
+    </p>
+    <p class="field__hint">
       The drone's own feed arrives over RTSP, which no browser can open. That is what the
-      Android app's camera screen is for, and it runs the same two engines on the drone's
+      Android app's camera screen is for, and it runs the same engines on the drone's
       picture frame by frame; this is the tablet's or laptop's own camera.
     </p>
   </section>

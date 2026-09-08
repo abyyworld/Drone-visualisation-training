@@ -43,6 +43,20 @@ const MAX_SIZE_RATIO = 2.2;
 const MAX_MISSES = 20;
 const CONFIRM_AFTER = 2;
 
+/**
+ * How long a track may coast, in milliseconds, before it is let go.
+ *
+ * Frames were the wrong unit and this is the bug it caused. Twenty missed frames is about
+ * two and a half seconds at the eight detections a second a laptop manages, which is a
+ * reasonable time to hold a box for someone who stepped behind a pillar. On a tablet
+ * managing 1.4 a second it is fourteen seconds, and a spurious detection sits on screen,
+ * dashed and drifting, for a quarter of a minute after everyone has agreed it was nothing.
+ *
+ * A second and a half is a person walking behind something and out the other side. Anything
+ * longer is a box describing the past.
+ */
+const MAX_COAST_MS = 1500;
+
 /** Intersection over union of two [x0, y0, x1, y1] boxes. */
 export function iou(a, b) {
   const x0 = Math.max(a[0], b[0]);
@@ -104,10 +118,16 @@ function affinity(track, box, minIou) {
 }
 
 export class Tracker {
-  constructor({ minIou = MIN_IOU, maxMisses = MAX_MISSES, confirmAfter = CONFIRM_AFTER } = {}) {
+  constructor({
+    minIou = MIN_IOU,
+    maxMisses = MAX_MISSES,
+    confirmAfter = CONFIRM_AFTER,
+    maxCoastMs = MAX_COAST_MS,
+  } = {}) {
     this.minIou = minIou;
     this.maxMisses = maxMisses;
     this.confirmAfter = confirmAfter;
+    this.maxCoastMs = maxCoastMs;
     this.tracks = [];
     this.nextId = 1;
     this.frame = 0;
@@ -120,8 +140,9 @@ export class Tracker {
    * @param {Array<{label:string, confidence:number, box:number[]}>} detections
    * @returns {Array} the open tracks, coasted ones included
    */
-  update(detections = []) {
+  update(detections = [], now = Date.now()) {
     this.frame += 1;
+    this.now = now;
     const pairs = [];
 
     // Every plausible pairing, best first. Only a track and a detection of the same class
@@ -145,7 +166,7 @@ export class Tracker {
 
       const detection = detections[pair.index];
       const previous = centre(pair.track.box);
-      const now = centre(detection.box);
+      const observedCentre = centre(detection.box);
 
       pair.track.box = detection.box;
       pair.track.confidence = detection.confidence;
@@ -153,13 +174,17 @@ export class Tracker {
       pair.track.missed = 0;
       pair.track.seen += 1;
       pair.track.lastFrame = this.frame;
+      pair.track.lastSeenAt = now;
       // Smoothed, so one noisy frame does not send the coasting prediction sideways.
-      const observed = [now[0] - previous[0], now[1] - previous[1]];
+      const observed = [
+        observedCentre[0] - previous[0],
+        observedCentre[1] - previous[1],
+      ];
       pair.track.velocity = [
         pair.track.velocity[0] * 0.6 + observed[0] * 0.4,
         pair.track.velocity[1] * 0.6 + observed[1] * 0.4,
       ];
-      pair.track.path.push(now);
+      pair.track.path.push(observedCentre);
       if (pair.track.path.length > 60) pair.track.path.shift();
     }
 
@@ -176,6 +201,7 @@ export class Tracker {
         missed: 0,
         firstFrame: this.frame,
         lastFrame: this.frame,
+        lastSeenAt: now,
         velocity: [0, 0],
         path: [centre(detection.box)],
       });
@@ -201,7 +227,10 @@ export class Tracker {
       }
     }
 
-    this.tracks = this.tracks.filter((t) => t.missed <= this.maxMisses);
+    // Both bounds, and the time one is the one that matters. See MAX_COAST_MS.
+    this.tracks = this.tracks.filter(
+      (t) => t.missed <= this.maxMisses && now - t.lastSeenAt <= this.maxCoastMs,
+    );
     return this.open();
   }
 

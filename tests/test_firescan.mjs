@@ -162,6 +162,61 @@ console.log('\nSmoke drifting over cover');
   }));
 }
 
+console.log('\nAn office, which is the one that got out');
+{
+  // The screenshot that started this, reduced to its essentials: a flat pale wall, and a
+  // person moving across it. The wall is desaturated and sits in the smoke luminance band,
+  // and the moving person erases its texture the way a plume erases a hillside. The
+  // shipped version marked that wall as smoke at 82 percent.
+  //
+  // It was not a threshold that was slightly too low. It was a measure being applied where
+  // it means nothing: a painted wall has about one luma level of detail, so an ordinary
+  // flicker of one level is a fifty percent drop. A cell with nothing to lose cannot lose
+  // it, and now says so.
+  const scan = new FireScan();
+  let found = [];
+  for (let frame = 0; frame < 24; frame += 1) {
+    const shift = frame * 3;
+    const data = paint((x, y) => {
+      if (Math.abs(x - (30 + shift)) < 26 && y > 30) return [46, 40, 38];
+      const wall = 190 + ((x + y) % 2);
+      return [wall, wall + 1, wall - 1];
+    });
+    found = scan.scanPixels(data, W, H);
+  }
+  check('a painted wall behind a moving person is not smoke',
+    found.every((f) => f.label !== SMOKE),
+    JSON.stringify(found.map((f) => [f.label, f.box.map((v) => v.toFixed(2))])));
+}
+
+console.log('\nA tracked object explains away what it is standing in front of');
+{
+  // The second line of defence, for a textured background where the drop is real evidence
+  // but has an ordinary explanation: something the detector is already following is
+  // standing there. The caller passes the boxes it is tracking; a smoke region mostly
+  // covered by one of them has its missing texture accounted for already.
+  const scan = new FireScan();
+  const withBoxes = new FireScan();
+  let blind = [];
+  let informed = [];
+  for (let frame = 0; frame < 24; frame += 1) {
+    const arrived = Math.max(0, frame - 5);
+    const top = Math.max(0, 100 - arrived * 6);
+    const data = paint((x, y) => {
+      const inPlume = frame > 5 && y >= top && y < 100
+        && Math.abs(x - 80) < 30 + ((y + frame) % 7);
+      if (!inPlume) return ground(x, y);
+      const grey = 168 + ((x + y * 2 + frame * 9) % 5);
+      return [grey, grey + 2, grey - 1];
+    });
+    blind = scan.scanPixels(data, W, H);
+    informed = withBoxes.scanPixels(data, W, H, [[0.2, 0, 0.8, 1]]);
+  }
+  check('without the boxes it is smoke', blind.some((f) => f.label === SMOKE));
+  check('with them it is a tracked thing', informed.every((f) => f.label !== SMOKE),
+    JSON.stringify(informed.map((f) => f.label)));
+}
+
 console.log('\nWeather, which is not smoke');
 {
   const scan = new FireScan();

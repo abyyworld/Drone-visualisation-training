@@ -166,5 +166,46 @@ check('reset clears the tracks', tracker.open().length === 0);
 check('and the running total', tracker.countSeen('person') === 0);
 check('and restarts the numbering', tracker.update([person(0, 0)]) && tracker.tracks[0].id === 1);
 
+console.log('\nCoasting is bounded by time, not by frames');
+{
+  // The bug this pins: twenty missed frames is about two and a half seconds at the eight
+  // detections a second a laptop manages, and fourteen seconds at the 1.4 a tablet manages.
+  // A spurious box sat on screen, dashed and drifting, for a quarter of a minute. Frames
+  // were the wrong unit for a budget that is really about how stale a box may get.
+  const tracker = new Tracker();
+  let clock = 1000000;
+  tracker.update([person(50, 50)], clock);
+  clock += 700;
+  tracker.update([person(52, 50)], clock);
+  check('a track is open after two sightings', tracker.open().length === 1);
+
+  clock += 700;
+  tracker.update([], clock);
+  check('it coasts through one missed detection', tracker.open().length === 1);
+  clock += 700;
+  tracker.update([], clock);
+  check('and a second', tracker.open().length === 1);
+  clock += 700;
+  tracker.update([], clock);
+  check('but is let go once it is older than the coast budget', tracker.open().length === 0,
+    `${tracker.tracks.length} still held`);
+}
+
+console.log('\nA fast machine still gets its full coast');
+{
+  const tracker = new Tracker();
+  let clock = 2000000;
+  tracker.update([person(50, 50)], clock);
+  clock += 120;
+  tracker.update([person(52, 50)], clock);
+  // Eight detections a second: ten missed frames is well inside the time budget, where the
+  // old frame count would have held it too. Both units agree here, which is the point.
+  for (let i = 0; i < 10; i += 1) {
+    clock += 120;
+    tracker.update([], clock);
+  }
+  check('ten missed frames at 8fps still holds the box', tracker.open().length === 1);
+}
+
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

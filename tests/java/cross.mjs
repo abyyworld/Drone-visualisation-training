@@ -22,5 +22,8 @@ run('smoke',24,(x,y,f)=>{ const a=Math.max(0,f-5), top=Math.max(0,100-a*6);
   const g=168+((x+y*2+f*9)%5); return [g,g+2,g-1];});
 run('overcast',24,(x,y,f)=>{const w=(f%3)-1; if(y<60+w){const g=176+((x+f)%4);return [g,g,g+1];} return ground(x,y);});
 run('nothing',20,(x,y,f)=>ground(x+f,y));
+run('office',24,(x,y,f)=>{ const shift=f*3;
+  if(Math.abs(x-(30+shift))<26&&y>30) return [46,40,38];
+  const w=190+((x+y)%2); return [w,w+1,w-1];});
 run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
   return ((x*3+y*5)%10)>2?[255,140,30]:[120,40,10];});

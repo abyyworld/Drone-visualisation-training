@@ -133,7 +133,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private EGLSurface encoderSurface = EGL14.EGL_NO_SURFACE;
 
     private SurfaceTexture videoTexture;
-    private Surface videoInput;
+    private volatile Surface videoInput;
     private int videoTextureId;
     private int overlayTextureId;
     private boolean overlayLoaded;
@@ -292,6 +292,13 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     void setOverlay(Bitmap overlay) {
         gl.post(() -> {
             try {
+                if (!alive) {
+                    return;
+                }
+                // The context is already current on this thread, but say so anyway: an
+                // upload against no current context is a silent no-op that shows up later
+                // as an overlay that never appears in the file.
+                makeCurrent(displaySurface);
                 if (overlayTextureId == 0) {
                     overlayTextureId = createTexture(GLES20.GL_TEXTURE_2D);
                 }
@@ -441,6 +448,7 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
 
         Bitmap frame = null;
         try {
+            makeCurrent(displaySurface);
             ensureFrameBuffer(width, height);
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, frameBuffer);
             GLES20.glDisable(GLES20.GL_BLEND);

@@ -66,7 +66,7 @@ async function init() {
     'drop-blocked', 'engine-key-link',
     'live-start', 'live-stop', 'live-record', 'live-camera', 'live-stage', 'live-video',
     'live-overlay', 'live-status', 'live-count', 'live-trails', 'live-count-readout',
-    'live-fire',
+    'live-fire', 'live-subject',
     'engine-provider', 'engine-model', 'engine-model-field', 'engine-model-hint',
     'engine-refresh', 'engine-key', 'engine-key-field', 'engine-key-label',
     'engine-key-hint', 'engine-key-toggle', 'engine-warning', 'privacy-pill',
@@ -266,6 +266,15 @@ function wireLive() {
 
   el['live-trails'].addEventListener('change', () => {
     view.showTrails = el['live-trails'].checked;
+  });
+
+  // The subject decides which engines run. Applied immediately, including mid-stream: an
+  // operator who has just realised the flame scan is marking a wall should be able to
+  // switch it off without stopping the camera.
+  view.setSubject(el['live-subject'].value);
+  el['live-subject'].addEventListener('change', () => {
+    view.setSubject(el['live-subject'].value);
+    el['live-fire'].hidden = true;
   });
 
   el['live-camera'].addEventListener('change', async () => {
