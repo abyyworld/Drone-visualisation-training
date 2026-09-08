@@ -253,6 +253,9 @@ function wireLive() {
     }
   });
 
+  view.countPeople = el['live-count'].checked;
+  el['live-count-readout'].hidden = !view.countPeople;
+
   el['live-count'].addEventListener('change', () => {
     view.countPeople = el['live-count'].checked;
     el['live-count-readout'].hidden = !view.countPeople;
@@ -523,6 +526,41 @@ async function refreshModels() {
 }
 
 
+
+/**
+ * How many people the on-device detector finds, whatever engine is doing the main analysis.
+ *
+ * WHY THIS RUNS EVERY TIME
+ *     People matter in all four subjects, not just the crowd one. Someone at the base of a
+ *     turbine, on a solar array, or anywhere near a fire is the most important thing in the
+ *     frame, and which engine happens to be selected for defects has nothing to do with it.
+ *
+ *     So the count always comes from the same place - the detector that ships with the app -
+ *     rather than from whichever engine is running. That is what makes it comparable between
+ *     a batch analysed by a provider and one analysed on the device: same model, same
+ *     threshold, same meaning. A provider's own mention of people is prose and varies with
+ *     the wording of the reply; this is a number that means one thing.
+ *
+ * IT IS A FLOOR
+ *     It counts what the detector found. Anyone small, distant, overlapping someone else or
+ *     turned away is missed, and more of them are missed the higher the camera was. Every
+ *     place this number is shown says so.
+ */
+async function countPeople(image, existing) {
+  // The on-device engine has already looked; counting its own findings again would be a
+  // second inference for an answer already on the table.
+  if (existing) return existing.filter((d) => d.label === 'person').length;
+
+  try {
+    const found = await detectOnDevice(image);
+    return found.filter((d) => d.label === 'person').length;
+  } catch {
+    // A failed count must never fail the analysis. null renders as "not counted" rather
+    // than as zero, because those are very different claims.
+    return null;
+  }
+}
+
 /**
  * Analyse one image with the detector that ships with the app.
  *
@@ -568,6 +606,7 @@ async function analyseOnDevice(image, base) {
     engine: { provider: ENGINE_ONDEVICE, model: spec.file ?? 'detector.tflite' },
     detections,
     unlocated: [],
+    people: await countPeople(image, detections),
     score, severity,
   };
 }
@@ -624,6 +663,7 @@ async function analyseWithApi(image, base) {
     engine: { provider: outcome.provider, model: outcome.model },
     detections: outcome.detections,
     unlocated: outcome.unlocated,
+    people: await countPeople(image),
     score, severity,
   };
 }
@@ -840,6 +880,7 @@ async function analyseImage(image, base) {
       domain: domain.key, displayName: spec.displayName ?? domain.key,
       notes: spec.notes, zeroDetectionNote: spec.zeroDetectionNote,
       gate: domain.gate, detections, score, severity,
+      people: await countPeople(image),
     };
   } catch (error) {
     return { ...base, image, status: 'error', message: error.message };
@@ -972,6 +1013,17 @@ function appendResultCard(result) {
       body.appendChild(list);
     }
 
+    // The people footnote, on every card whatever the subject. Written as a labelled number
+    // rather than a sentence: phrased as prose, a zero reads as a claim about the scene,
+    // where "People detected: 0" is a statement about what the detector marked. The
+    // repository's own scanner rejects the prose form, and it is right to.
+    if (result.people !== null && result.people !== undefined) {
+      const people = document.createElement('p');
+      people.className = 'card__people';
+      people.textContent = `People detected: ${result.people}`;
+      body.appendChild(people);
+    }
+
     // A zero-detection result is the one most likely to be read as "this is fine", and it
     // is the one the model is least entitled to assert. Say what it looked for and what it
     // cannot see, rather than letting a green badge stand alone.
@@ -1033,6 +1085,27 @@ function renderSummary() {
     row.appendChild(tile);
   }
   el.summary.appendChild(row);
+
+  // The batch footnote. Summed across images, so somebody photographed three times counts
+  // three times - these are images, not a headcount of a site, and the note says so.
+  const counted = state.results.filter((r) => typeof r.people === 'number');
+  if (counted.length) {
+    const total = counted.reduce((sum, r) => sum + r.people, 0);
+    const note = document.createElement('p');
+    note.className = 'summary__people';
+    note.innerHTML = `<strong>People detected: ${total}</strong> across `
+      + `${counted.length} image${counted.length === 1 ? '' : 's'}`;
+
+    const caveat = document.createElement('span');
+    caveat.className = 'summary__caveat';
+    caveat.textContent =
+      'Summed per image, so anyone appearing in several is counted several times. It is what '
+      + 'the on-device detector found, which is fewer than the people there: anyone small, '
+      + 'distant, overlapping someone else or turned away is missed, and more are missed the '
+      + 'higher the camera was. A floor, not a measurement.';
+    note.appendChild(caveat);
+    el.summary.appendChild(note);
+  }
 }
 
 /** Date, image count and model versions, for the printed report only. */
@@ -1205,6 +1278,7 @@ function buildSummary() {
       severity_label: r.severity ? severityLabel(r.severity, r.domain) : null,
       severity_band: r.severity?.key ?? null,
       severity_score: r.score != null ? Number(r.score.toFixed(3)) : null,
+      people_detected: typeof r.people === 'number' ? r.people : null,
       message: r.message ?? null,
       gate: r.gate ? { verdict: r.gate.verdict, scores: r.gate.scores } : null,
       engine: r.engine ?? { provider: 'local', model: state.manifest?.[r.domain]?.file ?? null },

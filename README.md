@@ -36,6 +36,12 @@ Detection and drawing are decoupled - drawing runs every animation frame so boxe
 the video, detection runs as fast as the device manages, and the tracker coasts between.
 Nothing queues behind itself, so a slow device degrades instead of spiralling.
 
+**People are counted on every subject**, not just crowd - someone at the base of a turbine
+or near a fire is the most important thing in the frame. The count always comes from the
+same on-device detector whatever engine ran the analysis, so a batch done by a provider and
+one done on the device mean the same thing. It appears as a footnote on each card, under the
+batch summary, in the JSON export and in the PDF.
+
 **People count** is a toggle on the live view. Two numbers, because they answer different
 questions: how many are in view now, and how many distinct people have been seen since the
 camera opened - counted once each by their track, not once per frame. It counts what the

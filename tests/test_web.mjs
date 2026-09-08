@@ -285,6 +285,9 @@ async function main() {
       page.locator('#export-json').click(),
     ]).then(([d]) => d);
     const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+    check('the export records the people count per image',
+      exported.results.some((r) => typeof r.people_detected === 'number'),
+      JSON.stringify(exported.results.map((r) => r.people_detected)));
     equal('JSON export result count', exported.results.length, 5);
     equal('JSON export overall', exported.summary.overall, 'Moderate findings');
     equal('JSON export bbox is in original pixels',
@@ -397,6 +400,20 @@ async function main() {
     // on that same photograph - no error, just nothing - which is indistinguishable from a
     // frame with nobody in it. This check is what would catch a well-meaning switch back.
     check('the detector is not silently finding nothing', labels.length > 0);
+
+    // People are counted on every subject, not only crowd. Someone at the base of a turbine
+    // or near a fire is the most important thing in the frame, and which engine is selected
+    // for defects has nothing to do with that - so the count always comes from the same
+    // detector, whatever engine ran the analysis.
+    check('the people footnote is on the card',
+      (await found.locator('.card__people').textContent()).includes('People detected:'));
+    check('and it found the person in the photograph',
+      /People detected: [1-9]/.test(await found.locator('.card__people').textContent()));
+
+    const batchNote = await page.locator('.summary__people').textContent();
+    check('the batch footnote totals them', /People detected: \d+/.test(batchNote), batchNote);
+    check('and says the number is a floor rather than a measurement',
+      /fewer than the people there/.test(batchNote), batchNote);
 
     // HEIC: what an iPhone shoots, and what no browser but Safari will open. It used to be
     // dropped before anything tried to decode it, because the operating system gives it no

@@ -94,6 +94,8 @@ def make_styles():
         fontName='Helvetica', leftIndent=10, spaceAfter=2)
     add('Footer',      fontSize=7,  textColor=colors.HexColor('#AAAAAA'),
         fontName='Helvetica', alignment=TA_CENTER)
+    add('Footnote',    fontSize=8,  textColor=colors.HexColor('#555555'),
+        fontName='Helvetica', leading=11, spaceBefore=2)
     return base
 
 def on_page(canvas, doc):
@@ -221,21 +223,25 @@ def build_summary_table(styles, results):
     story.append(Paragraph('Inspection Summary', styles['SectionHead']))
     story.append(HRFlowable(width='100%', thickness=1, color=DARK_BLUE, spaceAfter=6))
 
-    headers = ['#', 'Image', 'Defects Detected', 'Score', 'Status']
+    headers = ['#', 'Image', 'Findings', 'People', 'Score', 'Status']
     rows = [headers]
     for i, r in enumerate(results, 1):
         dets = [d for d in r['detections'] if d['class'] != 'healthy']
-        det_str = ', '.join(set(d['class'] for d in dets)) if dets else 'None'
+        det_str = ', '.join(sorted({d['class'] for d in dets})) if dets else 'None'
         name = r['image']
+        # A dash rather than a zero when nothing counted it, because "none were counted"
+        # and "the count was not run" are different things and a zero says the first.
+        people = r.get('people_detected')
         rows.append([
             str(i),
-            name[:35] + '…' if len(name) > 35 else name,
+            name[:32] + '…' if len(name) > 32 else name,
             det_str,
+            '-' if people is None else str(people),
             str(r['severity_score']),
             r['severity_label'],
         ])
 
-    col_ws = [10*mm, 65*mm, 50*mm, 18*mm, 32*mm]
+    col_ws = [8*mm, 55*mm, 45*mm, 15*mm, 15*mm, 32*mm]
     tbl = Table(rows, colWidths=col_ws, repeatRows=1)
     sty = [
         ('BACKGROUND',    (0,0),(-1,0),  DARK_BLUE),
@@ -256,6 +262,23 @@ def build_summary_table(styles, results):
         sty.append(('FONTNAME',  (4,i),(4,i), 'Helvetica-Bold'))
     tbl.setStyle(TableStyle(sty))
     story.append(tbl)
+
+    # The people footnote. Under the table rather than in a cell, because the caveat is as
+    # important as the number and does not fit in fifteen millimetres.
+    counted = [r for r in results if isinstance(r.get('people_detected'), int)]
+    if counted:
+        total = sum(r['people_detected'] for r in counted)
+        story.append(Spacer(1, 3*mm))
+        story.append(Paragraph(
+            f'<b>People detected: {total}</b> across {len(counted)} '
+            f'image{"" if len(counted) == 1 else "s"}. '
+            'Summed per image, so anyone appearing in several is counted several times. '
+            'This is what the on-device detector found, which is fewer than the people '
+            'there: anyone small, distant, overlapping someone else or turned away is '
+            'missed, and more are missed the higher the camera was. A floor, not a '
+            'measurement.',
+            styles['Footnote'],
+        ))
     story.append(PageBreak())
     return story
 

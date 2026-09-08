@@ -495,3 +495,28 @@ body {
   font-size: 0.78rem;
   opacity: 0.75;
 }
+
+/* The people footnote. Present on every card whatever the subject, because a person at a
+   turbine or a fire matters as much as one in a crowd. */
+.card__people {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.summary__people {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, #ccd3da);
+  font-size: 0.9rem;
+}
+
+.summary__caveat {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 400;
+  opacity: 0.75;
+  line-height: 1.5;
+  max-width: 72ch;
+}
