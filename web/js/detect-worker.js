@@ -111,7 +111,10 @@ async function load() {
     // frame with nothing in it.
     baseOptions: { modelAssetPath: modelPath, delegate },
     scoreThreshold,
-    maxResults: 60,
+    // Per pass, and there are two passes a frame. Sixty was a number for a scene with a
+    // few things in it; a crowd is not that, and a cap is a count that silently stops
+    // climbing at a round number.
+    maxResults: 300,
     // IMAGE, not VIDEO. VIDEO mode carries state from one call to the next, which is
     // exactly wrong when consecutive calls are different crops of the same frame: it would
     // read a tile as the whole scene having jumped. IMAGE is stateless and needs no

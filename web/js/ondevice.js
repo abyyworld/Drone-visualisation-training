@@ -136,7 +136,9 @@ async function loadDetector(runningMode, onProgress) {
         delegate,
       },
       scoreThreshold: spec.scoreThreshold ?? 0.35,
-      maxResults: 60,
+      // Sixty was a number for a scene with a few things in it; a crowd is not that, and
+      // a cap is a count that silently stops climbing at a round number.
+      maxResults: 300,
       runningMode,
     });
   })().catch((error) => {

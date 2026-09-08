@@ -158,7 +158,12 @@ public final class NativeDetector {
                         .setBaseOptions(base)
                         .setRunningMode(RunningMode.VIDEO)
                         .setScoreThreshold(0.35f)
-                        .setMaxResults(60)
+                        // Per pass, and there are two passes a cycle. Sixty was a
+                        // number for a scene with a few things in it; a crowd is not that.
+                        // The cost of raising it is non-max suppression over more boxes,
+                        // which is arithmetic on a list, while the cost of leaving it low
+                        // is a count that silently stops climbing at a round number.
+                        .setMaxResults(300)
                         .build();
         return ObjectDetector.createFromOptions(context, options);
     }

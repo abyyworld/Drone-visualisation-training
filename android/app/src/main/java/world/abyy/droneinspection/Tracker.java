@@ -61,8 +61,15 @@ public final class Tracker {
     /** How long someone stays recognisable after leaving the frame: one route leg. */
     private static final long REID_WINDOW_MS = 5 * 60 * 1000L;
 
-    /** A cap, so a long flight over a crowd does not grow an unbounded gallery. */
-    private static final int REID_MAX_REMEMBERED = 240;
+    /**
+     * How many people can be remembered at once.
+     *
+     * A ceiling on how many distinct people a flight can count, not a detail: once it is
+     * full the oldest are forgotten, and a forgotten person walking back into frame is
+     * counted a second time. Two thousand signatures is about a megabyte and a half, which
+     * is affordable even on a two-gigabyte controller.
+     */
+    private static final int REID_MAX_REMEMBERED = 2000;
     private static final int CONFIRM_AFTER = 2;
     private static final int MAX_PATH = 60;
 

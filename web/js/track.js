@@ -81,8 +81,17 @@ const REID_SIMILARITY = 0.62;
  */
 const REID_WINDOW_MS = 5 * 60 * 1000;
 
-/** A cap, so a long flight over a crowd does not grow an unbounded gallery. */
-const REID_MAX_REMEMBERED = 240;
+/**
+ * How many people can be remembered at once.
+ *
+ * This is not a detail: it is a ceiling on how many distinct people a flight can count.
+ * Once it is full the oldest are forgotten, and a forgotten person who walks back into
+ * frame is counted a second time. Two hundred and forty was far too low for a crowd.
+ *
+ * Two thousand signatures is about one and a half megabytes, which is affordable even on a
+ * two-gigabyte controller, and the search is a scan of an array of floats.
+ */
+const REID_MAX_REMEMBERED = 2000;
 
 /** Intersection over union of two [x0, y0, x1, y1] boxes. */
 export function iou(a, b) {
