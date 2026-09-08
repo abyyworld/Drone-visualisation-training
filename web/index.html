@@ -251,23 +251,22 @@
         </p>
       </article>
       <article>
-        <h3>Crowds <span class="tag">regions, not people</span></h3>
-        <p>Marks <strong>dense packing</strong>, <strong>choke points</strong>,
+        <h3>Crowds <span class="tag">a number, and regions</span></h3>
+        <p>Every image gets a <strong>people count</strong>, whichever engine analysed it.
+        The on-device detector boxes individuals and totals them, and the number is on the
+        card and in the report as <em>People detected</em>. Live tracking adds a second
+        number: how many distinct people have gone past since the camera opened.</p>
+        <p>On top of that, a <strong>provider engine</strong> marks
+        <strong>dense packing</strong>, <strong>choke points</strong>,
         <strong>counterflow</strong>, <strong>pressure against barriers</strong>,
         <strong>blocked exits</strong>, <strong>climbing</strong> and
-        <strong>a person on the ground</strong>.</p>
+        <strong>a person on the ground</strong> - conditions that are about the crowd
+        rather than about any one person in it.</p>
         <p class="caution">
-          That is the <strong>provider engine</strong>, reading a still frame. It marks
-          regions rather than individuals, because at event density a person is a few pixels
-          across and overlaps their neighbours, and no box-per-person survives that.
-        </p>
-        <p class="caution">
-          For a number, use <strong>Live tracking</strong> above with People count switched
-          on. That runs the on-device detector, which does box individuals and does count
-          them - and counts what it found, which is a floor rather than a measurement. It
-          works where people are separable, and it misses more of them the higher the camera
-          goes and the tighter the crowd packs. Either way an empty result describes one
-          moment, and a crowd changes faster than that.
+          The number is a floor, not a measurement. It is how many the detector marked, and
+          it marks fewer of them the higher the camera goes and the tighter the crowd packs:
+          at event density a person is a few pixels across and overlaps their neighbours.
+          It also describes the moment it was taken, and a crowd changes faster than that.
         </p>
       </article>
     </div>

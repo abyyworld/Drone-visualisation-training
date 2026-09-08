@@ -7,7 +7,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.TextureView;
 import android.view.View;
 import android.view.WindowManager;
@@ -91,63 +93,131 @@ public class LiveActivity extends AppCompatActivity {
     private ExoPlayer player;
     private LiveAnalyser analyser;
     private BoxRecorder recorder;
-    private NativeDetector detector;
+
+    /**
+     * Everything expensive runs here, and nothing expensive runs on the main thread.
+     *
+     * THIS IS THE WHOLE REASON THE RECORDING WAS JERKY
+     *     Inference took a fifth of a second and ran on the main thread. The recorder is
+     *     driven by a 66 ms tick on that same thread, so it simply could not fire while the
+     *     model was thinking, and the encoder stamps frames with the wall clock: a gap in
+     *     submitted frames is a frozen picture for exactly that long, not a dropped frame
+     *     nobody notices. Between those, the provider's frame was JPEG compressed and base64
+     *     encoded on the main thread every two seconds, which is a much longer stall and
+     *     exactly the "frozen moment every other second" it looked like.
+     *
+     *     So the model, the flame scan and the tracker all live on this thread now. The main
+     *     thread grabs frames, draws, and gets out of the way.
+     */
+    private HandlerThread workThread;
+    private Handler work;
+
+    /** Written on the work thread, read on the main one, hence volatile throughout. */
+    private volatile NativeDetector detector;
+    private volatile boolean detectBusy;
+    private volatile int peopleInView;
+    private volatile int peopleSeen;
+    private volatile long detectionsRun;
+
+    /**
+     * Only ever touched on the work thread. The tracker carries state between frames and
+     * the counts are read off it, so letting the main thread ask it questions while the
+     * work thread is updating it would be a race for the sake of a status line.
+     */
     private final Tracker tracker = new Tracker();
+    private final FireScan fireScan = new FireScan();
 
     private List<Finding> findings = new ArrayList<>();
     private String lastError = "";
     private long framesDropped;
-    private final FireScan fireScan = new FireScan();
-    private List<FireScan.Region> fireRegions = new ArrayList<>();
-    private long detectionsRun;
+    private volatile List<FireScan.Region> fireRegions = new ArrayList<>();
     private long detectStartedAt;
 
     /**
-     * The live loop: detect, track, draw, repeat as fast as this tablet manages.
+     * The live loop: grab a frame on the main thread, think about it on another.
      *
-     * Rescheduled by the length of the last detection rather than on a fixed interval. A
-     * fixed one either wastes a fast device or queues up behind a slow one, and a queue it
-     * can never clear is how a live view stops being live.
+     * The tick itself does almost nothing: it reads one frame off the video surface and
+     * hands it to the work thread. It never waits for the answer, and it never starts a
+     * second frame while the first is still being looked at, so a slow device falls to a
+     * lower detection rate rather than building a backlog it can never clear.
+     *
+     * The interval is fixed and short. It used to be "however long the last inference
+     * took", which made sense when inference was on this thread and had to be paid for
+     * here. It is not paid for here any more, so the only thing that matters is asking
+     * often enough to catch the work thread the moment it goes idle.
      */
     private final Runnable detectTick = new Runnable() {
         @Override
         public void run() {
-            long gap = MIN_DETECT_GAP_MS;
-            Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
-            if (frame != null) {
-                try {
-                    if (detector != null) {
-                        try {
-                            overlay.setTracks(tracker.update(detector.detect(frame)),
-                                    frame.getWidth(), frame.getHeight());
-                            detectionsRun++;
-                            gap = Math.max(MIN_DETECT_GAP_MS, detector.lastInferenceMillis());
-                        } catch (RuntimeException failure) {
-                            lastError = getString(R.string.detector_stopped,
-                                    String.valueOf(failure.getMessage()));
-                            detector.close();
-                            detector = null;
-                        }
+            if (!detectBusy) {
+                Bitmap frame = grabVideoFrame(DETECT_LONG_EDGE);
+                if (frame != null) {
+                    detectBusy = true;
+                    if (work == null || !work.post(() -> analyseFrame(frame))) {
+                        frame.recycle();
+                        detectBusy = false;
                     }
-
-                    // Its own catch, and outside the detector's null check on purpose. The
-                    // two engines are independent: if the model fails to load or dies, the
-                    // flame and smoke scan carries on, because it needs no model. Losing
-                    // both because one broke would be the worse outcome.
-                    try {
-                        fireRegions = fireScan.scan(frame);
-                    } catch (RuntimeException | OutOfMemoryError ignored) {
-                        fireRegions = new ArrayList<>();
-                    }
-                    overlay.setFire(fireRegions);
-                } finally {
-                    frame.recycle();
                 }
-                refreshStatus();
             }
-            handler.postDelayed(this, gap);
+            handler.postDelayed(this, MIN_DETECT_GAP_MS);
         }
     };
+
+    /**
+     * Detection, tracking and the flame scan, all on the work thread.
+     *
+     * The tracker is updated here and its counts are read here, so the main thread never
+     * asks it anything. What crosses back is a finished list of boxes and two integers.
+     */
+    private void analyseFrame(Bitmap frame) {
+        List<Tracker.Track> tracks = null;
+        List<FireScan.Region> fire;
+        String failureText = null;
+        int frameWidth = frame.getWidth();
+        int frameHeight = frame.getHeight();
+
+        NativeDetector current = detector;
+        if (current != null) {
+            try {
+                tracks = tracker.update(current.detect(frame));
+                detectionsRun++;
+            } catch (RuntimeException failure) {
+                failureText = getString(R.string.detector_stopped,
+                        String.valueOf(failure.getMessage()));
+                current.close();
+                detector = null;
+            }
+        }
+
+        // Its own catch, and outside the detector's null check on purpose. The two engines
+        // are independent: if the model fails to load or dies, the flame and smoke scan
+        // carries on, because it needs no model.
+        try {
+            fire = fireScan.scan(frame);
+        } catch (RuntimeException | OutOfMemoryError ignored) {
+            fire = new ArrayList<>();
+        }
+        frame.recycle();
+
+        peopleInView = tracker.countOf("person");
+        peopleSeen = tracker.countSeen("person");
+        fireRegions = fire;
+
+        final List<Tracker.Track> finalTracks = tracks;
+        final List<FireScan.Region> finalFire = fire;
+        final String finalFailure = failureText;
+        handler.post(() -> {
+            if (finalFailure != null) {
+                lastError = finalFailure;
+            }
+            if (finalTracks != null) {
+                overlay.setTracks(finalTracks, frameWidth, frameHeight);
+            }
+            overlay.setFire(finalFire);
+            detectBusy = false;
+            refreshStatus();
+        });
+    }
 
     private final Runnable analysisTick = new Runnable() {
         @Override
@@ -157,11 +227,28 @@ public class LiveActivity extends AppCompatActivity {
         }
     };
 
+    /**
+     * The recorder's clock, on a fixed grid rather than a delay after the last frame.
+     *
+     * postDelayed(66) means 66 ms *after this tick finished*, so the grab and the overlay
+     * draw are added to every interval and the recording runs slower than the frame rate it
+     * is stamped with. postAtTime puts each frame on an absolute grid, so a tick that runs
+     * late is followed by one that runs on time instead of pushing the whole run late.
+     */
+    private long nextRecordAt;
+
     private final Runnable recordTick = new Runnable() {
         @Override
         public void run() {
             captureForRecording();
-            handler.postDelayed(this, RECORD_INTERVAL_MS);
+            long now = SystemClock.uptimeMillis();
+            nextRecordAt += RECORD_INTERVAL_MS;
+            if (nextRecordAt <= now) {
+                // Fallen behind by a whole frame or more: give up on catching up rather
+                // than submitting a burst, which would only make the picture jump.
+                nextRecordAt = now + RECORD_INTERVAL_MS;
+            }
+            handler.postAtTime(this, nextRecordAt);
         }
     };
 
@@ -236,12 +323,24 @@ public class LiveActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         openStream();
-        tracker.reset();
-        // The flame scanner measures how a region changes over a window of frames. Carrying
-        // one stream's window into the next would compare a frame against something filmed
-        // somewhere else.
-        fireScan.reset();
+
+        workThread = new HandlerThread("live-work");
+        workThread.start();
+        work = new Handler(workThread.getLooper());
+        // Reset on the thread that owns them, not from here. Both carry state between
+        // frames, and clearing that state underneath a detection still in flight is the
+        // kind of race that shows up once a month and never in a test.
+        work.post(() -> {
+            tracker.reset();
+            // The flame scanner measures how a region changes over a window of frames.
+            // Carrying one stream's window into the next would compare a frame against
+            // something filmed somewhere else.
+            fireScan.reset();
+        });
         fireRegions = new ArrayList<>();
+        peopleInView = 0;
+        peopleSeen = 0;
+        detectBusy = false;
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
         handler.post(detectTick);
@@ -255,6 +354,22 @@ public class LiveActivity extends AppCompatActivity {
         super.onStop();
         handler.removeCallbacks(analysisTick);
         handler.removeCallbacks(detectTick);
+        if (workThread != null) {
+            // quitSafely, so a detection already running finishes and recycles its bitmap
+            // rather than being cut off mid-frame. Then wait for it, briefly: onDestroy
+            // closes the detector, and closing it underneath a detection still using it is
+            // a native crash rather than an exception.
+            HandlerThread finishing = workThread;
+            workThread = null;
+            work = null;
+            finishing.quitSafely();
+            try {
+                finishing.join(1000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        detectBusy = false;
         // The recording is deliberately not stopped here: a controller screen that blanks
         // for a moment must not silently end a recording that is still wanted. It is ended
         // by the button, or by the activity being destroyed.
@@ -342,9 +457,10 @@ public class LiveActivity extends AppCompatActivity {
         if (frame == null) {
             return;
         }
+        // The analyser takes ownership: it encodes on its own thread and recycles when it
+        // is done. Recycling here would pull the bitmap out from under that encode.
         analyser.analyse(frame, Settings.provider(this), Settings.model(this),
                 Settings.apiKey(), Settings.domain(this));
-        frame.recycle();
         refreshStatus();
     }
 
@@ -399,6 +515,7 @@ public class LiveActivity extends AppCompatActivity {
         recorder = new BoxRecorder(file, width, height);
         recorder.start();
         framesDropped = 0;
+        nextRecordAt = SystemClock.uptimeMillis();
         handler.post(recordTick);
 
         recordButton.setText(R.string.stop_recording);
@@ -474,12 +591,17 @@ public class LiveActivity extends AppCompatActivity {
         // The live half: what is being tracked right now, and how many distinct people
         // have gone past since the screen opened. Two different numbers, and confusing
         // them is the classic mistake.
-        if (detector != null) {
+        // One local read of a field the work thread can null out at any moment. Reading it
+        // twice is a null check that was true and a call that is not.
+        NativeDetector current = detector;
+        if (current != null) {
             float seconds = Math.max(1, System.currentTimeMillis() - detectStartedAt) / 1000f;
             line.append("  ·  ").append(String.format(java.util.Locale.UK, "%.1f", detectionsRun / seconds))
-                    .append("/s, ").append(detector.lastInferenceMillis()).append(" ms");
+                    .append("/s, ").append(current.lastInferenceMillis()).append(" ms");
+            // The counts come off the work thread with the boxes. The main thread never
+            // asks the tracker anything, because the tracker is being written to over there.
             line.append("  ·  ").append(getString(R.string.people_readout,
-                    tracker.countOf("person"), tracker.countSeen("person")));
+                    peopleInView, peopleSeen));
         }
 
         // Flame and smoke, when there is any. Regions, not fires: one fire seen as two

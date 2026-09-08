@@ -3,6 +3,7 @@ package world.abyy.droneinspection;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -60,6 +61,10 @@ public final class LiveAnalyser {
 
     private final WebView webView;
     private final Handler main = new Handler(Looper.getMainLooper());
+
+    /** Where the frame is scaled, compressed and encoded, so the main thread never is. */
+    private final HandlerThread encoderThread = new HandlerThread("frame-encoder");
+    private final Handler encoder;
     private final Listener listener;
 
     private boolean ready;
@@ -71,6 +76,8 @@ public final class LiveAnalyser {
     @SuppressWarnings("SetJavaScriptEnabled")
     public LiveAnalyser(Context context, Listener listener) {
         this.listener = listener;
+        encoderThread.start();
+        encoder = new Handler(encoderThread.getLooper());
 
         WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .setDomain("appassets.androidplatform.net")
@@ -111,25 +118,60 @@ public final class LiveAnalyser {
      */
     public boolean analyse(Bitmap frame, String provider, String model, String apiKey, String domain) {
         if (!ready || busy || frame == null) {
+            if (frame != null) {
+                frame.recycle();
+            }
             return false;
         }
         busy = true;
         requestStartedAt = System.currentTimeMillis();
         int current = ++token;
 
-        String dataUrl = "data:image/jpeg;base64," + encode(frame);
-        String script = "window.analyseFrame("
-                + current + ","
-                + quote(dataUrl) + ","
-                + quote(provider) + ","
-                + quote(model) + ","
-                + quote(apiKey) + ","
-                + quote(domain) + ")";
-        webView.evaluateJavascript(script, null);
+        // The encode does NOT happen here, and that is the point of this method's shape.
+        //
+        // Scaling a frame to 1568, JPEG compressing it and base64 encoding the result is a
+        // couple of hundred milliseconds of solid work. It used to happen on the main
+        // thread, once every two seconds, which is precisely how often the recording froze:
+        // the recorder's tick is on that same thread and the encoder stamps frames with the
+        // wall clock, so a stall is a held picture rather than a frame nobody misses.
+        //
+        // This method now takes ownership of the bitmap, encodes it away from the main
+        // thread, and comes back to hand the string to the WebView, which is the one part
+        // that genuinely has to be on the main thread.
+        encoder.post(() -> {
+            String dataUrl;
+            try {
+                dataUrl = "data:image/jpeg;base64," + encode(frame);
+            } catch (RuntimeException | OutOfMemoryError encoding) {
+                main.post(() -> {
+                    busy = false;
+                    listener.onError("could not encode the frame: " + encoding);
+                });
+                return;
+            } finally {
+                frame.recycle();
+            }
+
+            String script = "window.analyseFrame("
+                    + current + ","
+                    + quote(dataUrl) + ","
+                    + quote(provider) + ","
+                    + quote(model) + ","
+                    + quote(apiKey) + ","
+                    + quote(domain) + ")";
+            main.post(() -> {
+                // The screen may have gone away, or a newer request may have overtaken this
+                // one, while the encode was running.
+                if (token == current) {
+                    webView.evaluateJavascript(script, null);
+                }
+            });
+        });
         return true;
     }
 
     public void destroy() {
+        encoderThread.quitSafely();
         webView.destroy();
     }
 

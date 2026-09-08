@@ -62,7 +62,9 @@ public final class NativeDetector {
 
     private final ObjectDetector detector;
     private long lastTimestamp = -1;
-    private long lastInferenceMs;
+    // Written by whichever thread runs detection, read by the main thread for the status
+    // line. One word, one writer, so volatile is the whole of the synchronisation needed.
+    private volatile long lastInferenceMs;
 
     private NativeDetector(ObjectDetector detector) {
         this.detector = detector;
