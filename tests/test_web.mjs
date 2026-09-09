@@ -431,6 +431,40 @@ async function main() {
     check('the card says what it cannot see',
       (await found.locator('.card__note').textContent()).includes('COCO'));
 
+    // Nothing found is not the same as nothing being there, and the colour has to agree
+    // with the note underneath it.
+    //
+    // THE BUG THIS PINS
+    //     A wind turbine with a blade snapped clean through came back scored 0.00, badged
+    //     green, and counted under Clear. The detector had found nothing it knows about,
+    //     which is a fact about the detector. The card's note already said exactly that;
+    //     the colour and the word above it said the opposite, and the colour is what
+    //     anyone skimming a batch reads. The repository's own scanner polices this claim
+    //     in prose and has no view on a CSS class, which is how it got through.
+    const healthy = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--healthy').trim());
+    const emptyBadge = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.className = 'badge badge--none';
+      document.body.appendChild(probe);
+      const seen = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return seen;
+    });
+    const asColour = (value) => page.evaluate((v) => {
+      const probe = document.createElement('span');
+      probe.style.color = v;
+      document.body.appendChild(probe);
+      const seen = getComputedStyle(probe).color;
+      probe.remove();
+      return seen;
+    }, value);
+    check('a frame with nothing in it is not painted healthy',
+      emptyBadge !== await asColour(healthy), `${emptyBadge} against healthy ${healthy}`);
+    check('and the batch does not call it clear',
+      !(await page.locator('#summary').textContent()).includes('Clear'),
+      await page.locator('#summary').textContent());
+
     // A subject this engine cannot speak to must be refused, not answered.
     //
     // THE BUG THIS PINS

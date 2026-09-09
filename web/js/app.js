@@ -1223,7 +1223,16 @@ function renderSummary() {
     ['Severe', summary.counts.severe, 'severe'],
     ['Moderate', summary.counts.moderate, 'moderate'],
     ['Minor', summary.counts.minor, 'minor'],
-    ['Clear', summary.counts.none, 'none'],
+    // Not "Clear", and not green either.
+    //
+    // A photograph of a wind turbine with a blade snapped clean through came back from
+    // this app scored 0.00, badged green, and counted here under Clear. The detector had
+    // simply found nothing it knows about, which is a fact about the detector and not a
+    // reading about the turbine. The note on the card already said so; the colour and the
+    // word above it said the opposite, and the colour is what anyone skimming a batch
+    // actually reads. station/core/safety.py polices this claim in prose and has no view
+    // on a CSS class, which is how it got through.
+    ['Nothing marked', summary.counts.none, 'none'],
     ['Rejected', rejected, 'rejected'],
     ['Errors', errored, 'error'],
   ];

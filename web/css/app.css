@@ -16,6 +16,8 @@
   --moderate: #e67e22;
   --minor: #b7900f;
   --healthy: #1f8a4c;
+  /* Nothing was found, which is not the same as nothing being there. See app.js. */
+  --none: #6b7280;
   --rejected: #6b7280;
 
   --radius: 10px;
@@ -38,6 +40,7 @@
     --moderate: #f0a35e;
     --minor: #e0c05c;
     --healthy: #55c98a;
+    --none: #98a2b3;
     --rejected: #98a2b3;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .4);
@@ -154,7 +157,7 @@ body {
 .tile--severe   .tile__value { color: var(--severe); }
 .tile--moderate .tile__value { color: var(--moderate); }
 .tile--minor    .tile__value { color: var(--minor); }
-.tile--none     .tile__value { color: var(--healthy); }
+.tile--none     .tile__value { color: var(--none); }
 .tile--rejected .tile__value, .tile--error .tile__value { color: var(--rejected); }
 
 /* --- Toolbar ------------------------------------------------------------------------- */
@@ -237,7 +240,7 @@ body {
 .badge--severe   { background: var(--severe); }
 .badge--moderate { background: var(--moderate); }
 .badge--minor    { background: var(--minor); }
-.badge--none     { background: var(--healthy); }
+.badge--none     { background: var(--none); }
 
 .detections { list-style: none; margin: 11px 0 0; padding: 0; font-size: 13px; }
 .detections li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }

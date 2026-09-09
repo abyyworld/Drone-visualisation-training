@@ -17,6 +17,11 @@ SEVERE     = colors.HexColor('#C0392B')
 MODERATE   = colors.HexColor('#E67E22')
 MINOR      = colors.HexColor('#F1C40F')
 HEALTHY    = colors.HexColor('#27AE60')
+# Nothing was found, which is not the same as nothing being there. Neutral rather than
+# green, and the same decision as web/css/app.css. A turbine with a blade snapped clean
+# through came back from this pipeline badged green and counted as healthy, because the
+# detector had found nothing it knows about. That is a fact about the detector.
+NONE       = colors.HexColor('#6B7280')
 LIGHT_GREY = colors.HexColor('#F5F5F5')
 MID_GREY   = colors.HexColor('#CCCCCC')
 W, H = A4
@@ -77,7 +82,7 @@ def band_of(result):
     return score_to_band(result.get('severity_score') or 0)
 
 def severity_colour(band):
-    return {'severe': SEVERE, 'moderate': MODERATE, 'minor': MINOR}.get(band, HEALTHY)
+    return {'severe': SEVERE, 'moderate': MODERATE, 'minor': MINOR}.get(band, NONE)
 
 def score_to_label(score, domain=None):
     return BAND_LABELS.get(domain, DEFAULT_BANDS)[score_to_band(score)]
@@ -188,7 +193,7 @@ def build_cover(styles, meta):
         (str(s.get('severe',   0)), 'Severe',    SEVERE),
         (str(s.get('moderate', 0)), 'Moderate',  MODERATE),
         (str(s.get('minor',    0)), 'Minor wear', MINOR),
-        (str(s.get('healthy',  0)), 'Healthy',   HEALTHY),
+        (str(s.get('healthy',  0)), 'Nothing marked', NONE),
     ]
     box_w = (W - 40*mm) / 4 - 3*mm
     stat_cells = []

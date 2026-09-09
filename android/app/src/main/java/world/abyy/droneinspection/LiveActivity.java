@@ -166,6 +166,15 @@ public class LiveActivity extends AppCompatActivity {
     private static final long TARGET_PERIOD_MS = 200;
 
     /**
+     * How often the whole frame is looked at, in cycles, when tiling is on.
+     *
+     * See onWholeFrame for the measurement behind it. Every cycle still reads the frame
+     * back, because the flame scan and the appearance signatures both need those pixels;
+     * this is only about which cycles pay for an inference on it.
+     */
+    private static final int WIDE_EVERY = 3;
+
+    /**
      * The share of the time detection may occupy. The rest is left for the video, the
      * encoder, and for the device to shed heat.
      */
@@ -251,6 +260,8 @@ public class LiveActivity extends AppCompatActivity {
     private int[] signatureScratch;
     /** Which tile gets the close look this pass. Cycles; see Tiles. */
     private int tileTurn;
+    /** Counts detect cycles, so the wide pass can take every third one. See WIDE_EVERY. */
+    private int cycleTurn;
     private volatile int peopleInView;
     private volatile int peopleSeen;
     private volatile long detectionsRun;
@@ -355,10 +366,36 @@ public class LiveActivity extends AppCompatActivity {
         Handler worker = work;
         if (worker == null || !worker.post(() -> {
             NativeDetector current = detector;
-            List<Finding> found = current == null
-                    ? new ArrayList<>() : safeDetect(current, frame);
+            // One read of a field another thread can null out at any moment. Reading it
+            // twice is a null check that was true and a call that is not.
+            GlPipeline pipeline = glPipeline;
+            boolean tiling = tilingWanted() && pipeline != null && usingGl;
 
-            if (!tilingWanted() || glPipeline == null || !usingGl) {
+            // The wide pass, only when it is worth its inference.
+            //
+            // WHY IT IS NOT RUN EVERY CYCLE ANY MORE
+            //     Measured against VisDrone's labels over twelve of its busiest frames,
+            //     1562 labelled people: the wide pass alone lands on 163 of them, and with
+            //     the close looks merged in that becomes 730. A tenth against a half.
+            //
+            //     It is easy to see why. A 1920 frame is read back at 640 and then squeezed
+            //     into the model's 320, a sixfold reduction, so from altitude there is
+            //     almost nobody left in it big enough to find. It still cost a full
+            //     inference every cycle, which was half the budget spent for a tenth of the
+            //     result, and that inference is what set how fast the cycle could repeat.
+            //
+            //     So when tiling is on it runs every third cycle. The cycles in between are
+            //     a close look and nothing else, which makes them cheaper, which means more
+            //     of them a second, which brings each tile round again sooner. That gap was
+            //     what forced the coast window up to four seconds.
+            //
+            //     Not skipped when tiling is off: for a turbine or a panel, which fill the
+            //     frame, the wide pass is the entire job.
+            List<Finding> found = current == null || (tiling && cycleTurn % WIDE_EVERY != 0)
+                    ? new ArrayList<>() : safeDetect(current, frame);
+            cycleTurn++;
+
+            if (!tiling) {
                 // Kept until here: the flame scan and the appearance signatures both need
                 // the pixels, and finishCycle is what recycles them.
                 finishCycle(found, frame);
@@ -367,7 +404,7 @@ public class LiveActivity extends AppCompatActivity {
             // A region of the frame, rendered at its own resolution rather than cropped out
             // of a big readback. See GlPipeline.requestRegion.
             float[] region = Tiles.region(tileTurn++, videoPixelWidth, videoPixelHeight);
-            glPipeline.requestRegion(
+            pipeline.requestRegion(
                     region[0] / videoPixelWidth, region[1] / videoPixelHeight,
                     (region[0] + region[2]) / videoPixelWidth,
                     (region[1] + region[3]) / videoPixelHeight,
