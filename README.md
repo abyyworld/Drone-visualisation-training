@@ -19,7 +19,7 @@ asks. Full instructions, and the reasons to prefer one route over the other, are
 | | On device | Trained defect models | Provider API |
 |---|---|---|---|
 | Where it runs | This device: a detector plus a computed flame scan | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
-| Ready now | **Yes** | No, needs a dataset | With a key |
+| Ready now | **Yes** | **Crowd, wildfire and solar.** Not turbine | With a key |
 | Cost | Nothing | Nothing | Per image |
 | Offline | Yes | Yes | No |
 | Images leave the device | Never | Never | Yes |
@@ -27,6 +27,13 @@ asks. Full instructions, and the reasons to prefer one route over the other, are
 | **Tracks across frames** | **Yes** | Possible | No, and never will |
 | Finds | people, and vehicles in the browser, plus flame and smoke regions | its trained classes | anything it can describe |
 | Cannot find | cracks, corrosion, soiling | anything outside its classes | - |
+
+None of the trained models here were trained here. People, fire and solar panel defects have
+all been done already by somebody else and published, so
+[`.github/workflows/model.yml`](.github/workflows/model.yml) searches for the weights,
+fetches them and converts them on a runner, which can reach the hosts this project's own
+environment cannot. Blade damage is the one subject that search comes back empty on, so it is
+the one subject still needing a key.
 
 **On device** is the default because it is the only one ready without a key or a dataset.
 It is two engines at once, and the detector half is not the same model in both places.

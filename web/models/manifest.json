@@ -36,8 +36,8 @@
     "iouThreshold": 0.45,
     "severityWeights": {},
     "displayName": "Wind turbine blade",
-    "notes": "Awaiting a model. Set labels to match the export (tools/export_onnx.py writes them from the model), and severityWeights to one entry per label - higher means more serious. Both described the previous dataset's three surface classes and were cleared with it.",
-    "zeroDetectionNote": ""
+    "notes": "No model. Blade damage is the one subject here nobody appears to have published weights for: the conversion workflow searched the model index for wind turbine blade damage, defect detection, crack detection and inspection, and every search came back empty. That is a fact about what exists rather than a fault in the fetching. Until somebody publishes some, this subject needs a provider key, which describes a frame in words instead of boxing what is in it.",
+    "zeroDetectionNote": "Nothing was marked, because there is no blade model to mark anything with. This is not a reading about the blade."
   },
   "solar": {
     "file": "solar-320.onnx",

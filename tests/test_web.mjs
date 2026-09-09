@@ -431,8 +431,8 @@ async function main() {
     check('the card says what it cannot see',
       (await found.locator('.card__note').textContent()).includes('COCO'));
 
-    // Nothing found is not the same as nothing being there, and the colour has to agree
-    // with the note underneath it.
+    // A frame with nothing marked in it is not a reading about the scene, and the colour
+    // has to agree with the note underneath it.
     //
     // THE BUG THIS PINS
     //     A wind turbine with a blade snapped clean through came back scored 0.00, badged

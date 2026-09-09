@@ -260,11 +260,17 @@ jobs:
           print("wrote", out / f"{subject}-320.onnx", flush=True)
           PY
 
+      # The tablet, and only the tablet, and it runs exactly one detector: the people one.
+      # See NativeDetector.MODEL_ASSET. Every other subject is browser work, done on a
+      # laptop against footage already flown, so converting a second copy of it for a device
+      # that will never load it is a few minutes of runner time and a file nobody opens.
+      #
       # Left able to fail without stopping the job, on purpose: the ONNX model is what the
-      # browser uses and it is worth landing on its own. The job is still failed at the
-      # very end if no .tflite came out, so a missing tablet model can never read as a
-      # green run again.
+      # browser uses and it is worth landing on its own. The job is still failed at the very
+      # end if no .tflite came out of a people conversion, so a missing tablet model can
+      # never read as a green run again.
       - name: Export TFLite int8, for the tablet
+        if: steps.fetch.outputs.subject == 'person'
         continue-on-error: true
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
@@ -293,7 +299,7 @@ jobs:
       - name: Check the tablet model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
-        if: hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
+        if: steps.fetch.outputs.subject == 'person' && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib
@@ -467,6 +473,7 @@ jobs:
       # ONNX file reported success, and the missing tablet model was found by hand days
       # later. If it is not here, this run was not a success.
       - name: Did the tablet model come out
+        if: steps.fetch.outputs.subject == 'person'
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
