@@ -521,5 +521,45 @@ console.log('\nThe drone moving is not the crowd changing');
     quiet.drift[0] === 0 && quiet.drift[1] === 0, `drift ${quiet.drift}`);
 }
 
+console.log('\nA weak box may keep somebody, and may not invent one');
+{
+  // Starting an identity and continuing one are different questions and one number was
+  // answering both. A faint box where nothing is being tracked is probably a bin; the same
+  // faint box landing where somebody already is, is almost certainly that person seen badly
+  // for a moment. Measured against VisDrone's labels, boxes on a labelled person average
+  // 0.465 and the rest 0.330 - far too overlapping to judge in one frame, and separable
+  // once a track has to keep earning it.
+  const faint = (x, y) => ({ label: 'person', confidence: 0.18, box: [x, y, x + 30, y + 60] });
+  const clear = (x, y) => ({ label: 'person', confidence: 0.7, box: [x, y, x + 30, y + 60] });
+
+  const alone = new Tracker();
+  let clock = 1000;
+  for (let step = 0; step < 10; step += 1) {
+    alone.update([faint(100 + step, 100)], clock);
+    clock += 250;
+  }
+  check('a faint box on its own never becomes a person',
+    alone.countSeen('person') === 0, `${alone.countSeen('person')} counted`);
+
+  // The same faint box, once somebody is already there.
+  const carried = new Tracker();
+  clock = 1000;
+  for (let step = 0; step < 4; step += 1) {
+    carried.update([clear(100 + step * 4, 100)], clock);
+    clock += 250;
+  }
+  const number = carried.open()[0]?.id;
+  check('a clear box does become a person', carried.countSeen('person') === 1);
+  for (let step = 4; step < 14; step += 1) {
+    carried.update([faint(100 + step * 4, 100)], clock);
+    clock += 250;
+  }
+  check('and faint looks afterwards keep them rather than losing them',
+    carried.open().length === 1 && carried.open()[0].id === number,
+    `${carried.open().length} open`);
+  check('without ever counting them twice',
+    carried.countSeen('person') === 1, `${carried.countSeen('person')} counted`);
+}
+
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

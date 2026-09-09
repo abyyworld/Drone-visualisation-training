@@ -175,6 +175,16 @@ public class LiveActivity extends AppCompatActivity {
     private static final int WIDE_EVERY = 3;
 
     /**
+     * The lowest score a box needs to reach the tracker at all.
+     *
+     * Deliberately below anything that would be believed on its own. A box this weak cannot
+     * start a track; it can only keep one alive. Costs about a millisecond and a half of
+     * decoding against a cycle of two hundred, which is the price of the people who are only
+     * ever seen faintly.
+     */
+    private static final float DETECT_FLOOR = 0.15f;
+
+    /**
      * The share of the time detection may occupy. The rest is left for the video, the
      * encoder, and for the device to shed heat.
      */
@@ -830,7 +840,12 @@ public class LiveActivity extends AppCompatActivity {
             current.setPeopleOnly("crowd".equals(Settings.domain(this)));
             // Read here rather than at startup, so coming back from the settings screen
             // applies it without restarting the stream.
-            current.setConfidence(Settings.confidence(this));
+            // The detector runs low on purpose, so a weak box still reaches the tracker and
+            // can carry somebody through a frame they were barely seen in. What the slider
+            // sets is the harder question: how sure a box has to be before it is allowed to
+            // be somebody new. See Tracker.NEW_TRACK_CONFIDENCE.
+            current.setConfidence(DETECT_FLOOR);
+            tracker.setNewTrackConfidence(Settings.confidence(this));
         }
         handler.post(detectTick);
         // The provider still runs, on its slow interval, for what the on-device model

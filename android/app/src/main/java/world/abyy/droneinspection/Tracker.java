@@ -119,7 +119,39 @@ public final class Tracker {
      * counted as people, and the cost is that somebody who crosses the frame very fast is
      * drawn a moment later.
      */
-    private static final int CONFIRM_AFTER = 4;
+    private static final int CONFIRM_AFTER = 3;
+
+    /**
+     * How sure the detector has to be before a box may start a new identity.
+     *
+     * WHY STARTING AND CONTINUING ARE DIFFERENT QUESTIONS
+     *     A weak box where nothing is being tracked is probably a bin. The same weak box
+     *     landing where somebody already is, is almost certainly that person, seen badly for
+     *     a moment. One number should not answer both.
+     *
+     *     So a detection below this can keep an existing track alive and can never create
+     *     one. That lets the detector run at a low threshold without letting faint rubbish
+     *     into the count. Measured against VisDrone's labels, boxes landing on a labelled
+     *     person average 0.465 and the rest 0.330: far too overlapping to threshold in one
+     *     frame, and separating cleanly once a track has to keep earning it.
+     *
+     *     This is ByteTrack's association, doing the same thing for the same reason.
+     *
+     * Measured over nine synthetic flights across a labelled frame, 1388 people between
+     * them, the real detector run on every rendered frame so its misses and false positives
+     * are all present:
+     *
+     *     this at 0.25, three sightings    707 people counted, 69% of boxes on a person
+     *     this at 0.30, four sightings     533 people counted, 72%
+     *     no such rule, four sightings     513 people counted, 72%
+     *
+     * Adjustable from the settings screen, because which of those is the right mistake
+     * depends on the site.
+     */
+    private static final float NEW_TRACK_CONFIDENCE = 0.25f;
+
+    /** Read by the thread that runs detection, written by the main one. */
+    private volatile float newTrackConfidence = NEW_TRACK_CONFIDENCE;
     private static final int MAX_PATH = 60;
 
     /** One thing being followed. */
@@ -247,6 +279,14 @@ public final class Tracker {
                 continue;
             }
             Finding detection = detections.get(i);
+
+            // A box too weak to be somebody new. It was offered to every track above and
+            // none of them wanted it, so it stops here: it may keep a person alive through
+            // a bad moment, and it may not invent one. See NEW_TRACK_CONFIDENCE.
+            if (detection.confidence > 0 && detection.confidence < newTrackConfidence) {
+                continue;
+            }
+
             // Before issuing a new number, ask whether this is someone already known. A
             // track that closed because its subject walked behind something is not a
             // different person when they walk out the other side, and giving them a second
@@ -367,6 +407,11 @@ public final class Tracker {
     }
 
     /** How many distinct ones have been seen since the start. Never goes down. */
+    /** How sure a box must be to start a new identity. See NEW_TRACK_CONFIDENCE. */
+    public void setNewTrackConfidence(float confidence) {
+        newTrackConfidence = confidence;
+    }
+
     public int countSeen(String label) {
         Integer n = everSeen.get(label);
         return n == null ? 0 : n;

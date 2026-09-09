@@ -53,6 +53,10 @@ const DRIFT_MIN_SHARE = 0.2;
 // A ceiling on one cycle's worth of movement. Past this the frames have nothing to do with
 // each other and pairing them up would be invention rather than tracking.
 const DRIFT_MAX = 400;
+// The frame is split this many ways along each axis when working out how it moved. See
+// estimateDrift: a turn or a climb does not move the whole picture by one amount, but any
+// smooth warp looks like a translation over a small enough piece of it.
+const DRIFT_CELLS = 4;
 
 // Pairing something up when it is the only candidate. See unambiguousPairs.
 // The runner-up has to be this much further away before a pairing counts as obvious, and
@@ -64,6 +68,26 @@ const DRIFT_MAX = 400;
 // 1.4 covers camera motion up to 42% of the gap between two people, which is most of the way
 // to the point where no rule could be right.
 const LONELY_RATIO = 1.4;
+
+/**
+ * How sure the detector has to be before a box may start a new identity.
+ *
+ * WHY STARTING AND CONTINUING ARE DIFFERENT QUESTIONS
+ *     A weak box in a place nothing is being tracked is probably a bin. The same weak box
+ *     landing where somebody already is, is almost certainly that person, seen badly for a
+ *     moment. One number should not answer both.
+ *
+ *     So a detection below this can keep an existing track alive but can never create one.
+ *     That lets the detector be run at a low threshold without letting faint rubbish into
+ *     the count: measured against VisDrone's labels, boxes that land on a labelled person
+ *     average 0.465 and the rest average 0.330, which overlaps far too much to threshold in
+ *     one frame and separates cleanly once a track has to keep earning it.
+ *
+ *     This is ByteTrack's association, which does the same thing for the same reason: match
+ *     the confident boxes first, then offer what is left to the tracks that are still
+ *     looking, and require more of a box that wants to be somebody new.
+ */
+const NEW_TRACK_CONFIDENCE = 0.25;
 const LONELY_SCORE = 1e-4;
 
 // About four seconds at a few detections a second. Long enough to walk behind something.
@@ -77,12 +101,20 @@ const MAX_MISSES = 20;
  * survived a second look was issued a number and added to the total, so the total
  * climbed on things that were not people and the numbers on screen churned.
  *
- * Four is a second and a bit of agreeing with itself. It does not fix the false boxes,
- * which is a limit of the model rather than of the tracking, but it stops them being
- * counted as people, and the cost is that somebody who crosses the frame very fast is
- * drawn a moment later.
+ * Three, with the weak boxes above now able to keep a track alive between good looks.
+ * Measured over nine synthetic flights across a labelled frame, 1388 people between them,
+ * with the real detector run on every rendered frame so its misses and false positives are
+ * all present:
+ *
+ *     new-track 0.25, three sightings    707 people counted, 69% of boxes on a person
+ *     new-track 0.25, four sightings     691 people counted, 69%
+ *     new-track 0.30, four sightings     533 people counted, 72%
+ *
+ * against 513 at 72% for what shipped before any of this. The extra sighting was buying
+ * almost nothing once a weak box could carry a track through a bad frame, and it was
+ * costing people who are only ever seen briefly.
  */
-const CONFIRM_AFTER = 4;
+const CONFIRM_AFTER = 3;
 
 /**
  * How long a track may coast, in milliseconds, before it is let go.
@@ -358,6 +390,7 @@ export class Tracker {
     minIou = MIN_IOU,
     maxMisses = MAX_MISSES,
     confirmAfter = CONFIRM_AFTER,
+    newTrackConfidence = NEW_TRACK_CONFIDENCE,
     maxCoastMs = MAX_COAST_MS,
     reidSimilarity = REID_SIMILARITY,
     reidWindowMs = REID_WINDOW_MS,
@@ -365,6 +398,7 @@ export class Tracker {
     this.minIou = minIou;
     this.maxMisses = maxMisses;
     this.confirmAfter = confirmAfter;
+    this.newTrackConfidence = newTrackConfidence;
     this.maxCoastMs = maxCoastMs;
     this.reidSimilarity = reidSimilarity;
     this.reidWindowMs = reidWindowMs;
@@ -452,6 +486,11 @@ export class Tracker {
 
     for (const [index, detection] of detections.entries()) {
       if (usedDetections.has(index)) continue;
+
+      // A box too weak to be somebody new. It was offered to every track above and none of
+      // them wanted it, so it stops here: it may keep a person alive through a bad moment,
+      // and it may not invent one. See NEW_TRACK_CONFIDENCE.
+      if ((detection.confidence ?? 1) < this.newTrackConfidence) continue;
 
       // Before issuing a new number, ask whether this is someone already known. A track
       // that closed because its subject walked behind something is not a different person
