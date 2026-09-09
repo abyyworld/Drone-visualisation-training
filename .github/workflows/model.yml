@@ -69,7 +69,13 @@ jobs:
       # So litert-torch is installed up front, in the same resolution as ultralytics, and
       # the auto-installer is switched off so that a missing dependency is a loud failure
       # here rather than a mutation later.
+      #
+      # Only for the tablet's own subject. Every step that touches TFLite below is already
+      # gated on the same condition, because the tablet loads exactly one model, so on any
+      # other subject this installs torch, litert-torch and ai-edge-litert for nothing and
+      # spends about five minutes of the run doing it.
       - name: Install the TFLite toolchain
+        if: inputs.subject == 'person'
         run: |
           python -m venv .venv-tflite
           .venv-tflite/bin/pip install --upgrade pip
