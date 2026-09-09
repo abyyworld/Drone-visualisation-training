@@ -19,7 +19,7 @@ asks. Full instructions, and the reasons to prefer one route over the other, are
 | | On device | Trained defect models | Provider API |
 |---|---|---|---|
 | Where it runs | This device: a detector plus a computed flame scan | This device, ONNX Runtime Web | Anthropic, Google or OpenAI |
-| Ready now | **Yes** | **Crowd, wildfire and solar.** Not turbine | With a key |
+| Ready now | **Yes** | **Crowd and solar.** Not wildfire, not turbine | With a key |
 | Cost | Nothing | Nothing | Per image |
 | Offline | Yes | Yes | No |
 | Images leave the device | Never | Never | Yes |
@@ -52,8 +52,18 @@ which finds people and vehicles at ground level and loses people from altitude. 
 analysis screen runs the aerial model instead, so a drone still can be compared between the
 two on one machine.
 
-Flame and smoke are computed rather than detected, because there is no permissively licensed
-model for them to ship. Colour finds the candidates; time decides. Fire burns in place and
+Flame and smoke are computed rather than detected, because no fire model that works has
+been found yet. One was found, fetched, converted and shipped, and it returned the same
+score for black, white, noise, a flame-coloured block, sixty real drone photographs and
+fifty frames of the demo clip alike: it could not mark fire because it could not mark
+anything. It has been removed and
+[`tools/model_liveness.py`](tools/model_liveness.py) now stands between that and shipping.
+The licence is not the obstacle, whatever this used to say here: this project takes
+AGPL-3.0 deliberately and both remaining detectors are already YOLO derivatives.
+
+So the computed scan is currently the only thing in this product that looks for fire, and
+what it is worth is measured by [`tools/evaluate_fire.py`](tools/evaluate_fire.py) rather
+than assumed. Colour finds the candidates; time decides. Fire burns in place and
 churns inside its own outline, so the flame fraction of a patch changes on nearly every
 frame, while a red van crossing the shot changes it further but only twice and holds
 perfectly still in between. The test is how often a patch changes, not how far, which is
