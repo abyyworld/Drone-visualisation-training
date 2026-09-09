@@ -116,11 +116,17 @@
     "file": "wildfire-320.onnx",
     "task": "detect",
     "imgsz": 320,
-    "labels": [],
+    "labels": [
+      "smoke",
+      "fire"
+    ],
+    "keepClasses": [
+      0,
+      1
+    ],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
     "severityWeights": {
-      "fire or smoke": 3.0,
       "person": 5.0,
       "structure_at_risk": 4.0,
       "vehicle": 3.0,
@@ -136,8 +142,8 @@
       "terrain": 1.0
     },
     "displayName": "Wildfire",
-    "notes": "No model. There was one, and it did not work: fetched, converted, committed and described here, it returned a score between 0.0123 and 0.0155 for black, white, random noise, a flame-coloured block, sixty real drone photographs and fifty frames of the demo clip alike. It could not mark fire because it could not mark anything, so it has been removed rather than left to look like a working detector. tools/model_liveness.py is now what stands between that and shipping. The colour and movement scan in the live view is unaffected and still runs; it needs no model at all. It is also, at the moment, the only thing in this product that looks for fire, and what it is worth is measured by tools/evaluate_fire.py rather than assumed. None of that changes what a frame from above can show even with a working model behind it: fire behind a smoke column, inside a treeline or under canopy does not appear from above at all, and a person the camera cannot resolve is the normal case rather than a rare one.",
-    "zeroDetectionNote": "Nothing was marked, because there is no fire model to mark anything with. This is not a reading about the scene, the smoke, the treeline or whether anyone is there."
+    "notes": "Replaces one that did not work. The previous fire model returned the same score for every picture in the world and was removed; this one is a plain detect export with two classes rather than one, so it says which of smoke and fire it is looking at, and it responds to what it is shown. What is measured about it: nothing marked on 60 real drone frames with no fire in them, and a spread of 0.47 across five different pictures, so it reads its input. What is NOT measured is the number that matters most, recall on real fire, because there is no real fire footage in this repository and none reachable from where it is built. The one clip here is synthetic and says so in its own truth file, and three unrelated engines score zero on it, so it measures nothing about any of them. Treat the boxes as regions to look at until that number exists. One known false positive to be aware of: a ground-level photograph of a football pitch draws smoke at 0.47. None of which changes what a frame from above can show even with a model that works behind it: fire behind a smoke column, inside a treeline or under canopy does not appear from above at all, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "zeroDetectionNote": "Nothing was marked in this frame. That describes this frame and nothing else: not the ground under the smoke, not what is inside the treeline, and not whether anyone is there. Fire behind a smoke column, under canopy or at night does not appear from above at all, and how often this model misses real fire has not been measured."
   },
   "ondevice": {
     "file": "detector.tflite",
