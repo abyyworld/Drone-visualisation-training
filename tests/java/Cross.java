@@ -1,4 +1,6 @@
 import android.graphics.Bitmap;
+import world.abyy.droneinspection.Finding;
+import world.abyy.droneinspection.Tracker;
 import world.abyy.droneinspection.Yolo;
 import java.lang.reflect.*;
 import java.util.*;
@@ -73,6 +75,34 @@ public class Cross {
       return burning ? new int[]{255, 140, 30} : new int[]{120, 40, 10};
     });
     yolo();
+    tracking();
+  }
+
+  /**
+   * The tracker under a camera that is moving, against the same run in JavaScript.
+   *
+   * A crowd standing still while the whole picture slides under them is the drone's own
+   * motion with nothing else mixed in, and it is what used to make the numbering churn.
+   * Both implementations have to issue the same identities for it, or the tablet and the
+   * report of the same footage count the same crowd differently.
+   */
+  static void tracking() throws Exception {
+    for (int speed : new int[]{0, 20, 45}) {
+      Tracker tracker = new Tracker();
+      long clock = 1000;
+      for (int step = 0; step < 8; step++) {
+        List<Finding> crowd = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+          float x = (i % 6) * 90 - step * speed;
+          float y = (float) Math.floor(i / 6.0) * 120;
+          crowd.add(new Finding("person", "high", "", x, y, x + 40, y + 80));
+        }
+        tracker.update(crowd, clock);
+        clock += 250;
+      }
+      System.out.println(String.format(Locale.UK, "track-pan-%d: %d", speed,
+          tracker.countSeen("person")));
+    }
   }
 
   /** The tile grid and the merge, printed so the JavaScript can be compared against it. */

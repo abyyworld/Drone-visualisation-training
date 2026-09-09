@@ -77,3 +77,23 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     + unletterbox([12, 30, 300, 290], 0.3333, 0, 46.5, 1920, 1080)
       .map((v) => v.toFixed(6)).join(' '));
 }
+
+// The tracker under a camera that is moving. See Cross.tracking().
+{
+  const { Tracker } = await import('../../web/js/track.js');
+  for (const speed of [0, 20, 45]) {
+    const tracker = new Tracker();
+    let clock = 1000;
+    for (let step = 0; step < 8; step += 1) {
+      const crowd = [];
+      for (let i = 0; i < 30; i += 1) {
+        const x = (i % 6) * 90 - step * speed;
+        const y = Math.floor(i / 6) * 120;
+        crowd.push({ label: 'person', confidence: 0.8, box: [x, y, x + 40, y + 80] });
+      }
+      tracker.update(crowd, clock);
+      clock += 250;
+    }
+    console.log(`track-pan-${speed}: ${tracker.countSeen('person')}`);
+  }
+}

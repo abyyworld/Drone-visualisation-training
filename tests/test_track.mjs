@@ -442,5 +442,45 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
     strict.countSeen('person') === 1, `${strict.countSeen('person')} counted`);
 }
 
+console.log('\nThe drone moving is not the crowd changing');
+{
+  // THE BUG THIS PINS
+  //     The camera is on a drone. When it moves, every box moves at once by the same
+  //     amount and none of the people did anything. From altitude a person is about ten
+  //     pixels across, so the centre gate is worth about seventeen pixels, and a drone in
+  //     forward flight covers more than that between two looks. Every track failed its gate
+  //     on the same frame and the whole crowd was issued new numbers.
+  //
+  //     It could not recover on its own either: a track has to survive a frame to learn its
+  //     velocity, none of them survived one, so none of them ever learnt. The shift has to
+  //     be measured from the boxes before any of them are paired.
+  //
+  //     Measured on a labelled VisDrone frame panned under the tracker, with the dataset's
+  //     own boxes so the detector could not be blamed: a still camera numbered 140 people
+  //     as 140, and the same crowd under a camera moving 20 px a frame came out as 320.
+  const spread = [];
+  for (let i = 0; i < 30; i += 1) spread.push([(i % 6) * 90, Math.floor(i / 6) * 120]);
+
+  for (const speed of [0, 20, 45]) {
+    const tracker = new Tracker({ confirmAfter: 2 });
+    let clock = 1000;
+    for (let step = 0; step < 8; step += 1) {
+      // Everybody standing still, and the whole picture sliding under them.
+      tracker.update(spread.map(([x, y]) => person(x - step * speed, y)), clock);
+      clock += 250;
+    }
+    check(`a crowd of 30 stays 30 with the camera moving ${speed} px a frame`,
+      tracker.countSeen('person') === 30, `${tracker.countSeen('person')} numbers issued`);
+  }
+
+  // And the estimate must not fire on a scene that simply has few things in it, or two
+  // people walking past each other would be read as the whole frame moving.
+  const quiet = new Tracker({ confirmAfter: 2 });
+  quiet.update([person(10, 10)], 1000);
+  quiet.update([person(200, 10)], 1250);
+  check('one box moving on its own is not the picture moving',
+    quiet.drift[0] === 0 && quiet.drift[1] === 0, `drift ${quiet.drift}`);
+}
+
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

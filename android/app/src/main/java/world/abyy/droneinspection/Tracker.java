@@ -3,6 +3,7 @@ package world.abyy.droneinspection;
 import androidx.annotation.NonNull;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,6 +30,16 @@ public final class Tracker {
     private static final double MIN_IOU = 0.08;
     private static final double MAX_CENTRE_DRIFT = 1.6;
     private static final double MAX_SIZE_RATIO = 2.2;
+
+    // Working out how far the whole picture moved between two looks. See estimateDrift.
+    // The bin is coarse because the answer only has to be good enough to bring a box back
+    // inside the gate above, and a coarse bin is what makes the vote decisive.
+    private static final float DRIFT_BIN = 8f;
+    private static final int DRIFT_MIN_VOTES = 4;
+    private static final double DRIFT_MIN_SHARE = 0.2;
+    // A ceiling on one cycle's worth of movement. Past this the frames have nothing to do
+    // with each other and pairing them up would be invention rather than tracking.
+    private static final float DRIFT_MAX = 400f;
     private static final int MAX_MISSES = 20;
 
     /**
@@ -146,6 +157,9 @@ public final class Tracker {
 
     private final List<Remembered> remembered = new ArrayList<>();
     private final List<Track> tracks = new ArrayList<>();
+
+    /** The last measured movement of the whole picture. See estimateDrift. */
+    private float[] lastDrift = {0f, 0f};
     private final Map<String, Integer> everSeen = new HashMap<>();
     private int nextId = 1;
 
@@ -155,6 +169,10 @@ public final class Tracker {
     }
 
     public List<Track> update(List<Finding> detections, long now) {
+        // Before any pairing: how far the whole picture moved. See estimateDrift.
+        float[] drift = estimateDrift(detections);
+        lastDrift = drift;
+
         List<Pair> pairs = new ArrayList<>();
         for (Track track : tracks) {
             for (int i = 0; i < detections.size(); i++) {
@@ -165,7 +183,7 @@ public final class Tracker {
                     continue;
                 }
                 float[] box = boxOf(detection);
-                double score = affinity(track, box);
+                double score = affinity(track, box, drift);
                 if (score > 0) {
                     pairs.add(new Pair(track, i, score, box));
                 }
@@ -382,21 +400,126 @@ public final class Tracker {
         return union <= 0 ? 0 : overlap / union;
     }
 
+    private static float[] shift(float[] box, float[] by) {
+        return new float[]{box[0] + by[0], box[1] + by[1], box[2] + by[0], box[3] + by[1]};
+    }
+
+    /**
+     * How far the whole picture moved, worked out before anything is matched.
+     *
+     * WHY THIS IS NOT OPTIONAL
+     *     The camera is on a drone. When it moves, every box in the frame moves at once, by
+     *     the same amount, and none of the people did anything. From altitude a person is
+     *     about ten pixels across, so the centre gate above is worth roughly seventeen
+     *     pixels, and a drone in forward flight covers far more than that between two looks
+     *     a quarter of a second apart.
+     *
+     *     So every track fails its gate on the same frame, every one is let go, and the whole
+     *     crowd is issued new numbers. Measured on a labelled frame panned under the tracker,
+     *     with the dataset's own boxes so the detector could not be blamed: a still camera
+     *     numbers 140 people as 140, and the same crowd under a camera moving twenty pixels a
+     *     frame comes out as 320.
+     *
+     *     It cannot be recovered from a track's own velocity, and that is the trap. A track
+     *     has to survive a frame to learn how fast it is moving; at these speeds none of them
+     *     survive one, so none of them ever learn. The estimate has to come from the boxes
+     *     themselves, before any of them are paired up.
+     *
+     * HOW
+     *     Every track against every detection of its class, each pair offering the offset
+     *     that would join them, and the offsets voted into coarse bins. A rigid translation
+     *     puts one vote per person into the same bin; wrong pairings scatter across all the
+     *     others. The winning bin is the drone's own motion, and the median inside it is the
+     *     value.
+     */
+    private float[] estimateDrift(List<Finding> detections) {
+        if (tracks.size() < 2 || detections.size() < 2) {
+            return new float[]{0f, 0f};
+        }
+
+        Map<Long, List<float[]>> votes = new HashMap<>();
+        List<float[]> best = null;
+        for (Track track : tracks) {
+            float tw = Math.abs(track.box[2] - track.box[0]);
+            float th = Math.abs(track.box[3] - track.box[1]);
+            if (tw <= 0 || th <= 0) {
+                continue;
+            }
+            float[] from = centre(track.box);
+
+            for (Finding detection : detections) {
+                if (!track.label.equals(detection.label)) {
+                    continue;
+                }
+                float[] box = boxOf(detection);
+                float dw = Math.abs(box[2] - box[0]);
+                float dh = Math.abs(box[3] - box[1]);
+                if (dw <= 0 || dh <= 0) {
+                    continue;
+                }
+                // Same reasoning as the size gate in affinity: a box twice the size is a
+                // different person, and its offset says nothing about where the picture went.
+                double ratio = Math.max(Math.max(tw / dw, dw / tw), Math.max(th / dh, dh / th));
+                if (ratio > MAX_SIZE_RATIO) {
+                    continue;
+                }
+
+                float[] to = centre(box);
+                float dx = to[0] - from[0];
+                float dy = to[1] - from[1];
+                if (Math.abs(dx) > DRIFT_MAX || Math.abs(dy) > DRIFT_MAX) {
+                    continue;
+                }
+
+                long key = (long) Math.round(dx / DRIFT_BIN) * 100000L
+                        + Math.round(dy / DRIFT_BIN);
+                List<float[]> bucket = votes.get(key);
+                if (bucket == null) {
+                    bucket = new ArrayList<>();
+                    votes.put(key, bucket);
+                }
+                bucket.add(new float[]{dx, dy});
+                if (best == null || bucket.size() > best.size()) {
+                    best = bucket;
+                }
+            }
+        }
+
+        // Enough of the frame has to agree, or this is not a translation, it is coincidence.
+        if (best == null || best.size() < DRIFT_MIN_VOTES
+                || best.size() < tracks.size() * DRIFT_MIN_SHARE) {
+            return new float[]{0f, 0f};
+        }
+        return new float[]{median(best, 0), median(best, 1)};
+    }
+
+    private static float median(List<float[]> offsets, int axis) {
+        float[] values = new float[offsets.size()];
+        for (int i = 0; i < offsets.size(); i++) {
+            values[i] = offsets.get(i)[axis];
+        }
+        Arrays.sort(values);
+        return values[values.length / 2];
+    }
+
     /**
      * How strongly a detection belongs to a track. Zero means it does not.
      *
      * Overlap is the better evidence when there is any. When there is none, fall back to
-     * how far the centre has moved relative to the size of the thing, measured from where
-     * the track's velocity predicts it should be - with a size check, so a distant person
-     * is not adopted by a nearby one's track.
+     * how far the centre has moved relative to the size of the thing - with a size check, so
+     * a distant person is not adopted by a nearby one's track.
+     *
+     * Three guesses at where the track should be, and the best of them wins: where it was,
+     * where its own velocity says it went, and where the whole picture went. Best-of rather
+     * than a sum, because a track alive for a while has already absorbed the drone's motion
+     * into its velocity, and adding the drift on top would carry it twice as far.
      */
-    private static double affinity(Track track, float[] box) {
-        float[] predicted = {
-                track.box[0] + track.velocity[0], track.box[1] + track.velocity[1],
-                track.box[2] + track.velocity[0], track.box[3] + track.velocity[1],
-        };
+    private static double affinity(Track track, float[] box, float[] drift) {
+        float[] moved = shift(track.box, track.velocity);
+        float[] drifted = shift(track.box, drift);
 
-        double overlap = Math.max(iou(track.box, box), iou(predicted, box));
+        double overlap = Math.max(iou(track.box, box),
+                Math.max(iou(moved, box), iou(drifted, box)));
         if (overlap >= MIN_IOU) {
             return 1 + overlap;   // always beats any distance-only match
         }
@@ -414,13 +537,16 @@ public final class Tracker {
             return 0;
         }
 
-        float[] p = centre(predicted);
         float[] b = centre(box);
-        double drift = Math.hypot(p[0] - b[0], p[1] - b[1])
-                / Math.max(1, Math.hypot(tw, th) / 2);
-        if (drift > MAX_CENTRE_DRIFT) {
+        double reach = Math.max(1, Math.hypot(tw, th) / 2);
+        double closest = Double.MAX_VALUE;
+        for (float[] guess : new float[][]{track.box, moved, drifted}) {
+            float[] p = centre(guess);
+            closest = Math.min(closest, Math.hypot(p[0] - b[0], p[1] - b[1]) / reach);
+        }
+        if (closest > MAX_CENTRE_DRIFT) {
             return 0;
         }
-        return 1 - drift / MAX_CENTRE_DRIFT;
+        return 1 - closest / MAX_CENTRE_DRIFT;
     }
 }

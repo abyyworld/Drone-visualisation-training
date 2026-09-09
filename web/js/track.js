@@ -41,6 +41,16 @@ const MIN_IOU = 0.08;
 const MAX_CENTRE_DRIFT = 1.6;
 const MAX_SIZE_RATIO = 2.2;
 
+// Working out how far the whole picture moved between two looks. See estimateDrift.
+// The bin is coarse because the answer only has to be good enough to bring a box back
+// inside the gate above, and a coarse bin is what makes the vote decisive.
+const DRIFT_BIN = 8;
+const DRIFT_MIN_VOTES = 4;
+const DRIFT_MIN_SHARE = 0.2;
+// A ceiling on one cycle's worth of movement. Past this the frames have nothing to do with
+// each other and pairing them up would be invention rather than tracking.
+const DRIFT_MAX = 400;
+
 // About four seconds at a few detections a second. Long enough to walk behind something.
 const MAX_MISSES = 20;
 /**
@@ -144,6 +154,82 @@ function sizeOf(box) {
   return [Math.abs(box[2] - box[0]), Math.abs(box[3] - box[1])];
 }
 
+function shift(box, by) {
+  return [box[0] + by[0], box[1] + by[1], box[2] + by[0], box[3] + by[1]];
+}
+
+/**
+ * How far the whole picture moved, worked out before anything is matched.
+ *
+ * WHY THIS IS NOT OPTIONAL
+ *     The camera is on a drone. When it moves, every box in the frame moves at once, by the
+ *     same amount, and none of the people did anything. From altitude a person is about ten
+ *     pixels across, so the centre-distance gate below is worth roughly seventeen pixels,
+ *     and a drone in forward flight covers far more than that between two looks a quarter of
+ *     a second apart.
+ *
+ *     So every track fails its gate on the same frame, every one of them is let go, and
+ *     everybody in the crowd is issued a new number. Measured on a labelled frame panned
+ *     under the tracker, with the dataset's own boxes so the detector cannot be blamed: a
+ *     still camera numbers 140 people as 140, and the same crowd under a moving camera comes
+ *     out as 320. That is the numbering complaint, entirely.
+ *
+ *     It cannot be recovered from a track's own velocity either, and that is the trap. A
+ *     track needs to survive a frame to learn how fast it is moving, and at these speeds
+ *     none of them survive one, so none of them ever learn. The estimate has to come from
+ *     the boxes themselves, before any of them are paired up.
+ *
+ * HOW
+ *     Every track against every detection of its class, each pair offering the offset that
+ *     would join them, and the offsets voted into coarse bins. A rigid translation puts one
+ *     vote per person into the same bin; wrong pairings scatter across all the others. The
+ *     winning bin is the drone's own motion, and the median inside it is the value.
+ *
+ *     A vote per pair is arithmetic on a few thousand numbers even for a full crowd, which
+ *     is nothing beside the inference that produced the boxes.
+ */
+function estimateDrift(tracks, detections) {
+  if (tracks.length < 2 || detections.length < 2) return [0, 0];
+
+  const votes = new Map();
+  let best = null;
+  for (const track of tracks) {
+    const [tw, th] = sizeOf(track.box);
+    if (tw <= 0 || th <= 0) continue;
+    const [tx, ty] = centre(track.box);
+
+    for (const detection of detections) {
+      if (track.label !== detection.label) continue;
+      const [dw, dh] = sizeOf(detection.box);
+      if (dw <= 0 || dh <= 0) continue;
+      // Same reasoning as the size gate in affinity: a box twice the size is a different
+      // person, and its offset is not evidence about where the picture went.
+      if (Math.max(tw / dw, dw / tw, th / dh, dh / th) > MAX_SIZE_RATIO) continue;
+
+      const [cx, cy] = centre(detection.box);
+      const dx = cx - tx;
+      const dy = cy - ty;
+      if (Math.abs(dx) > DRIFT_MAX || Math.abs(dy) > DRIFT_MAX) continue;
+
+      const key = `${Math.round(dx / DRIFT_BIN)},${Math.round(dy / DRIFT_BIN)}`;
+      let bucket = votes.get(key);
+      if (!bucket) votes.set(key, bucket = []);
+      bucket.push([dx, dy]);
+      if (!best || bucket.length > best.length) best = bucket;
+    }
+  }
+
+  // Enough of the frame has to agree, or this is not a translation, it is coincidence.
+  if (!best || best.length < DRIFT_MIN_VOTES
+    || best.length < tracks.length * DRIFT_MIN_SHARE) return [0, 0];
+
+  const median = (values) => {
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+  return [median(best.map((o) => o[0])), median(best.map((o) => o[1]))];
+}
+
 /**
  * How strongly a detection belongs to a track. Zero means it does not.
  *
@@ -153,16 +239,16 @@ function sizeOf(box) {
  * detector running five times a second sees exactly that. The fallback also checks the
  * boxes are a similar size, so a distant person is not adopted by a nearby one's track.
  *
- * The track's own velocity is used to guess where it should be, so something moving
- * steadily is matched against its predicted position rather than its last one.
+ * Three guesses at where the track should be, and the best of them wins: where it was, where
+ * its own velocity says it went, and where the whole picture went. Best-of rather than a sum,
+ * because a track that has been alive a while has already absorbed the drone's motion into
+ * its velocity, and adding the drift on top of that would carry it twice as far.
  */
-function affinity(track, box, minIou) {
-  const predicted = [
-    track.box[0] + track.velocity[0], track.box[1] + track.velocity[1],
-    track.box[2] + track.velocity[0], track.box[3] + track.velocity[1],
-  ];
+function affinity(track, box, minIou, drift) {
+  const moved = shift(track.box, track.velocity);
+  const drifted = shift(track.box, drift);
 
-  const overlap = Math.max(iou(track.box, box), iou(predicted, box));
+  const overlap = Math.max(iou(track.box, box), iou(moved, box), iou(drifted, box));
   if (overlap >= minIou) return 1 + overlap;   // always beats any distance-only match
 
   const [tw, th] = sizeOf(track.box);
@@ -172,13 +258,17 @@ function affinity(track, box, minIou) {
   const ratio = Math.max(tw / dw, dw / tw, th / dh, dh / th);
   if (ratio > MAX_SIZE_RATIO) return 0;
 
-  const [px, py] = centre(predicted);
   const [bx, by] = centre(box);
-  const drift = Math.hypot(px - bx, py - by) / Math.max(1, Math.hypot(tw, th) / 2);
-  if (drift > MAX_CENTRE_DRIFT) return 0;
+  const reach = Math.max(1, Math.hypot(tw, th) / 2);
+  let closest = Infinity;
+  for (const guess of [track.box, moved, drifted]) {
+    const [px, py] = centre(guess);
+    closest = Math.min(closest, Math.hypot(px - bx, py - by) / reach);
+  }
+  if (closest > MAX_CENTRE_DRIFT) return 0;
 
   // Closer is better, and never reaches the overlap band above.
-  return 1 - drift / MAX_CENTRE_DRIFT;
+  return 1 - closest / MAX_CENTRE_DRIFT;
 }
 
 export class Tracker {
@@ -202,6 +292,8 @@ export class Tracker {
      */
     this.remembered = [];
     this.tracks = [];
+    /** The last measured movement of the whole picture, for the status line and for tests. */
+    this.drift = [0, 0];
     this.nextId = 1;
     this.frame = 0;
     this.everSeen = new Map();
@@ -216,6 +308,11 @@ export class Tracker {
   update(detections = [], now = Date.now()) {
     this.frame += 1;
     this.now = now;
+
+    // Before any pairing: how far the whole picture moved. See estimateDrift.
+    const drift = estimateDrift(this.tracks, detections);
+    this.drift = drift;
+
     const pairs = [];
 
     // Every plausible pairing, best first. Only a track and a detection of the same class
@@ -224,7 +321,7 @@ export class Tracker {
     for (const track of this.tracks) {
       for (const [index, detection] of detections.entries()) {
         if (track.label !== detection.label) continue;
-        const score = affinity(track, detection.box, this.minIou);
+        const score = affinity(track, detection.box, this.minIou, drift);
         if (score > 0) pairs.push({ track, index, score });
       }
     }
