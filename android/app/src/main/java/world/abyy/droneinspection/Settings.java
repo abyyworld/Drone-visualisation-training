@@ -28,6 +28,9 @@ public final class Settings {
     private static final String KEY_PROVIDER = "provider";
     private static final String KEY_MODEL = "model";
     private static final String KEY_SENSITIVITY = "sensitivityPercent";
+    private static final String KEY_POPOUT_X = "popoutX";
+    private static final String KEY_POPOUT_Y = "popoutY";
+    private static final String KEY_POPOUT_WIDTH = "popoutWidth";
 
     /**
      * Seconds between frames sent for analysis.
@@ -66,6 +69,35 @@ public final class Settings {
     /** As the detector wants it: a score between zero and one. */
     public static float confidence(Context context) {
         return sensitivityPercent(context) / 100f;
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Where the floating window was left
+    // -----------------------------------------------------------------------------------
+    //
+    // Remembered because it is set with a fingertip on a controller in flight, and having to
+    // drag it back to the same corner and the same size on every takeoff is the kind of
+    // friction that ends with nobody using it. Height is not stored: it follows from the
+    // width and the video's shape, and storing it would let the two disagree.
+
+    public static int popoutX(Context context, int fallback) {
+        return prefs(context).getInt(KEY_POPOUT_X, fallback);
+    }
+
+    public static int popoutY(Context context, int fallback) {
+        return prefs(context).getInt(KEY_POPOUT_Y, fallback);
+    }
+
+    public static int popoutWidth(Context context, int fallback) {
+        return prefs(context).getInt(KEY_POPOUT_WIDTH, fallback);
+    }
+
+    public static void savePopout(Context context, int x, int y, int width) {
+        prefs(context).edit()
+                .putInt(KEY_POPOUT_X, x)
+                .putInt(KEY_POPOUT_Y, y)
+                .putInt(KEY_POPOUT_WIDTH, width)
+                .apply();
     }
 
     /** Not persisted. See the class comment. */

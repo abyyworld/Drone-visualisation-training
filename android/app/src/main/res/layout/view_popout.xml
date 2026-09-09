@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The floating window's contents.
+
+  Laid out as the live screen is, so the boxes land in the same place: the video fills the
+  window and the overlay sits on top of it at the same size. The two controls are deliberately
+  small and at opposite corners, because at 200dp across anything larger covers the picture
+  that is the entire reason for the window.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <SurfaceView
+        android:id="@+id/popout_video"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <world.abyy.droneinspection.OverlayView
+        android:id="@+id/popout_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Drag anywhere on this strip to move the window. It is tinted rather than transparent
+         so there is something visible to aim at on a controller screen in daylight. -->
+    <View
+        android:id="@+id/popout_drag"
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:layout_gravity="top"
+        android:background="#99000000" />
+
+    <ImageView
+        android:id="@+id/popout_close"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:layout_gravity="top|end"
+        android:padding="5dp"
+        android:contentDescription="@string/popout_close"
+        android:src="@android:drawable/ic_menu_close_clear_cancel" />
+
+    <!-- Drag this corner to resize. Pinching the picture does the same thing; both exist
+         because a gloved thumb on a controller finds a corner more reliably than a pinch. -->
+    <ImageView
+        android:id="@+id/popout_grip"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_gravity="bottom|end"
+        android:padding="6dp"
+        android:background="#99000000"
+        android:contentDescription="@string/popout_resize"
+        android:src="@android:drawable/ic_menu_crop" />
+</FrameLayout>

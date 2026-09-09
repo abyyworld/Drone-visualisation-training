@@ -64,8 +64,11 @@
             android:text="@string/take_photo" />
 
         <!-- Shrinks to a small movable window so the drone's feed, and its boxes, stay
-             visible over the flight software. The activity is not stopped in that mode,
-             only small, so tracking and recording carry straight on. -->
+             visible over the flight software. Tracking and recording carry straight on.
+
+             Two windows behind this one button. With permission to draw over other apps it
+             is PopoutWindow, which can be dragged and resized; without, it is Android's own
+             picture-in-picture, which on this tablet is one size and cannot be changed. -->
         <Button
             android:id="@+id/pip"
             android:layout_width="120dp"

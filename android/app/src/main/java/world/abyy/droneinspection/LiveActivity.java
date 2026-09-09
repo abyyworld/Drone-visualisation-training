@@ -215,6 +215,19 @@ public class LiveActivity extends AppCompatActivity {
      * out that a device's GL driver is unusual.
      */
     private GlPipeline glPipeline;
+
+    /**
+     * The floating window, when one is out.
+     *
+     * While it is, the pipeline draws into its surface instead of the one on this screen, and
+     * this activity is stopped rather than resumed - so onStop must not tear anything down
+     * and the process must be held up. See PopoutWindow for why the system's own
+     * picture-in-picture could not be made to do this.
+     */
+    private PopoutWindow popout;
+
+    /** Whether the pipeline's picture is currently going to the floating window. */
+    private boolean popoutOwnsDisplay;
     private boolean usingGl;
     private boolean surfaceReady;
     private boolean wantStream;
@@ -620,6 +633,11 @@ public class LiveActivity extends AppCompatActivity {
         handler.post(() -> {
             overlay.setTracks(finalTracks, frameWidth, frameHeight);
             overlay.setFire(finalFire);
+            PopoutWindow window = popout;
+            if (window != null) {
+                window.overlay().setTracks(finalTracks, frameWidth, frameHeight);
+                window.overlay().setFire(finalFire);
+            }
             detectBusy = false;
             // The recording's overlay is a texture, re-uploaded only when the boxes change.
             pushOverlay();
@@ -691,6 +709,11 @@ public class LiveActivity extends AppCompatActivity {
         videoSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                if (popout != null) {
+                    // The floating window has the picture, or is about to. Taking it back
+                    // here would blank the window the operator is actually watching.
+                    return;
+                }
                 if (glPipeline != null && glPipeline.isAlive()) {
                     // Coming back from the background with a recording still running: the
                     // pipeline never went away, it just had no screen.
@@ -705,6 +728,9 @@ public class LiveActivity extends AppCompatActivity {
 
             @Override
             public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int w, int h) {
+                if (popout != null) {
+                    return;
+                }
                 if (glPipeline != null) {
                     glPipeline.setDisplaySize(w, h);
                 }
@@ -712,6 +738,22 @@ public class LiveActivity extends AppCompatActivity {
 
             @Override
             public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                if (popout != null) {
+                    // This screen's surface is going because the app left the foreground,
+                    // which is the normal case with the window out.
+                    //
+                    // Tested on the window rather than on whether it already owns the
+                    // picture, and that distinction is the whole bug this avoids: the
+                    // window's own surface is created a frame or two after the window is
+                    // added, so this usually runs while the window owns nothing yet. Falling
+                    // through would close the pipeline outright, and the window would come
+                    // up black with nothing left able to fill it.
+                    if (!popoutOwnsDisplay && glPipeline != null && glPipeline.isAlive()) {
+                        glPipeline.detachDisplay();
+                    }
+                    surfaceReady = false;
+                    return;
+                }
                 if (isRecording() && glPipeline != null) {
                     // Only the window goes. The context, the decoder's texture and the
                     // encoder's surface all stay, so the recording carries on with nobody
@@ -729,7 +771,7 @@ public class LiveActivity extends AppCompatActivity {
         backButton = findViewById(R.id.back);
 
         pipButton = findViewById(R.id.pip);
-        pipButton.setOnClickListener(v -> enterSmallWindow());
+        pipButton.setOnClickListener(v -> enterSmallWindow(true));
         recordButton.setOnClickListener(v -> toggleRecording());
         snapshotButton.setOnClickListener(v -> takeSnapshot());
         backButton.setOnClickListener(v -> leave());
@@ -782,6 +824,9 @@ public class LiveActivity extends AppCompatActivity {
                 findings = next;
                 lastError = "";
                 overlay.setFindings(next);
+                if (popout != null) {
+                    popout.overlay().setFindings(next);
+                }
                 pushOverlay();
                 refreshStatus();
             }
@@ -802,6 +847,13 @@ public class LiveActivity extends AppCompatActivity {
         // that is not known until the SurfaceView has one. Whichever happens second starts
         // it; see openPipeline().
         wantStream = true;
+        if (popout != null) {
+            // Back on screen with the floating window out: nothing was ever stopped, so take
+            // the picture back and leave the stream, the detector and any recording alone.
+            closePopout(true);
+            refreshStatus();
+            return;
+        }
         if (isRecording() && player != null) {
             // Came back to a recording that never stopped. Everything is still running.
             refreshStatus();
@@ -872,6 +924,11 @@ public class LiveActivity extends AppCompatActivity {
         if (isRecording()) {
             return;
         }
+        if (popout != null) {
+            // Same reasoning, for the same reason: the floating window is showing this
+            // stream to the operator right now. Releasing the player here would freeze it.
+            return;
+        }
 
         wantStream = false;
         handler.removeCallbacks(analysisTick);
@@ -904,6 +961,9 @@ public class LiveActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        // Before anything is released: the window is showing a pipeline that is about to be
+        // torn down, and a floating window outliving its activity is one that cannot be shut.
+        closePopout(false);
         stopWatchingTemperature();
         handler.removeCallbacksAndMessages(null);
         if (recorder != null) {
@@ -993,6 +1053,11 @@ public class LiveActivity extends AppCompatActivity {
                 if (glPipeline != null) {
                     glPipeline.setVideoSize(size.width, size.height);
                 }
+                // The floating window opens before the stream's real shape is known, so it
+                // corrects itself here rather than sitting letterboxed for the whole flight.
+                if (popout != null) {
+                    popout.setVideoSize(size.width, size.height);
+                }
             }
         });
         player.prepare();
@@ -1059,7 +1124,157 @@ public class LiveActivity extends AppCompatActivity {
      * Entered on the button and automatically when the operator leaves for another app, so
      * it does not have to be remembered mid-flight.
      */
-    private void enterSmallWindow() {
+    private void enterSmallWindow(boolean mayAsk) {
+        if (popout != null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && !android.provider.Settings.canDrawOverlays(this)) {
+            // Asked at the moment it is wanted rather than at startup, and only when the
+            // press was deliberate. Leaving for the flight software is not the moment to put
+            // a settings screen in front of a pilot, so that path takes the fixed window
+            // instead, which is what the app did before any of this.
+            if (mayAsk) {
+                askForOverlayPermission();
+                return;
+            }
+            enterSystemSmallWindow();
+            return;
+        }
+        if (openPopout()) {
+            return;
+        }
+        enterSystemSmallWindow();
+    }
+
+    /**
+     * The window this app owns: draggable, resizable, and the only kind of either on this
+     * tablet.
+     *
+     * @return true if it is on screen, false to fall back to the system's fixed one.
+     */
+    private boolean openPopout() {
+        PopoutWindow window = new PopoutWindow(this, popoutListener,
+                videoPixelWidth, videoPixelHeight);
+        String refused = window.open();
+        if (refused != null) {
+            return false;
+        }
+        popout = window;
+        // The same reason a recording needs it: with the window out this activity is stopped,
+        // and a stopped activity's process can be killed at any moment. See RecordingService.
+        RecordingService.start(this);
+        Toast.makeText(this, R.string.popout_hint, Toast.LENGTH_LONG).show();
+        // The pipeline moves to the window's surface when that surface arrives. This screen
+        // steps aside now so the window is over whatever the operator switches to, which is
+        // the point of pressing the button at all.
+        moveTaskToBack(true);
+        return true;
+    }
+
+    /**
+     * Ask for the permission that makes a resizable window possible, once.
+     *
+     * There is no callback worth registering: the operator either comes back with it granted,
+     * in which case the next press of the button opens the real window, or they do not, in
+     * which case the button keeps working as it always did.
+     */
+    private void askForOverlayPermission() {
+        Toast.makeText(this, R.string.popout_permission, Toast.LENGTH_LONG).show();
+        try {
+            startActivity(new Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (RuntimeException noSuchScreen) {
+            // Some builds do not carry that settings screen. Nothing to do but carry on
+            // without the resizable window.
+        }
+    }
+
+    /**
+     * Take the picture back from the floating window and close it.
+     *
+     * @param handBack whether to put the picture back on this screen. False when the activity
+     *                 is on its way out and there is no screen left to hand it to.
+     */
+    private void closePopout(boolean handBack) {
+        PopoutWindow closing = popout;
+        if (closing == null) {
+            return;
+        }
+        popout = null;
+        closing.close();
+        if (popoutOwnsDisplay) {
+            // The window's surface callback did not run, or ran before the pipeline existed.
+            // Either way the pipeline must stop drawing into a surface that has gone.
+            popoutOwnsDisplay = false;
+            if (glPipeline != null && glPipeline.isAlive()) {
+                glPipeline.detachDisplay();
+            }
+        }
+        if (!isRecording()) {
+            RecordingService.stop(this);
+        }
+        Surface here = handBack ? videoSurface.getHolder().getSurface() : null;
+        if (glPipeline != null && glPipeline.isAlive() && here != null && here.isValid()) {
+            glPipeline.attachDisplay(here, videoSurface.getWidth(), videoSurface.getHeight());
+            surfaceReady = true;
+        }
+        refreshStatus();
+    }
+
+    /** What the floating window reports back. Everything arrives on the main thread. */
+    private final PopoutWindow.Listener popoutListener = new PopoutWindow.Listener() {
+        @Override
+        public void onPopoutSurfaceCreated(Surface surface, int width, int height) {
+            if (glPipeline == null || !glPipeline.isAlive()) {
+                return;
+            }
+            // attachDisplay destroys the old window surface and creates one on this, so the
+            // picture moves rather than being duplicated. The decoder, the detector, the
+            // tracker and any recording never learn that anything happened.
+            glPipeline.attachDisplay(surface, width, height);
+            popoutOwnsDisplay = true;
+            surfaceReady = false;
+        }
+
+        @Override
+        public void onPopoutSurfaceChanged(int width, int height) {
+            if (popoutOwnsDisplay && glPipeline != null) {
+                // Resized. Without this the picture is drawn at the old size and stretched or
+                // cropped to the new one.
+                glPipeline.setDisplaySize(width, height);
+            }
+        }
+
+        @Override
+        public void onPopoutSurfaceDestroyed() {
+            if (!popoutOwnsDisplay) {
+                return;
+            }
+            popoutOwnsDisplay = false;
+            if (glPipeline != null && glPipeline.isAlive()) {
+                glPipeline.detachDisplay();
+            }
+        }
+
+        @Override
+        public void onPopoutTapped() {
+            // Back to the full screen. onStart closes the window and takes the picture back.
+            Intent back = new Intent(LiveActivity.this, LiveActivity.class);
+            back.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(back);
+        }
+
+        @Override
+        public void onPopoutClosed() {
+            closePopout(true);
+        }
+    };
+
+    /** The system's window: one size, chosen by Android, and the fallback when ours cannot run. */
+    private void enterSystemSmallWindow() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             Toast.makeText(this, R.string.pip_unsupported, Toast.LENGTH_LONG).show();
             return;
@@ -1092,8 +1307,8 @@ public class LiveActivity extends AppCompatActivity {
         super.onUserLeaveHint();
         // Leaving for another app while the stream is up shrinks the window rather than
         // hiding it. Without this, switching apps mid-flight loses sight of the drone.
-        if (player != null && !isInPictureInPictureMode()) {
-            enterSmallWindow();
+        if (player != null && popout == null && !isInPictureInPictureMode()) {
+            enterSmallWindow(false);
         }
     }
 
@@ -1405,8 +1620,11 @@ public class LiveActivity extends AppCompatActivity {
 
     private void stopRecording() {
         // Released first: the moment the recording ends, this process has no business
-        // holding a notification or being exempt from being stopped.
-        RecordingService.stop(this);
+        // holding a notification or being exempt from being stopped. Unless the floating
+        // window is out, which needs the same protection for the same reason.
+        if (popout == null) {
+            RecordingService.stop(this);
+        }
         handler.removeCallbacks(recordTick);
         GlPipeline pipeline = glPipeline;
         if (pipeline != null) {
@@ -1597,7 +1815,11 @@ public class LiveActivity extends AppCompatActivity {
         }
 
         status.setText(line.toString());
-        overlay.setStatus(findings.isEmpty() ? "" : findings.size() + " marked by the provider");
+        String marked = findings.isEmpty() ? "" : findings.size() + " marked by the provider";
+        overlay.setStatus(marked);
+        if (popout != null) {
+            popout.overlay().setStatus(marked);
+        }
     }
 
     /** The folder a flight's files go in, at the top of the tablet's storage. */

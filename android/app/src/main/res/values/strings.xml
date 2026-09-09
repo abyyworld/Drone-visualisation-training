@@ -55,6 +55,10 @@
     <!-- The small-window button, and what to say where the system will not give us one. -->
     <string name="small_window">Small window</string>
     <string name="pip_unsupported">This tablet will not give the app a small floating window. The recording still runs in the background.</string>
+    <string name="popout_close">Close the floating window</string>
+    <string name="popout_resize">Drag to resize the floating window</string>
+    <string name="popout_permission">To resize the floating window, allow this app to draw over other apps. Without it the window is the fixed size Android gives it.</string>
+    <string name="popout_hint">Drag the bar to move it, the corner or a pinch to resize it, tap the picture to come back.</string>
     <!-- Shown when the device reports it is too hot and the detection rate has been eased
          back. Said out loud, because a rate that quietly halves looks like a fault. -->
     <string name="thermal_easing">hot, easing off</string>

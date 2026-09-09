@@ -49,6 +49,20 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!--
+      The pop-out window, and the only way to get one that can be resized on this tablet.
+
+      Android's own picture-in-picture takes an aspect ratio and nothing else: the system
+      picks the size, and before Android 11 there is one size and no gesture that changes it.
+      The controller this flies on is Android 9, so a window the pilot can drag bigger has to
+      be a window this app owns, and owning a window over another app is what this permits.
+
+      Asked for at the moment the pop-out button is pressed rather than at startup, once, and
+      refusing it is not fatal: the button falls back to the fixed system window, which is
+      exactly what the app did before.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -81,6 +95,10 @@
           boxes in the corner while flying in the flight software. In that mode the activity
           is not stopped, only small, so the stream, the detector and the recording all
           carry on exactly as they were.
+
+          It is now the fallback rather than the main path, because the window it produces
+          cannot be resized on this tablet. PopoutWindow is what runs when the operator has
+          allowed drawing over other apps. This stays for when they have not.
 
           resizeableActivity has to be true for it, and configChanges must already list
           screenSize and screenLayout - which it does - or entering and leaving the small
