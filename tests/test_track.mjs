@@ -473,8 +473,47 @@ console.log('\nThe drone moving is not the crowd changing');
       tracker.countSeen('person') === 30, `${tracker.countSeen('person')} numbers issued`);
   }
 
-  // And the estimate must not fire on a scene that simply has few things in it, or two
-  // people walking past each other would be read as the whole frame moving.
+  // And the sparse scene, at the size a person really is from altitude.
+  //
+  // THE BUG THIS PINS
+  //     One person, and the drone moving. Reported from a flight as a single person being
+  //     boxed with numbers like 16 and 46 as they moved along with the camera.
+  //
+  //     The drift estimate above works by vote, and one person casts one vote, so it was
+  //     refused as coincidence and the sparse scene had no correction at all. Worse than
+  //     the churn: at twenty pixels a frame the count was zero, because every frame started
+  //     a fresh track and none survived long enough to earn a number. The person was never
+  //     boxed at all.
+  const small = (x, y) => ({ label: 'person', confidence: 0.8, box: [x, y, x + 10, y + 22] });
+  for (const people of [1, 2, 3]) {
+    for (const speed of [0, 20, 45, 60, 90]) {
+      const tracker = new Tracker();
+      let clock = 1000;
+      for (let step = 0; step < 12; step += 1) {
+        const few = [];
+        for (let i = 0; i < people; i += 1) few.push(small(i * 120 - step * speed, 100));
+        tracker.update(few, clock);
+        clock += 250;
+      }
+      check(`${people} at ten pixels across, camera at ${speed} px a frame`,
+        tracker.countSeen('person') === people,
+        `${tracker.countSeen('person')} numbers issued`);
+    }
+  }
+
+  // Two people walking through each other must keep their two numbers rather than
+  // multiplying, which is the case a permissive pairing rule would get wrong.
+  const crossing = new Tracker();
+  let when = 1000;
+  for (let step = 0; step <= 12; step += 1) {
+    crossing.update([small(20 + step * 15, 100), small(200 - step * 15, 100)], when);
+    when += 250;
+  }
+  check('two people crossing paths stay two people',
+    crossing.countSeen('person') === 2, `${crossing.countSeen('person')} numbers issued`);
+
+  // And the estimate must not fire on a scene that simply has few things in it, or one
+  // person walking on their own would be read as the whole frame moving.
   const quiet = new Tracker({ confirmAfter: 2 });
   quiet.update([person(10, 10)], 1000);
   quiet.update([person(200, 10)], 1250);

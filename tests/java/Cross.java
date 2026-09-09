@@ -103,6 +103,28 @@ public class Cross {
       System.out.println(String.format(Locale.UK, "track-pan-%d: %d", speed,
           tracker.countSeen("person")));
     }
+
+    // And the sparse scene, at the size a person actually is from altitude. This is where
+    // the two implementations could most easily part company, because it is decided by the
+    // ratio test and by a vote with very few voters rather than by a comfortable margin.
+    for (int people : new int[]{1, 2, 3}) {
+      StringBuilder line = new StringBuilder("track-sparse-" + people + ":");
+      for (int speed : new int[]{0, 20, 45, 60, 90}) {
+        Tracker tracker = new Tracker();
+        long clock = 1000;
+        for (int step = 0; step < 12; step++) {
+          List<Finding> few = new ArrayList<>();
+          for (int i = 0; i < people; i++) {
+            float x = i * 120 - step * speed;
+            few.add(new Finding("person", "high", "", x, 100, x + 10, 122));
+          }
+          tracker.update(few, clock);
+          clock += 250;
+        }
+        line.append(' ').append(tracker.countSeen("person"));
+      }
+      System.out.println(line);
+    }
   }
 
   /** The tile grid and the merge, printed so the JavaScript can be compared against it. */

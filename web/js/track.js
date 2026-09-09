@@ -45,11 +45,26 @@ const MAX_SIZE_RATIO = 2.2;
 // The bin is coarse because the answer only has to be good enough to bring a box back
 // inside the gate above, and a coarse bin is what makes the vote decisive.
 const DRIFT_BIN = 8;
-const DRIFT_MIN_VOTES = 4;
+// Counted in distinct tracks agreeing, not in pairs. Two tracks that both shifted by the
+// same amount are the camera moving; one track contributing several near-identical offsets
+// because the crowd around it is dense is not evidence of anything.
+const DRIFT_MIN_VOTES = 2;
 const DRIFT_MIN_SHARE = 0.2;
 // A ceiling on one cycle's worth of movement. Past this the frames have nothing to do with
 // each other and pairing them up would be invention rather than tracking.
 const DRIFT_MAX = 400;
+
+// Pairing something up when it is the only candidate. See unambiguousPairs.
+// The runner-up has to be this much further away before a pairing counts as obvious, and
+// the score is below every real affinity so these are only ever used on what is left over.
+// 1.4, from the geometry rather than from taste. Two people a gap apart, the camera moving
+// m per frame: from a track's old position its own new box is m away and its neighbour's is
+// gap minus m, so the ratio is (gap - m) / m. It only becomes genuinely ambiguous when the
+// camera has moved half the gap, and a threshold of R resolves everything up to gap/(1 + R).
+// 1.4 covers camera motion up to 42% of the gap between two people, which is most of the way
+// to the point where no rule could be right.
+const LONELY_RATIO = 1.4;
+const LONELY_SCORE = 1e-4;
 
 // About four seconds at a few detections a second. Long enough to walk behind something.
 const MAX_MISSES = 20;
@@ -191,6 +206,8 @@ function shift(box, by) {
 function estimateDrift(tracks, detections) {
   if (tracks.length < 2 || detections.length < 2) return [0, 0];
 
+  // Keyed by binned offset. Each bucket keeps the offsets that landed in it and the set of
+  // tracks that put them there, and it is the second of those that decides the winner.
   const votes = new Map();
   let best = null;
   for (const track of tracks) {
@@ -213,21 +230,86 @@ function estimateDrift(tracks, detections) {
 
       const key = `${Math.round(dx / DRIFT_BIN)},${Math.round(dy / DRIFT_BIN)}`;
       let bucket = votes.get(key);
-      if (!bucket) votes.set(key, bucket = []);
-      bucket.push([dx, dy]);
-      if (!best || bucket.length > best.length) best = bucket;
+      if (!bucket) votes.set(key, bucket = { offsets: [], tracks: new Set() });
+      bucket.offsets.push([dx, dy]);
+      bucket.tracks.add(track);
+      if (!best || bucket.tracks.size > best.tracks.size) best = bucket;
     }
   }
 
   // Enough of the frame has to agree, or this is not a translation, it is coincidence.
-  if (!best || best.length < DRIFT_MIN_VOTES
-    || best.length < tracks.length * DRIFT_MIN_SHARE) return [0, 0];
+  if (!best || best.tracks.size < DRIFT_MIN_VOTES
+    || best.tracks.size < tracks.length * DRIFT_MIN_SHARE) return [0, 0];
 
   const median = (values) => {
     const sorted = values.slice().sort((a, b) => a - b);
     return sorted[Math.floor(sorted.length / 2)];
   };
-  return [median(best.map((o) => o[0])), median(best.map((o) => o[1]))];
+  return [median(best.offsets.map((o) => o[0])), median(best.offsets.map((o) => o[1]))];
+}
+
+/**
+ * Pairings that are obvious because there is nothing else they could be.
+ *
+ * WHY THE GATES ABOVE ARE NOT ENOUGH
+ *     The centre-distance gate exists to stop an identity jumping to a *competing*
+ *     candidate. With one person in the frame there is no competitor, so it is guarding
+ *     against a risk that is not there and refusing the only sensible answer.
+ *
+ *     And the drift estimate cannot help, because it works by vote: a crowd fills a bin and
+ *     one person casts one vote, which is refused as coincidence. So the sparse case had
+ *     nothing at all. Measured, one person about ten pixels across with the camera moving
+ *     twenty pixels a frame: every frame started a fresh track, none survived long enough to
+ *     be confirmed, and the screen showed a number that changed constantly or no box at all.
+ *
+ * WHAT MAKES A PAIRING OBVIOUS
+ *     They are each other's nearest, and the runner-up on both sides is far enough behind to
+ *     leave no real doubt. That is the ratio test used for matching image features, and it
+ *     says exactly the right thing here: distance alone is a poor reason to refuse a match,
+ *     but distance *relative to the next best candidate* is a good one.
+ *
+ *     In a crowd the runner-up is close, the ratio fails, and this does nothing - the drift
+ *     vote already has that case. In an empty scene there is no runner-up and this does all
+ *     of the work. The size check and the DRIFT_MAX ceiling still apply, so this can never
+ *     join two things of different sizes or on opposite sides of the frame.
+ */
+function unambiguousPairs(tracks, detections) {
+  const nearest = (from, candidates, sizeOfFrom) => {
+    const [fw, fh] = sizeOfFrom;
+    if (fw <= 0 || fh <= 0) return null;
+    const [fx, fy] = centre(from.box);
+    let best = null;
+    let second = Infinity;
+    for (const [index, other] of candidates.entries()) {
+      if (other.label !== from.label) continue;
+      const [ow, oh] = sizeOf(other.box);
+      if (ow <= 0 || oh <= 0) continue;
+      if (Math.max(fw / ow, ow / fw, fh / oh, oh / fh) > MAX_SIZE_RATIO) continue;
+      const [ox, oy] = centre(other.box);
+      const away = Math.hypot(ox - fx, oy - fy);
+      if (away > DRIFT_MAX) continue;
+      if (!best || away < best.away) {
+        second = best ? best.away : second;
+        best = { index, away };
+      } else if (away < second) {
+        second = away;
+      }
+    }
+    // No runner-up at all is the clearest case there is.
+    if (!best || second < best.away * LONELY_RATIO) return null;
+    return best.index;
+  };
+
+  const pairs = [];
+  for (const [index, track] of tracks.entries()) {
+    const pick = nearest(track, detections, sizeOf(track.box));
+    if (pick === null) continue;
+    // And the same answer looking the other way, so two tracks cannot both claim one
+    // detection just because it is the only thing near either of them.
+    if (nearest(detections[pick], tracks, sizeOf(detections[pick].box)) !== index) continue;
+    pairs.push({ track, index: pick, score: LONELY_SCORE });
+  }
+  return pairs;
 }
 
 /**
@@ -325,6 +407,9 @@ export class Tracker {
         if (score > 0) pairs.push({ track, index, score });
       }
     }
+    // Appended rather than merged: they score below every real affinity, so the greedy pass
+    // below only reaches them for a track and a detection nothing else wanted.
+    pairs.push(...unambiguousPairs(this.tracks, detections));
     pairs.sort((a, b) => b.score - a.score);
 
     const usedTracks = new Set();

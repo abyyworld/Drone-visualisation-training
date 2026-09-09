@@ -35,11 +35,26 @@ public final class Tracker {
     // The bin is coarse because the answer only has to be good enough to bring a box back
     // inside the gate above, and a coarse bin is what makes the vote decisive.
     private static final float DRIFT_BIN = 8f;
-    private static final int DRIFT_MIN_VOTES = 4;
+    // Counted in distinct tracks agreeing, not in pairs. Two tracks that both shifted by the
+    // same amount are the camera moving; one track contributing several near-identical
+    // offsets because the crowd around it is dense is not evidence of anything.
+    private static final int DRIFT_MIN_VOTES = 2;
     private static final double DRIFT_MIN_SHARE = 0.2;
     // A ceiling on one cycle's worth of movement. Past this the frames have nothing to do
     // with each other and pairing them up would be invention rather than tracking.
     private static final float DRIFT_MAX = 400f;
+
+    // Pairing something up when it is the only candidate. See unambiguousPairs.
+    //
+    // 1.4 comes from the geometry rather than from taste. Two people a gap apart, the camera
+    // moving m per frame: from a track's old position its own new box is m away and its
+    // neighbour's is gap minus m, so the ratio is (gap - m) / m. It only becomes genuinely
+    // ambiguous when the camera has moved half the gap, and a threshold of R resolves
+    // everything up to gap/(1 + R). This covers motion up to 42% of the gap between two
+    // people, most of the way to the point where no rule could be right.
+    private static final double LONELY_RATIO = 1.4;
+    // Below every real affinity, so these are only ever used on what is left over.
+    private static final double LONELY_SCORE = 1e-4;
     private static final int MAX_MISSES = 20;
 
     /**
@@ -189,6 +204,9 @@ public final class Tracker {
                 }
             }
         }
+        // Appended rather than merged: they score below every real affinity, so the greedy
+        // pass below only reaches them for a track and a detection nothing else wanted.
+        pairs.addAll(unambiguousPairs(detections));
         pairs.sort(Comparator.comparingDouble((Pair p) -> p.score).reversed());
 
         Set<Track> usedTracks = new HashSet<>();
@@ -437,8 +455,10 @@ public final class Tracker {
             return new float[]{0f, 0f};
         }
 
-        Map<Long, List<float[]>> votes = new HashMap<>();
-        List<float[]> best = null;
+        // Keyed by binned offset. Each bucket keeps the offsets that landed in it and the set
+        // of tracks that put them there, and it is the second of those that decides.
+        Map<Long, Bucket> votes = new HashMap<>();
+        Bucket best = null;
         for (Track track : tracks) {
             float tw = Math.abs(track.box[2] - track.box[0]);
             float th = Math.abs(track.box[3] - track.box[1]);
@@ -473,24 +493,156 @@ public final class Tracker {
 
                 long key = (long) Math.round(dx / DRIFT_BIN) * 100000L
                         + Math.round(dy / DRIFT_BIN);
-                List<float[]> bucket = votes.get(key);
+                Bucket bucket = votes.get(key);
                 if (bucket == null) {
-                    bucket = new ArrayList<>();
+                    bucket = new Bucket();
                     votes.put(key, bucket);
                 }
-                bucket.add(new float[]{dx, dy});
-                if (best == null || bucket.size() > best.size()) {
+                bucket.offsets.add(new float[]{dx, dy});
+                bucket.tracks.add(track);
+                if (best == null || bucket.tracks.size() > best.tracks.size()) {
                     best = bucket;
                 }
             }
         }
 
         // Enough of the frame has to agree, or this is not a translation, it is coincidence.
-        if (best == null || best.size() < DRIFT_MIN_VOTES
-                || best.size() < tracks.size() * DRIFT_MIN_SHARE) {
+        if (best == null || best.tracks.size() < DRIFT_MIN_VOTES
+                || best.tracks.size() < tracks.size() * DRIFT_MIN_SHARE) {
             return new float[]{0f, 0f};
         }
-        return new float[]{median(best, 0), median(best, 1)};
+        return new float[]{median(best.offsets, 0), median(best.offsets, 1)};
+    }
+
+    /** One candidate offset, and which tracks voted for it. */
+    private static final class Bucket {
+        final List<float[]> offsets = new ArrayList<>();
+        final Set<Track> tracks = new HashSet<>();
+    }
+
+    /**
+     * Pairings that are obvious because there is nothing else they could be.
+     *
+     * WHY THE GATES ELSEWHERE ARE NOT ENOUGH
+     *     The centre-distance gate exists to stop an identity jumping to a *competing*
+     *     candidate. With one person in the frame there is no competitor, so it guards
+     *     against a risk that is not there and refuses the only sensible answer. Measured,
+     *     one person about ten pixels across with the camera moving twenty pixels a frame:
+     *     every frame started a fresh track, none survived to be confirmed, and the screen
+     *     showed a number that changed constantly or no box at all.
+     *
+     * WHAT MAKES A PAIRING OBVIOUS
+     *     They are each other's nearest, and the runner-up on both sides is far enough
+     *     behind to leave no real doubt. That is the ratio test used for matching image
+     *     features, and it says the right thing here: distance alone is a poor reason to
+     *     refuse a match, but distance relative to the next best candidate is a good one.
+     *
+     *     In a crowd the runner-up is close, the ratio fails, and this does nothing. In an
+     *     empty scene there is no runner-up and it does all of the work.
+     */
+    private List<Pair> unambiguousPairs(List<Finding> detections) {
+        List<Pair> pairs = new ArrayList<>();
+        for (int i = 0; i < tracks.size(); i++) {
+            Track track = tracks.get(i);
+            int pick = nearestDetection(track, detections);
+            if (pick < 0) {
+                continue;
+            }
+            // And the same answer looking the other way, so two tracks cannot both claim one
+            // detection just because it is the only thing near either of them.
+            if (nearestTrack(boxOf(detections.get(pick)), detections.get(pick).label) != i) {
+                continue;
+            }
+            pairs.add(new Pair(track, pick, LONELY_SCORE, boxOf(detections.get(pick))));
+        }
+        return pairs;
+    }
+
+    private int nearestDetection(Track track, List<Finding> detections) {
+        float[] from = track.box;
+        float fw = Math.abs(from[2] - from[0]);
+        float fh = Math.abs(from[3] - from[1]);
+        if (fw <= 0 || fh <= 0) {
+            return -1;
+        }
+        float[] at = centre(from);
+        int bestIndex = -1;
+        double bestAway = Double.MAX_VALUE;
+        double second = Double.MAX_VALUE;
+        for (int i = 0; i < detections.size(); i++) {
+            Finding detection = detections.get(i);
+            if (!track.label.equals(detection.label)) {
+                continue;
+            }
+            float[] box = boxOf(detection);
+            double away = separation(at, fw, fh, box);
+            if (away < 0) {
+                continue;
+            }
+            if (away < bestAway) {
+                second = bestAway;
+                bestAway = away;
+                bestIndex = i;
+            } else if (away < second) {
+                second = away;
+            }
+        }
+        if (bestIndex < 0 || second < bestAway * LONELY_RATIO) {
+            return -1;
+        }
+        return bestIndex;
+    }
+
+    private int nearestTrack(float[] box, String label) {
+        float fw = Math.abs(box[2] - box[0]);
+        float fh = Math.abs(box[3] - box[1]);
+        if (fw <= 0 || fh <= 0) {
+            return -1;
+        }
+        float[] at = centre(box);
+        int bestIndex = -1;
+        double bestAway = Double.MAX_VALUE;
+        double second = Double.MAX_VALUE;
+        for (int i = 0; i < tracks.size(); i++) {
+            Track track = tracks.get(i);
+            if (!track.label.equals(label)) {
+                continue;
+            }
+            double away = separation(at, fw, fh, track.box);
+            if (away < 0) {
+                continue;
+            }
+            if (away < bestAway) {
+                second = bestAway;
+                bestAway = away;
+                bestIndex = i;
+            } else if (away < second) {
+                second = away;
+            }
+        }
+        if (bestIndex < 0 || second < bestAway * LONELY_RATIO) {
+            return -1;
+        }
+        return bestIndex;
+    }
+
+    /** Centre distance, or a negative number when these two could not be the same thing. */
+    private static double separation(float[] at, float fw, float fh, float[] other) {
+        float ow = Math.abs(other[2] - other[0]);
+        float oh = Math.abs(other[3] - other[1]);
+        if (ow <= 0 || oh <= 0) {
+            return -1;
+        }
+        if (Math.max(Math.max(fw / ow, ow / fw), Math.max(fh / oh, oh / fh)) > MAX_SIZE_RATIO) {
+            return -1;
+        }
+        float[] to = centre(other);
+        double dx = to[0] - at[0];
+        double dy = to[1] - at[1];
+        if (Math.abs(dx) > DRIFT_MAX || Math.abs(dy) > DRIFT_MAX) {
+            return -1;
+        }
+        return Math.hypot(dx, dy);
     }
 
     private static float median(List<float[]> offsets, int axis) {
