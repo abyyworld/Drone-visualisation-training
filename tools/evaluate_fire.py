@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Does the fire detector see fire, and does it cry wolf?
+"""Does the fire model see fire, and does it cry wolf?
 
 WHY THIS AND NOT tools/evaluate_wildfire.py
     That one scores boxes against boxes and is the better instrument when there are

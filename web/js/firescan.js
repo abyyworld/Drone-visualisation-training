@@ -4,10 +4,19 @@
  * WHY THIS EXISTS AT ALL
  *     The COCO detector that does people and vehicles has no fire class and never will -
  *     the dataset has no such category. So on-device wildfire work had exactly two routes:
- *     ship a trained model for flame, or compute it. Every pretrained one that is actually
- *     reachable and actually accurate is a YOLO derivative under AGPL-3.0, which is a
- *     licence this project cannot take. Training one here is not possible either: no GPU,
- *     no labelled flame imagery on disk.
+ *     ship a trained model for flame, or compute it.
+ *
+ *     This used to say a model was out of reach because every accurate one is a YOLO
+ *     derivative under AGPL-3.0. That is no longer the reason: this project takes AGPL-3.0
+ *     deliberately (see the README) and both shipped detectors are already such
+ *     derivatives. The real reason is simply that no working one has been found yet. The
+ *     one that was fetched turned out to return the same answer for every picture in the
+ *     world, which is why tests/test_model_contract.py now measures that before anything
+ *     can ship.
+ *
+ *     So this still runs, and on the tablet it is currently the only thing that looks for
+ *     fire at all. What it is worth is measured rather than assumed: see
+ *     tools/evaluate_fire.py.
  *
  *     So it is computed. Flame and smoke are two of the few things in vision that have a
  *     genuine physical signature rather than a learned shape, and the rules below are the

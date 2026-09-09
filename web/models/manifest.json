@@ -116,9 +116,7 @@
     "file": "wildfire-320.onnx",
     "task": "detect",
     "imgsz": 320,
-    "labels": [
-      "fire or smoke"
-    ],
+    "labels": [],
     "confThreshold": 0.25,
     "iouThreshold": 0.45,
     "severityWeights": {
@@ -138,12 +136,8 @@
       "terrain": 1.0
     },
     "displayName": "Wildfire",
-    "maskCoefficients": 32,
-    "notes": "A detector trained on fire and smoke, which is a stronger thing than the colour and movement scan the live view runs, and a blunter one: it has a single class and cannot say which of the two it is looking at. What arrived is a segmentation export, so its head is 37 channels wide: four box numbers, the one class score, and 32 mask coefficients. The coefficients are declared here and dropped, because read as class scores they are unbounded and mark every frame; the masks themselves are not drawn, so nothing is lost by ignoring them. The live view still separates them, from how a region behaves over time, and still runs when this is not loaded. One frame from one angle either way. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
-    "zeroDetectionNote": "Nothing was marked in this frame. That describes this frame and nothing else: not the ground under the smoke, not what is inside the treeline, and not whether anyone is there. A fire too small or too far to hold a region is not marked, and neither is one the smoke above it is hiding.",
-    "keepClasses": [
-      0
-    ]
+    "notes": "No model. There was one, and it did not work: fetched, converted, committed and described here, it returned a score between 0.0123 and 0.0155 for black, white, random noise, a flame-coloured block, sixty real drone photographs and fifty frames of the demo clip alike. It could not mark fire because it could not mark anything, so it has been removed rather than left to look like a working detector. tools/model_liveness.py is now what stands between that and shipping. The colour and movement scan in the live view is unaffected and still runs; it needs no model at all. It is also, at the moment, the only thing in this product that looks for fire, and what it is worth is measured by tools/evaluate_fire.py rather than assumed. None of that changes what a frame from above can show even with a working model behind it: fire behind a smoke column, inside a treeline or under canopy does not appear from above at all, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "zeroDetectionNote": "Nothing was marked, because there is no fire model to mark anything with. This is not a reading about the scene, the smoke, the treeline or whether anyone is there."
   },
   "ondevice": {
     "file": "detector.tflite",

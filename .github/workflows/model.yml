@@ -122,6 +122,20 @@ jobs:
               ],
           }
 
+          # Weights that were tried, converted, shipped, and turned out not to work.
+          #
+          # Never guessed at: a URL only earns a place here after the responsiveness gate
+          # further down has failed on it, which means the file downloads, exports, and
+          # returns the same answer for every picture in the world. Without this the search
+          # below finds the same well-named broken repository first every time and the run
+          # spends ten minutes arriving back where it started.
+          DEAD = {
+              # 37-channel segmentation export. Scores between 0.0123 and 0.0155 for black,
+              # white, noise, a flame-coloured block, 60 real drone photographs and 50
+              # frames of the fire clip alike. It shipped, and marked nothing, for a day.
+              "https://huggingface.co/raidavid/yolov8_fire_and_smoke/resolve/main/weights/best.pt",
+          }
+
           # What to search for when the list above comes up empty.
           #
           # The list is names somebody wrote down, and names rot: every fire and smoke URL
@@ -179,12 +193,19 @@ jobs:
           subject = os.environ.get("SUBJECT", "person").strip() or "person"
           named = os.environ.get("CANDIDATE", "").strip()
           if named:
+              # Named by hand, so it is tried even if it is on the dead list: re-testing a
+              # candidate after a fix to the export is a reasonable thing to want.
               candidates = [named]
           else:
               candidates = list(BY_SUBJECT[subject])
               print(f"searching for more {subject} weights...", flush=True)
               candidates += [u for u in published(SEARCH.get(subject, []))
                              if u not in candidates]
+              skipped = [u for u in candidates if u in DEAD]
+              for url in skipped:
+                  print(f"  skipping {url} (already shipped and found unresponsive)",
+                        flush=True)
+              candidates = [u for u in candidates if u not in DEAD]
           print(f"{len(candidates)} candidate(s) to try", flush=True)
 
           for url in candidates:
@@ -428,79 +449,19 @@ jobs:
       # This is the check that was missing, and the wildfire model is what it was missing.
       # That one exported cleanly, had an output of a shape the app can decode, and passed
       # every test above - and it returns the same answer for every input in the world.
-      # Black, white, noise, a flame-coloured block, twelve different real photographs: the
-      # score lands between 0.0123 and 0.0155 for all of them. It cannot mark fire because
-      # it cannot mark anything, and it shipped.
+      # It cannot mark fire because it cannot mark anything, and it shipped.
       #
-      # What makes this checkable without knowing anything about the subject is that it
-      # asks nothing about WHAT the model finds. The step above deliberately refuses to
-      # judge that, and it is right to: an aerial model finding nobody in a street
-      # photograph is arguably correct. This asks only whether the answer CHANGES when the
-      # picture changes. A detector that is looking at its input has a spread; a dead one
-      # does not, whatever the subject.
-      #
-      # Measured on the three models this repository has shipped, over the six fixtures
-      # already in the checkout, so nothing is downloaded and nothing is assumed:
-      #
-      #     person-320      0.262     alive
-      #     solar-320       0.158     alive, and quiet on these pictures, which is correct
-      #     wildfire-320    0.003     dead
-      #
-      # The floor is 0.02: eight times below the worst live model and seven times above
-      # the dead one. A subject legitimately silent on all six would still move by more
-      # than this, because being quiet and being unresponsive are different things.
+      # The measurement lives in tools/model_liveness.py rather than here, because
+      # tests/test_model_contract.py has to make exactly the same judgement about models
+      # that are already committed. Two copies of this would drift, and a gate that
+      # disagrees with the test guarding the same thing is worse than either alone.
       - name: Check the model responds to what it is shown
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
-          .venv-onnx/bin/python - <<'PY'
-          import json, os, pathlib
-          import numpy as np, onnxruntime as ort
-          from PIL import Image
-
-          FLOOR = 0.02
-          subject = os.environ["SUBJECT"]
-          spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
-          labels = len(spec["labels"])
-
-          session = ort.InferenceSession(f"web/models/{subject}-320.onnx",
-                                         providers=["CPUExecutionProvider"])
-          name = session.get_inputs()[0].name
-          size = spec["imgsz"]
-
-          pictures = sorted(pathlib.Path("tests/fixtures").glob("*.png"))
-          pictures += [p for p in [pathlib.Path("tests/fixtures/person.jpg")] if p.exists()]
-          if len(pictures) < 4:
-              raise SystemExit("too few fixtures to tell a live model from a dead one")
-
-          scores = []
-          for path in pictures:
-              image = Image.open(path).convert("RGB")
-              scale = min(size / image.width, size / image.height)
-              dw, dh = round(image.width * scale), round(image.height * scale)
-              canvas = Image.new("RGB", (size, size), (114, 114, 114))
-              canvas.paste(image.resize((dw, dh), Image.BILINEAR),
-                           ((size - dw) // 2, (size - dh) // 2))
-              head = session.run(None, {name: np.asarray(canvas, np.float32)
-                                        .transpose(2, 0, 1)[None] / 255.0})[0][0]
-              if head.shape[0] > head.shape[1]:
-                  head = head.T
-              # Only the real class channels. A segmentation export carries mask
-              # coefficients after them, and those are not scores.
-              scores.append(float(head[4:4 + labels].max()))
-              print(f"  {path.name:24} {scores[-1]:.4f}", flush=True)
-
-          spread = max(scores) - min(scores)
-          print(f"spread across {len(scores)} pictures: {spread:.5f}", flush=True)
-          if spread < FLOOR:
-              raise SystemExit(
-                  f"::error::These weights give the same answer for every picture "
-                  f"(spread {spread:.5f}, floor {FLOOR}). That is not a detector that is "
-                  f"quiet, it is one that is not reading its input, and it would ship as a "
-                  f"model that marks nothing and says nothing is wrong. Re-run with a "
-                  f"different `candidate`.")
-          print("the model responds to what it is shown", flush=True)
-          PY
+          LABELS=$(.venv-onnx/bin/python -c "import json,pathlib;print(len(json.loads(pathlib.Path('web/models/$SUBJECT-320.json').read_text())['labels']))")
+          .venv-onnx/bin/python tools/model_liveness.py \
+            "web/models/$SUBJECT-320.onnx" --labels "$LABELS"
 
       - name: Report what was produced
         run: ls -lh web/models/ && du -sh web/models/*

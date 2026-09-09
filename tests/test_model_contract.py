@@ -17,6 +17,7 @@ WHY THIS EXISTS
 """
 import json
 import pathlib
+import sys
 
 import pytest
 
@@ -236,3 +237,40 @@ def test_each_shipped_detector_has_one_channel_per_label(name, entry, path):
             f"{name}: the manifest declares {coefficients} mask coefficients, but no "
             f"prototype output of that width is present. Outputs: {others}"
         )
+
+
+@pytest.mark.parametrize("name,entry,path", shipped_detectors(),
+                         ids=lambda v: v if isinstance(v, str) else "")
+def test_each_shipped_detector_reads_its_input(name, entry, path, tmp_path_factory):
+    """A model that answers the same for every picture is not quiet, it is dead.
+
+    This is the check that was missing when a fire model was fetched, converted,
+    committed and described, and returns a score between 0.0123 and 0.0155 for black,
+    white, noise, a flame-coloured block, sixty real drone photographs and fifty frames of
+    the fire clip alike. Everything else passed: the graph ran, the output was a shape the
+    app decodes, the head matched the label list.
+
+    The judgement is tools/model_liveness.py, which is the same code the conversion
+    workflow gates on, so a model cannot pass on the way in and fail here or the reverse.
+    Read that file for why it asks about responsiveness rather than about accuracy, and
+    for the measurements behind the floor.
+    """
+    ort = pytest.importorskip("onnxruntime")
+    pytest.importorskip("PIL")
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "tools"))
+    import model_liveness
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    cache = tmp_path_factory.mktemp("liveness")
+    spread, named, enough = model_liveness.judge(
+        session, len(entry["labels"]), entry["imgsz"], cache)
+    if not enough:
+        pytest.skip("no photograph could be fetched, and generated pictures alone cannot "
+                    "tell a quiet model from a dead one")
+
+    assert spread >= model_liveness.FLOOR, (
+        f"{name}: {path.name} scores "
+        f"{', '.join(f'{n} {v:.4f}' for n, v in named)} - a spread of {spread:.5f}. "
+        f"It is not reading its input, so it would ship as a model that marks nothing "
+        f"while the app reports it as working."
+    )
