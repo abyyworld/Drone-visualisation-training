@@ -138,7 +138,8 @@
       "terrain": 1.0
     },
     "displayName": "Wildfire",
-    "notes": "A detector trained on fire and smoke, which is a stronger thing than the colour and movement scan the live view runs, and a blunter one: it has a single class and cannot say which of the two it is looking at. The live view still separates them, from how a region behaves over time, and still runs when this is not loaded. One frame from one angle either way. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "maskCoefficients": 32,
+    "notes": "A detector trained on fire and smoke, which is a stronger thing than the colour and movement scan the live view runs, and a blunter one: it has a single class and cannot say which of the two it is looking at. What arrived is a segmentation export, so its head is 37 channels wide: four box numbers, the one class score, and 32 mask coefficients. The coefficients are declared here and dropped, because read as class scores they are unbounded and mark every frame; the masks themselves are not drawn, so nothing is lost by ignoring them. The live view still separates them, from how a region behaves over time, and still runs when this is not loaded. One frame from one angle either way. Fire behind a smoke column, inside a treeline or under canopy does not appear from above, and a person the camera cannot resolve is the normal case rather than a rare one.",
     "zeroDetectionNote": "Nothing was marked in this frame. That describes this frame and nothing else: not the ground under the smoke, not what is inside the treeline, and not whether anyone is there. A fire too small or too far to hold a region is not marked, and neither is one the smoke above it is hiding.",
     "keepClasses": [
       0

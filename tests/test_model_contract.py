@@ -160,3 +160,79 @@ def test_the_two_exports_disagree_about_box_units_and_both_are_handled():
         "the TFLite export used to give boxes as fractions of the model square; it no "
         "longer does, and the tablet would multiply them by 320 a second time"
     )
+
+
+# ---------------------------------------------------------------------------------------
+# Every detector the web app loads, not just the person one
+# ---------------------------------------------------------------------------------------
+#
+# The test above pins one model. The wildfire model is what showed why that is not enough:
+# it was fetched, converted, committed and described in the manifest without anything ever
+# comparing the two, and the file that arrived is a segmentation export. Its head carries
+# 4 box numbers, 1 class score and 32 mask coefficients, so 37 channels where the manifest
+# says 1 label. web/js/detect.js checks the same thing and throws, which means wildfire
+# analysis raised on every frame rather than marking anything.
+#
+# Read as class scores those 32 coefficients are not scores at all: they run from about
+# -2.2 to +1.6, so on 60 real drone frames with no fire in any of them every single frame
+# produced a box, at up to 1.81 "confidence". The only thing standing between that and the
+# screen is keepClasses happening to select the one real channel.
+#
+# So this checks every detector in the manifest, not the one somebody remembered.
+
+MANIFEST = MODELS / "manifest.json"
+
+
+def shipped_detectors():
+    """Each detect model in the manifest whose ONNX file is actually present."""
+    if not MANIFEST.exists():
+        return []
+    manifest = json.loads(MANIFEST.read_text())
+    found = []
+    for name, entry in manifest.items():
+        if not isinstance(entry, dict) or entry.get("task") != "detect":
+            continue
+        if not entry.get("labels"):
+            # A subject with no model, described as having none. Nothing to check.
+            continue
+        path = MODELS / entry.get("file", "")
+        # ONNX only. The tablet's own model is TFLite and is pinned by the tests above,
+        # which read it with the runtime that actually loads it.
+        if path.suffix == ".onnx" and path.exists():
+            found.append((name, entry, path))
+    return found
+
+
+@pytest.mark.parametrize("name,entry,path", shipped_detectors(),
+                         ids=lambda v: v if isinstance(v, str) else "")
+def test_each_shipped_detector_has_one_channel_per_label(name, entry, path):
+    ort = pytest.importorskip("onnxruntime")
+    import numpy as np
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    size = entry["imgsz"]
+    out = session.run(None, {session.get_inputs()[0].name:
+                             np.zeros((1, 3, size, size), dtype=np.float32)})[0]
+
+    assert out.ndim == 3, f"{name}: the app cannot decode an output of shape {out.shape}"
+    channels = min(out.shape[1], out.shape[2])
+    labels = entry["labels"]
+    # A segmentation export carries mask coefficients after the class scores. The manifest
+    # has to declare how many, and web/js/detect.js drops exactly that many. An undeclared
+    # extra channel is still a failure: it is as likely to be the wrong file as anything.
+    coefficients = entry.get("maskCoefficients", 0)
+    assert channels - coefficients == 4 + len(labels), (
+        f"{name}: {path.name} predicts {channels - coefficients - 4} classes but the "
+        f"manifest lists {len(labels)} labels ({labels}). detect.js throws on exactly "
+        f"this, so the subject raises on every frame instead of marking anything."
+    )
+
+    if coefficients:
+        # The declared coefficients have to actually be coefficients rather than a label
+        # list somebody trimmed. A segmentation export emits its mask prototypes as a
+        # second output, and its width is the number of coefficients per box.
+        others = [o.shape for o in session.get_outputs()[1:]]
+        assert any(len(shape) == 4 and shape[1] == coefficients for shape in others), (
+            f"{name}: the manifest declares {coefficients} mask coefficients, but no "
+            f"prototype output of that width is present. Outputs: {others}"
+        )

@@ -72,16 +72,34 @@ function decode(output, spec) {
     throw new Error(`unsupported model output shape [${dims}]`);
   }
 
+  // A segmentation export puts mask coefficients after the class scores, so its head is
+  // 4 + classes + coefficients wide. Those coefficients are not scores and read as scores
+  // they are worse than useless: they are unbounded, so on real footage with nothing in it
+  // every frame produces a box at over 1.0 "confidence". The model is still a perfectly
+  // good detector with them ignored, which is what dropping them here does.
+  //
+  // Declared in the manifest rather than guessed from the shape. A head that is wider than
+  // its label list is exactly as likely to be the wrong model file, and that has to keep
+  // throwing.
+  const maskCoefficients = spec.maskCoefficients ?? 0;
+  let classChannels = dims[1];
+  if (dims[2] !== 6 && labels.length) {
+    const extra = dims[1] - 4 - labels.length;
+    // Either the head is exactly the labels, or it is the labels plus the coefficients the
+    // manifest says to expect. Any other width is the wrong file, and stays an error.
+    if (extra !== 0 && extra !== maskCoefficients) {
+      throw new Error(
+        `manifest lists ${labels.length} labels but the model predicts ${dims[1] - 4} `
+        + `classes${maskCoefficients ? ` plus ${maskCoefficients} mask coefficients` : ''}`,
+      );
+    }
+    classChannels = 4 + labels.length;
+  }
+
   // End-to-end export: already suppressed, one row per detection.
   const raw = dims[2] === 6
     ? decodeRows(output.data, dims[1], options)
-    : decodeHead(output.data, dims[1], dims[2], options);
-
-  if (dims[2] !== 6 && labels.length && labels.length !== dims[1] - 4) {
-    throw new Error(
-      `manifest lists ${labels.length} labels but the model predicts ${dims[1] - 4} classes`,
-    );
-  }
+    : decodeHead(output.data, classChannels, dims[2], options);
   return raw.map((d) => ({ ...d, label: labels[d.classId] ?? `class_${d.classId}` }));
 }
 
