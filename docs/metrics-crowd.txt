@@ -1,0 +1,43 @@
+model      person-640.onnx at two tiles (2x1), 250 ms cycle, as shipped
+tracker    coast 1200 ms, 4 sightings before a number, new identity at 0.25
+frames     the four most crowded VisDrone-DET val frames, flown three ways each
+           (hover, slow forward, fast forward), 10 seconds of flight per way
+
+HOW A NUMBER IS JUDGED
+  Every confirmed box is attributed to the person it sat on for the most frames, so
+  finding another person and numbering the same person twice cannot be confused. A
+  plain count cannot tell them apart and scores a detector that flickers higher.
+
+    reached   of the people in view, how many ever got a number at all
+    each      how many numbers those people got between them, per person
+    stray     numbers issued to boxes that sat on nobody
+    on person share of drawn boxes that were on a labelled person
+
+                                       reached     each   stray   on person
+  320 at six tiles, coast 4000             36%     1.56     101       72.7%
+  320 at six tiles, this tracker           35%     1.55     101       80.2%
+  640 at two tiles, old tracker            49%     1.48     148       74.7%
+  640 at two tiles, this tracker           49%     1.46     149       81.0%
+
+WHAT THE COLUMNS SAY
+  The first row is what was flying before any of this. The last is what ships. Thirteen
+  more people in every hundred get a number, each of them gets slightly fewer numbers,
+  and four boxes in five sit on somebody instead of three in four.
+
+  Stray went the wrong way, 101 to 149, and that is the price. Looking at the whole
+  frame every cycle is more chances to be confidently wrong as well as more chances to
+  be right. Buying them back was measured: raising the confidence a new identity needs
+  from 0.25 to 0.29 removes 30 of them and costs four points of people found, which is
+  the wrong direction for a tool whose job is to not miss anyone.
+
+WHAT THIS IS NOT
+  Not the tablet. It is the tablet's cadence, geometry, model and tracker run on a
+  desktop against labelled frames. Thermal throttling, the DSP's arithmetic and a real
+  radio link are all absent.
+
+  Not a crowd count. It is how well the thing numbers people it can see, and anyone
+  under a tree, a canopy or a vehicle is not in either column.
+
+  Reproduce with:
+    python3 tools/fly.py --frame <name> --out flight.json
+    node tools/score_flight.mjs flight.json

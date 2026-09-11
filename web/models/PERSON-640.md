@@ -80,9 +80,13 @@ else, and latency is what leaves a box sitting where somebody used to be.
 
 ### What this does not fix
 
-The stray numbers went the wrong way, 49 to 58 over three flights: numbers that sit on
-nobody. More looks at the same ground is more chances to be confidently wrong, and that
-trade was taken on purpose against fifteen points of people found.
+The stray numbers went the wrong way: across all four frames, 101 to 149 numbers issued to
+boxes that sat on nobody. More looks at the same ground is more chances to be confidently
+wrong as well as more chances to be right, and that trade was taken on purpose against
+thirteen points of people found. Buying them back was measured too: raising the confidence a
+new identity needs from 0.25 to 0.29 removes 30 of them and costs four points of people
+found, which is the wrong direction for a tool whose job is to not miss anyone. Full table
+in [`docs/metrics-crowd.txt`](../../docs/metrics-crowd.txt).
 
 And a stronger model was measured before this was chosen, because "use the strongest model"
 was the obvious answer and it was not the right one. `yolov11s`, four times the file, 2.3x
