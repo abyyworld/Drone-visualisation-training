@@ -52,10 +52,21 @@ public final class Settings {
      * those standing and eleven in twelve of those sitting down. Which of those is the right
      * mistake depends on the site, so it is the operator's to make and not a constant here.
      *
-     * The floor is deliberate. Below 20 the decode after the model starts to cost real time:
-     * the model pass is 6.5 ms whatever this is set to, and the decode goes from a quarter of
-     * a millisecond at 25 to nearly two at 15. Nothing here is allowed to make the tablet
-     * slower or hotter, so the range stops where that begins.
+     * The floor is deliberate. Below 20 the decode after the model starts to cost real time.
+     * The model pass costs the same whatever this is set to; the decode does not, because it
+     * walks every anchor the threshold lets through. Measured at 320, that was a quarter of a
+     * millisecond at 25 against nearly two at 15.
+     *
+     * Those milliseconds were measured before the export moved to 640, and the head grew with
+     * it: 8400 anchors where there were 2100, and about three times as many of them over any
+     * given threshold (233 at 25, 300 at 15, averaged over eight real frames). So the shape of
+     * the curve is unchanged and the floor matters more rather than less. Nothing here is
+     * allowed to make the tablet slower or hotter, so the range stops where that begins.
+     *
+     * The ceiling is now reachable, which it was not. The tablet model used to be int8, and
+     * int8 put a hard lid of 0.5045 on every score it could produce - so the top third of
+     * this slider selected nothing at all, silently. The float export peaks at 0.8984 on the
+     * same frames.
      */
     public static final int DEFAULT_SENSITIVITY = 25;
     public static final int MIN_SENSITIVITY = 20;
