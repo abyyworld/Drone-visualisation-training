@@ -1,0 +1,133 @@
+name: Measure the fire model
+
+# WHY THIS RUNS HERE AND NOT ON A LAPTOP
+#     The same reason model.yml does. The machine this project is written on cannot reach
+#     Hugging Face at all, so the one number that matters about a fire model - how often it
+#     marks real fire - cannot be measured where the code is written. It is measured where
+#     the pictures are reachable, and the report is committed so the number lives in the
+#     repository instead of in somebody's terminal.
+#
+# WHAT IT MEASURES, AND WHY BOTH HALVES ARE NEEDED
+#     Recall, on pictures labelled as containing fire. And false alarms, on pictures that
+#     are not. Neither means anything alone: a model that marks every frame scores perfect
+#     recall and is worthless, and a model that marks nothing never cries wolf.
+#
+# WHAT IT CANNOT MEASURE
+#     Fire from a drone. The published sets that are reachable are ground level. The aerial
+#     ones (FLAME, FLAME2) are behind an IEEE DataPort account and no machine here can
+#     fetch them. The report says so on its face rather than leaving it to be assumed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pictures:
+        description: 'How many of each of fire and no-fire to score'
+        required: false
+        default: '120'
+
+permissions:
+  contents: write
+
+jobs:
+  measure:
+    name: Measure
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install onnxruntime pillow numpy datasets
+
+      # Pictures that somebody has labelled as containing fire. If none can be had the job
+      # fails here, deliberately: a recall number computed over pictures nobody has
+      # confirmed contain fire would look like evidence while being none.
+      - name: Fetch pictures with fire in them
+        run: |
+          python tools/fetch_fire_pictures.py --out datasets/fire \
+            --limit "${{ inputs.pictures || '120' }}"
+
+      # The control, and it has to be the footage this actually flies over rather than
+      # whatever the fire dataset happened to include as its negatives. A fire model that
+      # is quiet on studio photographs of kitchens but marks every treeline from 100 metres
+      # is useless here and would pass a test built only from the dataset's own negatives.
+      - name: Fetch ordinary drone footage, with no fire in it
+        run: |
+          curl -sL -o visdrone.zip \
+            https://github.com/ultralytics/assets/releases/download/v0.0.0/VisDrone2019-DET-val.zip
+          python -c "
+          import zipfile, pathlib
+          with zipfile.ZipFile('visdrone.zip') as z:
+              names = [n for n in z.namelist() if n.lower().endswith('.jpg')][:150]
+              for n in names:
+                  z.extract(n, 'datasets/control')
+          print(f'{len(names)} drone frames')
+          "
+
+      - name: Score it
+        run: |
+          mkdir -p docs
+          python tools/evaluate_fire.py \
+            --fire datasets/fire/fire \
+            --control datasets/control \
+            --predictions fire-predictions.jsonl \
+            --report docs/metrics-wildfire.txt
+
+          # And the fire dataset's own negatives, when it had any. Different question from
+          # the drone control: whether it can tell a fire from the ordinary pictures the
+          # people who built the dataset thought were worth contrasting it against.
+          if [ -d datasets/fire/clear ]; then
+            python tools/evaluate_fire.py \
+              --fire datasets/fire/fire --control datasets/fire/clear \
+              --report /tmp/against-own-negatives.txt
+            {
+              echo
+              echo "Against the fire dataset's own no-fire pictures rather than drone footage:"
+              echo
+              sed 's/^/    /' /tmp/against-own-negatives.txt
+            } >> docs/metrics-wildfire.txt
+          fi
+
+          {
+            echo
+            echo "Where the pictures came from:"
+            sed 's/^/    /' datasets/fire/sources.json
+          } >> docs/metrics-wildfire.txt
+          cat docs/metrics-wildfire.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fire-predictions
+          path: fire-predictions.jsonl
+          if-no-files-found: warn
+
+      - name: Commit the report
+        run: |
+          git config user.name abyyworld
+          git config user.email annolieberto@gmail.com
+          git add docs/metrics-wildfire.txt
+          if git diff --cached --quiet; then
+            echo "the numbers have not changed"
+            exit 0
+          fi
+          # This job takes minutes and the branch moves while it runs, so a plain push is
+          # rejected for being behind. The only file it touches is the report, so there is
+          # nothing for a rebase to conflict with.
+          git pull --rebase --autostash origin main || true
+          git commit -m "Measure the fire model against published fire pictures
+
+          Run on a runner, which can reach the picture hosts this project's own
+          environment cannot. Ground level rather than aerial: the aerial sets are
+          behind an account no machine here has."
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 5))
+            git pull --rebase --autostash origin main || true
+          done
+          exit 1
