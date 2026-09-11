@@ -368,7 +368,7 @@ jobs:
       # browser uses and it is worth landing on its own. The job is still failed at the very
       # end if no .tflite came out of a people conversion, so a missing tablet model can
       # never read as a green run again.
-      - name: Export TFLite int8, for the tablet
+      - name: Export TFLite float16, for the tablet
         if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
         continue-on-error: true
         env:
@@ -382,14 +382,37 @@ jobs:
 
           subject = os.environ["SUBJECT"]
 
-          # int8, because that is what a Hexagon DSP runs. The calibration images come from
-          # ultralytics' own tiny sample set; a few hundred fix the quantisation ranges.
+          # float16, NOT int8, and the reason is measured rather than theoretical.
+          #
+          # int8 was chosen because that is what a Hexagon DSP runs. What it actually did to
+          # this model, over 25 real aerial frames:
+          #
+          #     person confidence, float ONNX     max 0.7718
+          #     person confidence, int8 TFLite    max 0.5045   <- hard ceiling
+          #     box coordinate step, float        continuous
+          #     box coordinate step, int8         0.011 normalised = 21 px of a 1920 frame
+          #
+          # Two separate defects out of one export. Every class score was clipped at just
+          # over half, which put the sensitivity slider's entire top half beyond anything
+          # the model could ever produce - set it above 50 and nothing is detected at all.
+          # And the box channels and the class scores share one quantisation scale; the
+          # boxes need range 0..2.8 because width and height can exceed the square, so that
+          # range is forced onto scores that only ever live in 0..1. The same coarse step
+          # lands on the coordinates, so a box can only sit on a 21 pixel grid: it holds
+          # still while somebody walks, then jumps. That is the stuck box the operator
+          # reported, and running the detector ten times faster would not have moved it.
+          #
+          # Calibrating on real aerial frames would help, but coco8 is what is reachable
+          # here and it is ground-level photographs of the wrong thing. float16 sidesteps
+          # the question: no calibration, no clipping, no coordinate grid, about double the
+          # file for a model that was 3 MB. Size is not the constraint; being able to count
+          # people is.
           model = YOLO("candidate.pt")
-          tflite = model.export(format="tflite", imgsz=320, int8=True, data="coco8.yaml")
+          tflite = model.export(format="tflite", imgsz=320, half=True)
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
-          shutil.copy(tflite, out / f"{subject}-320-int8.tflite")
-          print("wrote", out / f"{subject}-320-int8.tflite", flush=True)
+          shutil.copy(tflite, out / f"{subject}-320-f16.tflite")
+          print("wrote", out / f"{subject}-320-f16.tflite", flush=True)
           PY
 
       # The tablet model, actually loaded and run, before it is published. An int8 export
@@ -398,7 +421,7 @@ jobs:
       - name: Check the tablet model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-f16.tflite', steps.fetch.outputs.subject)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib
@@ -407,7 +430,7 @@ jobs:
 
           subject = os.environ["SUBJECT"]
 
-          interpreter = Interpreter(model_path=f"web/models/{subject}-320-int8.tflite")
+          interpreter = Interpreter(model_path=f"web/models/{subject}-320-f16.tflite")
           interpreter.allocate_tensors()
           entry = interpreter.get_input_details()[0]
           exit_ = interpreter.get_output_details()[0]
@@ -468,7 +491,7 @@ jobs:
       # exports cleanly, loads cleanly, has an output of exactly the right shape, and marks
       # nothing. That is the failure the browser model already shipped once.
       - name: Check the tablet model responds to what it is shown
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-f16.tflite', steps.fetch.outputs.subject)) != ''
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
@@ -482,7 +505,7 @@ jobs:
           spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
 
           interpreter = Interpreter(
-              model_path=f"web/models/{subject}-320-int8.tflite")
+              model_path=f"web/models/{subject}-320-f16.tflite")
           interpreter.allocate_tensors()
 
           spread, named, enough = model_liveness.judge(
@@ -621,8 +644,8 @@ jobs:
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
-          if [ ! -s web/models/${SUBJECT}-320-int8.tflite ]; then
-            echo "::error::No web/models/${SUBJECT}-320-int8.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite int8' step above for the reason."
+          if [ ! -s web/models/${SUBJECT}-320-f16.tflite ]; then
+            echo "::error::No web/models/${SUBJECT}-320-f16.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite float16' step above for the reason."
             exit 1
           fi
-          ls -lh web/models/${SUBJECT}-320-int8.tflite
+          ls -lh web/models/${SUBJECT}-320-f16.tflite
