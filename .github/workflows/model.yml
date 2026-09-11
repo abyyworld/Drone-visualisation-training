@@ -75,7 +75,7 @@ jobs:
       # other subject this installs torch, litert-torch and ai-edge-litert for nothing and
       # spends about five minutes of the run doing it.
       - name: Install the TFLite toolchain
-        if: inputs.subject == 'person'
+        if: inputs.subject == 'person' || inputs.subject == 'wildfire'
         run: |
           python -m venv .venv-tflite
           .venv-tflite/bin/pip install --upgrade pip
@@ -345,17 +345,17 @@ jobs:
           raise SystemExit("no candidate produced a model that works")
           PY
 
-      # The tablet, and only the tablet, and it runs exactly one detector: the people one.
-      # See NativeDetector.MODEL_ASSET. Every other subject is browser work, done on a
-      # laptop against footage already flown, so converting a second copy of it for a device
-      # that will never load it is a few minutes of runner time and a file nobody opens.
+      # The tablet, and only the tablet, and it runs two detectors: people and fire. See
+      # NativeDetector. Solar and turbine are browser work, done on a laptop against footage
+      # already flown, so converting a copy of either for a device that will never load it
+      # is a few minutes of runner time and a file nobody opens.
       #
       # Left able to fail without stopping the job, on purpose: the ONNX model is what the
       # browser uses and it is worth landing on its own. The job is still failed at the very
       # end if no .tflite came out of a people conversion, so a missing tablet model can
       # never read as a green run again.
       - name: Export TFLite int8, for the tablet
-        if: steps.fetch.outputs.subject == 'person'
+        if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
         continue-on-error: true
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
@@ -384,7 +384,7 @@ jobs:
       - name: Check the tablet model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
-        if: steps.fetch.outputs.subject == 'person' && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib
@@ -443,6 +443,51 @@ jobs:
               raise SystemExit(
                   f"keepClasses {spec['keepClasses']} points outside the label list")
           print("the tablet model and its class list agree", flush=True)
+          PY
+
+      # And does the quantised one still read its input?
+      #
+      # The browser model is judged on this inside the fetch loop, and the tablet's was
+      # not, which left the one conversion most able to destroy a model unchecked.
+      # Quantising to int8 throws away almost all of the precision in every weight, and a
+      # model that comes out the far side answering the same thing for every picture
+      # exports cleanly, loads cleanly, has an output of exactly the right shape, and marks
+      # nothing. That is the failure the browser model already shipped once.
+      - name: Check the tablet model responds to what it is shown
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-int8.tflite', steps.fetch.outputs.subject)) != ''
+        env:
+          SUBJECT: ${{ steps.fetch.outputs.subject }}
+        run: |
+          .venv-tflite/bin/python - <<'PY'
+          import json, os, pathlib, sys
+          sys.path.insert(0, "tools")
+          import model_liveness
+          from ai_edge_litert.interpreter import Interpreter
+
+          subject = os.environ["SUBJECT"]
+          spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
+
+          interpreter = Interpreter(
+              model_path=f"web/models/{subject}-320-int8.tflite")
+          interpreter.allocate_tensors()
+
+          spread, named, enough = model_liveness.judge(
+              interpreter, len(spec["labels"]), spec["imgsz"], ".liveness")
+          for name, score in named:
+              print(f"  {name:16} {score:.4f}", flush=True)
+          print(f"spread across {len(named)} pictures: {spread:.5f}", flush=True)
+
+          if not enough:
+              print("::warning::No photograph could be fetched, so this could not be "
+                    "judged. Generated pictures alone do not separate a quiet model from "
+                    "a dead one.")
+              raise SystemExit(0)
+          if spread < model_liveness.FLOOR:
+              raise SystemExit(
+                  f"::error::Quantising killed it. The tablet model gives the same answer "
+                  f"for every picture (spread {spread:.5f}, floor {model_liveness.FLOOR}), "
+                  f"while the browser model built from the same weights does not.")
+          print("the tablet model responds to what it is shown", flush=True)
           PY
 
       # A model that exports cleanly and finds nobody is worse than no model, so the
@@ -558,7 +603,7 @@ jobs:
       # ONNX file reported success, and the missing tablet model was found by hand days
       # later. If it is not here, this run was not a success.
       - name: Did the tablet model come out
-        if: steps.fetch.outputs.subject == 'person'
+        if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |

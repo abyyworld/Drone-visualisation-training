@@ -111,12 +111,59 @@ def letterbox(array, size):
     return np.asarray(canvas, np.float32).transpose(2, 0, 1)[None] / 255.0
 
 
-def scores(session, labels, size, images):
+def predictor(model):
+    """Turn whatever was handed in into one function: a picture in, a head out.
+
+    Three shapes, because there are three things worth judging and they are judged the
+    same way. An onnxruntime session is the browser's model. A TFLite interpreter is the
+    tablet's, and it matters most of the three: int8 quantisation is exactly the step that
+    can turn a working model into one that answers the same thing for everything, and
+    nothing was checking for that. A plain callable is for tests.
+    """
+    if hasattr(model, "get_inputs"):
+        name = model.get_inputs()[0].name
+
+        def run_onnx(blob):
+            return model.run(None, {name: blob})[0][0]
+        return run_onnx
+
+    if hasattr(model, "get_input_details"):
+        import numpy as np
+
+        entry = model.get_input_details()[0]
+        exit_ = model.get_output_details()[0]
+        shape = [int(v) for v in entry["shape"]]
+        # [1, 3, H, W] from one converter, [1, H, W, 3] from another. The app reads this
+        # from the tensor for the same reason: guessing it produced a three pixel square
+        # and a model that found nobody, with no error anywhere.
+        planar = len(shape) == 4 and shape[1] == 3 and shape[3] != 3
+        scale, zero = entry.get("quantization", (0.0, 0))
+
+        def run_tflite(blob):
+            picture = blob if planar else blob.transpose(0, 2, 3, 1)
+            if entry["dtype"] in (np.int8, np.uint8):
+                # Quantised input: the converter wants the picture in its own integers.
+                picture = np.clip(picture / (scale or 1.0) + zero, -128, 255)
+            model.set_tensor(entry["index"], picture.astype(entry["dtype"]))
+            model.invoke()
+            head = model.get_tensor(exit_["index"])[0]
+            out_scale, out_zero = exit_.get("quantization", (0.0, 0))
+            if exit_["dtype"] in (np.int8, np.uint8) and out_scale:
+                head = (head.astype(np.float32) - out_zero) * out_scale
+            return head
+        return run_tflite
+
+    if callable(model):
+        return model
+    raise TypeError(f"nothing here knows how to run a {type(model).__name__}")
+
+
+def scores(model, labels, size, images):
     """The best class score each picture draws out of the model."""
-    name = session.get_inputs()[0].name
+    run = predictor(model)
     out = []
     for _, array in images:
-        head = session.run(None, {name: letterbox(array, size)})[0][0]
+        head = run(letterbox(array, size))
         if head.shape[0] > head.shape[1]:
             head = head.T                  # per-anchor rows rather than channel-major
         # The real class channels only. A segmentation export carries mask coefficients
@@ -126,12 +173,12 @@ def scores(session, labels, size, images):
     return out
 
 
-def judge(session, labels, size, cache):
+def judge(model, labels, size, cache):
     """(spread, per-picture scores, whether there was enough to judge with)."""
     images = photographs(cache)
     enough = len(images) >= 1
     images = images + patterns()
-    measured = scores(session, labels, size, images)
+    measured = scores(model, labels, size, images)
     named = list(zip([n for n, _ in images], measured))
     return (max(measured) - min(measured)) if measured else 0.0, named, enough
 
