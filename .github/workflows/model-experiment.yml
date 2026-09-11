@@ -88,7 +88,17 @@ jobs:
           PY
 
       - name: What came out
-        run: ls -lh web/models/experiments/
+        run: |
+          ls -lh web/models/experiments/
+          # The first run of this workflow went green having committed the JSON and
+          # silently dropped the 40 MB beside it, because *.onnx is ignored and the
+          # re-include did not reach this folder. A run that loses the thing it was
+          # asked to produce must fail here rather than read as a success.
+          for f in web/models/experiments/${{ inputs.name }}.onnx web/models/experiments/${{ inputs.name }}.json; do
+            test -s "$f" || { echo "missing: $f"; exit 1; }
+            git check-ignore -q "$f" && { echo "ignored, so it would never be committed: $f"; exit 1; }
+          done
+          echo "both files present and visible to git"
 
       - name: Commit it
         run: |
