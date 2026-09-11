@@ -950,6 +950,15 @@ public class LiveActivity extends AppCompatActivity {
         // that is not known until the SurfaceView has one. Whichever happens second starts
         // it; see openPipeline().
         wantStream = true;
+        // Before any of the early returns below.
+        //
+        // This block used to sit at the bottom of onStart, after the return for a running
+        // recording and the one for the floating window. Both of those are the normal way
+        // back from the settings screen mid-flight, so the sensitivity slider, the
+        // people-only switch and the domain were all read only when nothing was going on -
+        // which is the one time nobody is adjusting them. An operator who moved the slider
+        // while recording saw no change at all and concluded the detector was broken.
+        applySettings();
         if (popout != null) {
             // Back on screen with the floating window out: nothing was ever stopped, so take
             // the picture back and leave the stream, the detector and any recording alone.
@@ -985,6 +994,20 @@ public class LiveActivity extends AppCompatActivity {
         detectBusy = false;
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
+        handler.post(detectTick);
+        // The provider still runs, on its slow interval, for what the on-device model
+        // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.
+        handler.post(analysisTick);
+    }
+
+    /**
+     * Take up what the settings screen was last told, whatever else is going on.
+     *
+     * Safe to call at any point: every one of these is a field or a setter on something
+     * already built, so applying them does not disturb the stream, the detector or a
+     * recording in progress.
+     */
+    private void applySettings() {
         scansForFire = "wildfire".equals(Settings.domain(this));
         openFireDetector();
 
@@ -994,8 +1017,6 @@ public class LiveActivity extends AppCompatActivity {
         NativeDetector current = detector;
         if (current != null) {
             current.setPeopleOnly("crowd".equals(Settings.domain(this)));
-            // Read here rather than at startup, so coming back from the settings screen
-            // applies it without restarting the stream.
             // The detector runs low on purpose, so a weak box still reaches the tracker and
             // can carry somebody through a frame they were barely seen in. What the slider
             // sets is the harder question: how sure a box has to be before it is allowed to
@@ -1003,10 +1024,6 @@ public class LiveActivity extends AppCompatActivity {
             current.setConfidence(DETECT_FLOOR);
             tracker.setNewTrackConfidence(Settings.confidence(this));
         }
-        handler.post(detectTick);
-        // The provider still runs, on its slow interval, for what the on-device model
-        // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.
-        handler.post(analysisTick);
     }
 
     @Override

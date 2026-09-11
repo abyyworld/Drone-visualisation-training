@@ -147,7 +147,38 @@ public class OverlayView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        render(canvas, getWidth(), getHeight());
+        int width = getWidth();
+        int height = getHeight();
+
+        // Onto the video, not onto the view.
+        //
+        // GlPipeline.drawToDisplay letterboxes the picture inside this same rectangle
+        // rather than stretching it, so unless the view happens to be exactly the video's
+        // shape there are black bars, and the video is smaller than the view. This used to
+        // map boxes across the full width and height, which put every one of them off the
+        // person by however wide the bars were - systematically, in the same direction, all
+        // flight. The arithmetic below is drawToDisplay's, deliberately identical.
+        if (trackFrameWidth > 0 && trackFrameHeight > 0 && width > 0 && height > 0) {
+            float videoAspect = trackFrameWidth / (float) trackFrameHeight;
+            float viewAspect = width / (float) height;
+            int fitWidth;
+            int fitHeight;
+            if (viewAspect > videoAspect) {
+                fitHeight = height;
+                fitWidth = Math.round(height * videoAspect);
+            } else {
+                fitWidth = width;
+                fitHeight = Math.round(width / videoAspect);
+            }
+            if (fitWidth != width || fitHeight != height) {
+                int saved = canvas.save();
+                canvas.translate((width - fitWidth) / 2f, (height - fitHeight) / 2f);
+                render(canvas, fitWidth, fitHeight);
+                canvas.restoreToCount(saved);
+                return;
+            }
+        }
+        render(canvas, width, height);
     }
 
     /** Same hash as colourIndex() in web/js/vlm.js, so a label keeps one colour anywhere. */

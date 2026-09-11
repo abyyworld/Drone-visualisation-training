@@ -107,6 +107,34 @@ public class Cross {
     // And the sparse scene, at the size a person actually is from altitude. This is where
     // the two implementations could most easily part company, because it is decided by the
     // ratio test and by a vote with very few voters rather than by a comfortable margin.
+    // A track that is NOT seen on every cycle, which is what the tablet does: it looks at
+    // one region at a time, so a given person is observed and then coasts for several
+    // cycles before being observed again. Velocity is measured across that gap, and the two
+    // implementations diverged there once already without a single case noticing - every
+    // case above observes every track every cycle, and in that special case the last
+    // observed centre and the coasted box are the same point, so both formulas agree.
+    for (int gap : new int[]{1, 2, 3, 6}) {
+      StringBuilder line = new StringBuilder("track-coast-" + gap + ":");
+      for (int speed : new int[]{0, 5, 15, 30}) {
+        Tracker tracker = new Tracker();
+        long clock = 1000;
+        for (int step = 0; step < 24; step++) {
+          List<Finding> few = new ArrayList<>();
+          // Seen only every `gap` cycles; the rest are empty, so the track coasts.
+          if (step % gap == 0) {
+            for (int i = 0; i < 3; i++) {
+              float x = i * 120 + step * speed;
+              few.add(new Finding("person", "high", "", x, 100, x + 10, 122));
+            }
+          }
+          tracker.update(few, clock);
+          clock += 250;
+        }
+        line.append(' ').append(tracker.countSeen("person"));
+      }
+      System.out.println(line);
+    }
+
     for (int people : new int[]{1, 2, 3}) {
       StringBuilder line = new StringBuilder("track-sparse-" + people + ":");
       for (int speed : new int[]{0, 20, 45, 60, 90}) {

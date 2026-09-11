@@ -97,6 +97,28 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     console.log(`track-pan-${speed}: ${tracker.countSeen('person')}`);
   }
 
+  // A track that is NOT seen on every cycle, which is what the tablet does. See Cross.
+  for (const gap of [1, 2, 3, 6]) {
+    const counts = [];
+    for (const speed of [0, 5, 15, 30]) {
+      const tracker = new Tracker();
+      let clock = 1000;
+      for (let step = 0; step < 24; step += 1) {
+        const few = [];
+        if (step % gap === 0) {
+          for (let i = 0; i < 3; i += 1) {
+            const x = i * 120 + step * speed;
+            few.push({ label: 'person', confidence: 0.8, box: [x, 100, x + 10, 122] });
+          }
+        }
+        tracker.update(few, clock);
+        clock += 250;
+      }
+      counts.push(tracker.countSeen('person'));
+    }
+    console.log(`track-coast-${gap}: ${counts.join(' ')}`);
+  }
+
   // And the sparse scene, at the size a person actually is from altitude. See Cross.
   for (const people of [1, 2, 3]) {
     const counts = [];

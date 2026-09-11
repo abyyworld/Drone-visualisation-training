@@ -169,6 +169,14 @@ public final class Tracker {
         /** When this track was last actually seen, rather than predicted. See MAX_COAST_MS. */
         long lastSeenAt;
         public float[] velocity = {0f, 0f};
+        /**
+         * Where this track was last actually seen.
+         *
+         * Velocity is measured from here and never from box, which by then may have been
+         * carried forward by the velocity on every cycle the track was missed. Kept in step
+         * with lastObserved in web/js/track.js.
+         */
+        float[] lastObserved;
         public final List<float[]> path = new ArrayList<>();
         boolean counted;
 
@@ -179,6 +187,7 @@ public final class Tracker {
             this.confidence = confidence;
             this.seen = 1;
             this.lastSeenAt = now;
+            this.lastObserved = centre(box);
             this.path.add(centre(box));
         }
 
@@ -250,8 +259,9 @@ public final class Tracker {
             usedTracks.add(pair.track);
             usedDetections.add(pair.index);
 
-            float[] previous = centre(pair.track.box);
             float[] observedCentre = centre(pair.box);
+            // How many cycles since this track was last actually seen, not predicted.
+            int coasted = Math.max(1, pair.track.missed + 1);
             pair.track.box = pair.box;
             pair.track.confidence = detections.get(pair.index).confidence;
             pair.track.missed = 0;
@@ -264,10 +274,28 @@ public final class Tracker {
                 pair.track.signature = Reid.blend(pair.track.signature, fresh);
             }
             // Smoothed, so one noisy frame does not send the coasting prediction sideways.
-            pair.track.velocity = new float[]{
-                    pair.track.velocity[0] * 0.6f + (observedCentre[0] - previous[0]) * 0.4f,
-                    pair.track.velocity[1] * 0.6f + (observedCentre[1] - previous[1]) * 0.4f,
-            };
+            //
+            // Measured from where the track was last SEEN, and divided by how many cycles
+            // ago that was. It used to be measured against track.box, which on a missed
+            // cycle had already been carried forward by this same velocity - so the
+            // difference was the prediction's own leftover error rather than how far the
+            // person went, and feeding that back in is a loop fighting itself. It
+            // oscillates instead of settling whenever a track is looked at less often than
+            // every cycle. Kept in step with web/js/track.js.
+            float[] last = pair.track.lastObserved == null
+                    ? observedCentre : pair.track.lastObserved;
+            // A pairing made only because there was nothing else it could be is not
+            // evidence about motion, and letting it set velocity is what flings a coasting
+            // box across the frame. See unambiguousPairs and LONELY_SCORE.
+            if (pair.score > LONELY_SCORE) {
+                pair.track.velocity = new float[]{
+                        pair.track.velocity[0] * 0.6f
+                                + (observedCentre[0] - last[0]) / coasted * 0.4f,
+                        pair.track.velocity[1] * 0.6f
+                                + (observedCentre[1] - last[1]) / coasted * 0.4f,
+                };
+            }
+            pair.track.lastObserved = observedCentre;
             pair.track.path.add(observedCentre);
             if (pair.track.path.size() > MAX_PATH) {
                 pair.track.path.remove(0);
