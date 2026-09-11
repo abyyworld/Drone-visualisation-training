@@ -4,7 +4,10 @@ pictures   120 with fire or smoke, 150 without
 
   conf    marked, of fire   marked, of fire-free
        (higher is better)      (lower is better)
+  0.05             65/120                 10/150
+  0.10             56/120                  4/150
   0.15             50/120                  0/150
+  0.20             46/120                  0/150
   0.25             43/120                  0/150
   0.35             39/120                  0/150
   0.50             28/120                  0/150
@@ -42,7 +45,10 @@ Against the fire dataset's own no-fire pictures rather than drone footage:
     
       conf    marked, of fire   marked, of fire-free
            (higher is better)      (lower is better)
+      0.05             65/120                 20/120
+      0.10             56/120                 10/120
       0.15             50/120                  7/120
+      0.20             46/120                  6/120
       0.25             43/120                  4/120
       0.35             39/120                  4/120
       0.50             28/120                  4/120
