@@ -22,15 +22,15 @@ import sys
 import pytest
 
 MODELS = pathlib.Path(__file__).resolve().parent.parent / "web" / "models"
-SPEC = MODELS / "person-320.json"
-TFLITE = MODELS / "person-320-float.tflite"
-ONNX = MODELS / "person-320.onnx"
+SPEC = MODELS / "person-640.json"
+TFLITE = MODELS / "person-640-float.tflite"
+ONNX = MODELS / "person-640.onnx"
 
 
 @pytest.fixture(scope="module")
 def spec():
     if not SPEC.exists():
-        pytest.skip("person-320.json is absent; the conversion workflow has not run here")
+        pytest.skip("person-640.json is absent; the conversion workflow has not run here")
     return json.loads(SPEC.read_text())
 
 
@@ -74,14 +74,14 @@ def test_the_app_would_read_this_models_input_correctly(spec, model):
     assert 3 in (shape[1], shape[3]), f"neither dimension is the colour channels: {shape}"
     assert input_size(shape) == spec["imgsz"], (
         f"the app would read an input size of {input_size(shape)} from {shape}, "
-        f"but person-320.json says {spec['imgsz']}"
+        f"but person-640.json says {spec['imgsz']}"
     )
 
 
 def test_the_head_carries_one_channel_per_label(spec):
     ort = pytest.importorskip("onnxruntime")
     if not ONNX.exists():
-        pytest.skip("person-320.onnx is not present")
+        pytest.skip("person-640.onnx is not present")
 
     import numpy as np
 
@@ -96,7 +96,7 @@ def test_the_head_carries_one_channel_per_label(spec):
     channels = min(out.shape[1], out.shape[2])
     assert channels == 4 + len(spec["labels"]), (
         f"the head carries {channels} channels, so four plus {channels - 4} classes, "
-        f"but person-320.json lists {len(spec['labels'])} labels"
+        f"but person-640.json lists {len(spec['labels'])} labels"
     )
 
 

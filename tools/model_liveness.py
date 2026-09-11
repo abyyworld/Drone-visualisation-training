@@ -37,7 +37,7 @@ WHY THE PICTURES ARE WHAT THEY ARE
     nearly ten times under it, so this is not a close call being decided by a threshold.
 
 USAGE
-    python3 tools/model_liveness.py web/models/person-320.onnx --labels 11
+    python3 tools/model_liveness.py web/models/person-640.onnx --labels 11
 """
 from __future__ import annotations
 

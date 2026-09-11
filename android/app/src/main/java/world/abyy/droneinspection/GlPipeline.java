@@ -68,10 +68,12 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     /**
      * How many readbacks may be waiting at once.
      *
-     * Three was enough while the detector asked for one tile a cycle. It asks for all six
-     * now, and this queue drops from the FRONT when it overflows - so at three, the first
-     * three tiles of every cycle were thrown away silently and the detector only ever saw
-     * the last three. Eight leaves room for six tiles and a spare.
+     * Three was enough while the detector asked for one tile a cycle. It asks for every
+     * tile now, and this queue drops from the FRONT when it overflows - so at three, the
+     * first tiles of every cycle were thrown away silently and the detector only ever saw
+     * the last ones. Eight leaves room for the whole cycle several times over, and it is
+     * kept there rather than cut back to the two tiles the grid now has: the cost of an
+     * empty slot is a pointer and the cost of a full queue is a dropped tile.
      */
     private static final int MAX_PENDING = 8;
 
@@ -371,11 +373,11 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
      * Ask for one part of the frame, at up to `longEdge` across.
      *
      * THIS IS WHERE TILING ACTUALLY PAYS
-     *     Reading the whole frame back large and then cropping a sixth out of it in Java
-     *     costs the whole frame's bytes to use a sixth of them, and the crop is limited to
+     *     Reading the whole frame back large and then cropping a piece out of it in Java
+     *     costs the whole frame's bytes to use part of them, and the crop is limited to
      *     whatever detail survived that one downscale. Rendering the region on its own goes
-     *     straight from the decoder's texture: a sixth of a 1920-wide frame is about 750
-     *     pixels across, and asking for 640 of it is very nearly one to one.
+     *     straight from the decoder's texture, at exactly the size the model will feed on,
+     *     so nothing is read off the GPU that the letterbox then throws away.
      *
      *     Two small reads - the whole frame small, one region sharp - are less than half
      *     the bytes of one big read, and the region is sharper than the crop was.

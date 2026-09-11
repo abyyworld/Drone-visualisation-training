@@ -44,7 +44,7 @@ somebody else had already done the work and published the weights. 2.8 MB, 320 p
 driven through LiteRT so that NNAPI can reach the Snapdragon's DSP. Ultralytics releases
 these weights under **AGPL-3.0**, which is a deliberate choice made possible by this being a
 public repository and a demonstration rather than a product. See
-[`web/models/PERSON-320.md`](web/models/PERSON-320.md).
+[`web/models/PERSON-640.md`](web/models/PERSON-640.md).
 
 In the browser the live view still runs a COCO-trained EfficientDet-Lite2 through MediaPipe,
 which finds people and vehicles at ground level and loses people from altitude. See

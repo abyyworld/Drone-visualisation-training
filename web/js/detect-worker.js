@@ -34,15 +34,15 @@ const SIGNATURE_WIDTH = 320;
  * model at all.
  *
  * So the frame is also cut into a grid and each piece is detected on its own, at its own
- * resolution. A sixth of a 1920-wide frame is 640 across, which the model squeezes by 1.4
- * rather than 4.3, and that same person now arrives at twenty-eight pixels. Same model,
- * same weights, three times the size on the thing being looked for.
+ * resolution. Half a 1920-wide frame is 1306 across with its overlap, which the model
+ * squeezes by 2 rather than 3, and that same person arrives nearly twice the size. Same
+ * model, same weights.
  *
- * One tile per pass, cycling, rather than all six at once. Six detections in a row would be
- * six times the latency, and the full-frame pass that runs every time is what keeps every
- * track alive between them - the tiles only add the small distant people the full frame
- * cannot resolve. Over a couple of seconds every part of the frame has been looked at
- * closely, and the boxes never stop moving in the meantime.
+ * One tile per pass, cycling, rather than both at once. The full-frame pass that runs every
+ * time is what keeps every track alive between them - the tiles only add the small distant
+ * people the full frame cannot resolve. The tablet does not do it this way: it runs both
+ * tiles every cycle so nothing is ever coasting, which costs latency a browser tab looking
+ * at a still photograph has no reason to spend.
  */
 let tileIndex = 0;
 let tileCanvas = null;

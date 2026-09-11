@@ -123,13 +123,28 @@ public class LiveActivity extends AppCompatActivity {
     /**
      * How big a close look is read back at.
      *
-     * The model's own input size, and not a pixel more. This was 640, and the model
-     * letterboxes whatever it is given down to 320 - so every tile was read off the GPU at
-     * four times the bytes that survive the next step. Measured, that extra resolution is
-     * worth 1.2% more people found; the bytes are worth six tiles a cycle instead of one.
-     * That is the trade that pays for TILES_PER_CYCLE.
+     * The model's own input size, and not a pixel more, so nothing is read off the GPU that
+     * the letterbox is only going to throw away again.
+     *
+     * WHY THE MODEL'S INPUT IS 640 AND NO LONGER 320
+     *     The old shape squeezed a sixth of the frame into 320 and ran six of them. The
+     *     same weights exported at 640 and given HALF the frame arrive at almost the same
+     *     magnification on a person, cost about three times as much per look, and need only
+     *     two looks to cover everything - so the milliseconds come out level and the whole
+     *     frame is covered every single cycle instead of one sixth of it.
+     *
+     *     Measured on four crowded VisDrone frames, flying the real model at the real
+     *     cadence, counting a number against the person it actually spent its frames on:
+     *
+     *         320, six tiles, 250 ms   reached 45% of the people, 1.92 numbers each
+     *         640, two tiles, 250 ms   reached 60% of the people, 1.69 numbers each
+     *
+     *     The other three frames agree: 34 to 48, 25 to 36, 39 to 53 percent reached, with
+     *     the repeat numbering flat or better in every one. Same weights, same file size,
+     *     same milliseconds. The model was never weak; it was being starved of pixels and
+     *     then asked to remember what it could not see for five cycles out of six.
      */
-    private static final int TILE_LONG_EDGE = 320;
+    private static final int TILE_LONG_EDGE = 640;
 
     /**
      * How much video the player is allowed to hold, in milliseconds.
@@ -184,27 +199,17 @@ public class LiveActivity extends AppCompatActivity {
     private static final int WIDE_EVERY = 0;
 
     /**
-     * How many of the six tiles get a close look each cycle.
+     * How many tiles get a close look each cycle.
      *
-     * All of them. One per cycle was the design, and it meant a given patch of ground was
-     * looked at once every six cycles - about 1.2 s at the target period, and longer in
-     * practice. In between, everybody in the other five tiles is coasting, which is the box
-     * that sits in the wrong place until it jumps.
+     * All of them, which is now two rather than six. Nothing coasts: every person in the
+     * frame is looked at every cycle, so a box that has not moved is a person who has not
+     * moved rather than a box waiting its turn. That is the whole reason the tile count
+     * came down and the model's input went up - see TILE_LONG_EDGE for the measurement.
      *
-     * It was never paid for by anything. Reading one tile at 640 and shrinking it to the
-     * model's 320 moves four times the bytes of reading it at 320 directly, so all six at
-     * 320 cost FEWER bytes than today's one tile at 640 plus the wide pass, and the cycle
-     * measured 62 to 92 percent idle either way.
-     *
-     * Measured over three flights on a real labelled aerial frame, 525 people present,
-     * running the real model at the real cadence:
-     *
-     *     one tile a cycle, wide every third   372 numbered   54.5% of boxes on a person
-     *     all six, no wide pass                469 numbered   73.1%
-     *     all six, at a 400 ms cycle           468 numbered   74.4%
-     *
-     * The gap is widest exactly where the operator complained: flying fast, the old shape
-     * put 30% of its boxes on a person and this puts 68%.
+     * One tile per cycle was the original design and it meant a given patch of ground was
+     * looked at once every six cycles, over a second at the target period. In between,
+     * everybody outside that tile was coasting, which is the box that sits in the wrong
+     * place until it jumps.
      */
     private static final int TILES_PER_CYCLE = Tiles.COUNT;
 

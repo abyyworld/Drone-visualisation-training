@@ -72,9 +72,9 @@
     ]
   },
   "crowd": {
-    "file": "person-320.onnx",
+    "file": "person-640.onnx",
     "task": "detect",
-    "imgsz": 320,
+    "imgsz": 640,
     "labels": [
       "person",
       "person",

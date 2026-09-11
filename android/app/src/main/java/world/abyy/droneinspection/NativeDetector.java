@@ -65,8 +65,8 @@ import java.util.Set;
 public final class NativeDetector {
 
     /** The models, and the facts about each, all written by .github/workflows/model.yml. */
-    private static final String PERSON_MODEL = "www/models/person-320-float.tflite";
-    private static final String PERSON_META = "www/models/person-320.json";
+    private static final String PERSON_MODEL = "www/models/person-640-float.tflite";
+    private static final String PERSON_META = "www/models/person-640.json";
     private static final String FIRE_MODEL = "www/models/wildfire-320-float.tflite";
     private static final String FIRE_META = "www/models/wildfire-320.json";
 
@@ -123,7 +123,7 @@ public final class NativeDetector {
     private long cpuNanosTotal;
     private long acceleratedNanosTotal;
 
-    /** From person-320.json, so the app and the model cannot disagree about the classes. */
+    /** From person-640.json, so the app and the model cannot disagree about the classes. */
     private final String[] labels;
     private final Set<Integer> personClasses;
     /**
@@ -502,9 +502,8 @@ public final class NativeDetector {
      * Detect in a picture of one region, with the boxes mapped back.
      *
      * The region arrives already rendered at its own resolution by GlPipeline rather than
-     * being cropped out of a big readback. A sixth of a 1920-wide frame is about 750 pixels
-     * across and comes back at 640, so the model sees it at nearly one to one, which is the
-     * entire reason for tiling.
+     * being cropped out of a big readback, at the model's own input size and not a pixel
+     * more, so nothing crosses the bus that the letterbox is only going to discard.
      *
      * @param region x, y, width, height of the region, in the same pixels the whole-frame
      *               findings come back in - not in the video's own pixels. The two lists are

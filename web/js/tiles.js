@@ -8,8 +8,12 @@
  * merge that is too shy counts one person twice.
  */
 
-export const TILE_COLUMNS = 3;
-export const TILE_ROWS = 2;
+// Two tiles, not six. Recall against tile count saturates at two once the model's input is
+// 640 - three, four and six all measure 70% on the same frames - and two is what lets every
+// person be looked at every cycle instead of every sixth one. Tiles.java carries the
+// numbers; keep the two in step.
+export const TILE_COLUMNS = 2;
+export const TILE_ROWS = 1;
 export const TILE_COUNT = TILE_COLUMNS * TILE_ROWS;
 
 /** Tiles overlap, so a person standing on a seam is whole in at least one of them. */

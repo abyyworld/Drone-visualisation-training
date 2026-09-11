@@ -347,6 +347,21 @@ jobs:
                   "confThreshold": tuned.get("confThreshold", 0.25),
                   "iouThreshold": tuned.get("iouThreshold", 0.45),
               }, indent=2) + "\n")
+
+              # And the manifest, which is the OTHER place the size is written down. The
+              # tablet reads the spec above; the browser reads this. Exporting at 640 while
+              # the manifest still said 320 made the browser build a 320 square, hand it to
+              # a model expecting 640, and get an error it reports as a detector that failed
+              # to load. Leaving a human to keep two files in step is how that happens
+              # again, so the run writes both.
+              if manifest.exists():
+                  key = "crowd" if subject == "person" else subject
+                  book = json.loads(manifest.read_text())
+                  if key in book:
+                      book[key]["file"] = f"{subject}-{SIZE}.onnx"
+                      book[key]["imgsz"] = SIZE
+                      manifest.write_text(json.dumps(book, indent=2) + "\n")
+                      print(f"  manifest {key}: {book[key]['file']} at {SIZE}", flush=True)
               return len(names)
 
           for url in candidates:

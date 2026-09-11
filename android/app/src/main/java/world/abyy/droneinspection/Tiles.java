@@ -9,24 +9,31 @@ import java.util.List;
  * A port of web/js/tiles.js, kept in step with it.
  *
  * WHY A CROWD NEEDS THIS
- *     The detector's input is 448 pixels square. A 1920-wide frame is squeezed into that,
- *     so a person forty pixels tall in the original arrives nine pixels tall at the model.
- *     Nine pixels is below what any detector can find, which is why a crowd shot returns
- *     five people and not fifty: they are not being missed by a threshold, they are not
+ *     The detector's input is a fixed square. A 1920-wide frame squeezed into 640 of them
+ *     turns a person forty pixels tall into thirteen, and a crowd shot comes back with five
+ *     people rather than fifty: they are not being missed by a threshold, they are not
  *     being shown to the model at all.
  *
- *     A sixth of that frame is 640 across, which the model squeezes by 1.4 rather than 4.3,
- *     and the same person arrives at twenty-eight pixels. Same model, same weights, three
- *     times the size on the thing being looked for.
+ *     Half that frame is 960 across, which the model squeezes by 1.5 rather than 3, and the
+ *     same person arrives at twenty-four pixels. Same model, same weights, nearly twice the
+ *     size on the thing being looked for.
  *
- *     One tile per pass, cycling, rather than all six at once: six detections in a row is
- *     six times the latency, and the full-frame pass that runs every time is what keeps
- *     every track alive in between.
+ * WHY TWO AND NOT SIX
+ *     Six 320-pixel tiles was the old shape and it gave a person about the same pixels as
+ *     this does. What it could not do is look at all of them at once: six tiles at the
+ *     cycle rate meant a patch of ground got a look every sixth cycle, and everybody
+ *     outside the current tile was coasting on a guess. Two tiles at 640 cost the same
+ *     milliseconds and cover the whole frame every cycle.
+ *
+ *     Measured on four crowded VisDrone frames at the real cadence: 45% of the people
+ *     reached and 1.92 numbers each, against 60% reached and 1.69 numbers each. Recall
+ *     against tile count saturates at two - three, four and six tiles all measure 70% on a
+ *     still frame - so the extra tiles were buying latency and nothing else.
  */
 final class Tiles {
 
-    static final int COLUMNS = 3;
-    static final int ROWS = 2;
+    static final int COLUMNS = 2;
+    static final int ROWS = 1;
     static final int COUNT = COLUMNS * ROWS;
 
     /** Tiles overlap, so a person standing on a seam is whole in at least one of them. */
