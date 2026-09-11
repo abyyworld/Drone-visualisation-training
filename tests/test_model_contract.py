@@ -23,7 +23,7 @@ import pytest
 
 MODELS = pathlib.Path(__file__).resolve().parent.parent / "web" / "models"
 SPEC = MODELS / "person-320.json"
-TFLITE = MODELS / "person-320-f16.tflite"
+TFLITE = MODELS / "person-320-float.tflite"
 ONNX = MODELS / "person-320.onnx"
 
 

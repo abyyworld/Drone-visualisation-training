@@ -1,6 +1,6 @@
-# `wildfire-320-f16.tflite` and `wildfire-320.onnx`
+# `wildfire-320-float.tflite` and `wildfire-320.onnx`
 
-YOLOv8n finetuned on fire and smoke, 320x320, exported float16 for the tablet and to ONNX for
+YOLOv8n finetuned on fire and smoke, 320x320, exported as plain float for the tablet and to ONNX for
 the browser. **AGPL-3.0**, from the weights below.
 
     https://huggingface.co/rabahdev/fire-smoke-yolov8n/resolve/main/best.pt

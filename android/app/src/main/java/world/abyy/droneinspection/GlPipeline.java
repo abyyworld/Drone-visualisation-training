@@ -65,7 +65,15 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     private static final int EGL_RECORDABLE_ANDROID = 0x3142;
 
     /** Most requests than this waiting means the consumer is behind; the oldest go. */
-    private static final int MAX_PENDING = 3;
+    /**
+     * How many readbacks may be waiting at once.
+     *
+     * Three was enough while the detector asked for one tile a cycle. It asks for all six
+     * now, and this queue drops from the FRONT when it overflows - so at three, the first
+     * three tiles of every cycle were thrown away silently and the detector only ever saw
+     * the last three. Eight leaves room for six tiles and a spare.
+     */
+    private static final int MAX_PENDING = 8;
 
     /**
      * How many pixels may be read back from the GPU in one go.

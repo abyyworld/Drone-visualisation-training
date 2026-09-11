@@ -368,9 +368,8 @@ jobs:
       # browser uses and it is worth landing on its own. The job is still failed at the very
       # end if no .tflite came out of a people conversion, so a missing tablet model can
       # never read as a green run again.
-      - name: Export TFLite float16, for the tablet
+      - name: Export TFLite float, for the tablet
         if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
-        continue-on-error: true
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
           # No installing things into a running interpreter. See the toolchain step above.
@@ -407,12 +406,19 @@ jobs:
           # the question: no calibration, no clipping, no coordinate grid, about double the
           # file for a model that was 3 MB. Size is not the constraint; being able to count
           # people is.
+          # Plain float, neither int8 nor half.
+          #
+          # half=True was tried first and produced no file at all: ultralytics removed the
+          # standalone tflite exporter in 8.4.83 in favour of LiteRT, and the half flag does
+          # not survive that path. Plain float32 is about 12 MB against int8's 3 MB, and
+          # that is a trade worth making twice over on a controller nobody is short of space
+          # on. Nothing is calibrated, so nothing can be miscalibrated.
           model = YOLO("candidate.pt")
-          tflite = model.export(format="tflite", imgsz=320, half=True)
+          tflite = model.export(format="tflite", imgsz=320)
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
-          shutil.copy(tflite, out / f"{subject}-320-f16.tflite")
-          print("wrote", out / f"{subject}-320-f16.tflite", flush=True)
+          shutil.copy(tflite, out / f"{subject}-320-float.tflite")
+          print("wrote", out / f"{subject}-320-float.tflite", flush=True)
           PY
 
       # The tablet model, actually loaded and run, before it is published. An int8 export
@@ -421,7 +427,7 @@ jobs:
       - name: Check the tablet model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-f16.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-float.tflite', steps.fetch.outputs.subject)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib
@@ -430,7 +436,7 @@ jobs:
 
           subject = os.environ["SUBJECT"]
 
-          interpreter = Interpreter(model_path=f"web/models/{subject}-320-f16.tflite")
+          interpreter = Interpreter(model_path=f"web/models/{subject}-320-float.tflite")
           interpreter.allocate_tensors()
           entry = interpreter.get_input_details()[0]
           exit_ = interpreter.get_output_details()[0]
@@ -491,7 +497,7 @@ jobs:
       # exports cleanly, loads cleanly, has an output of exactly the right shape, and marks
       # nothing. That is the failure the browser model already shipped once.
       - name: Check the tablet model responds to what it is shown
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-f16.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-float.tflite', steps.fetch.outputs.subject)) != ''
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
@@ -505,7 +511,7 @@ jobs:
           spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
 
           interpreter = Interpreter(
-              model_path=f"web/models/{subject}-320-f16.tflite")
+              model_path=f"web/models/{subject}-320-float.tflite")
           interpreter.allocate_tensors()
 
           spread, named, enough = model_liveness.judge(
@@ -644,8 +650,8 @@ jobs:
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
         run: |
-          if [ ! -s web/models/${SUBJECT}-320-f16.tflite ]; then
-            echo "::error::No web/models/${SUBJECT}-320-f16.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite float16' step above for the reason."
+          if [ ! -s web/models/${SUBJECT}-320-float.tflite ]; then
+            echo "::error::No web/models/${SUBJECT}-320-float.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite float' step above for the reason."
             exit 1
           fi
-          ls -lh web/models/${SUBJECT}-320-f16.tflite
+          ls -lh web/models/${SUBJECT}-320-float.tflite

@@ -1,6 +1,6 @@
-# `person-320-f16.tflite` and `person-320.onnx`
+# `person-320-float.tflite` and `person-320.onnx`
 
-YOLO finetuned on **VisDrone**, 320x320, exported float16 for the tablet and to ONNX for the
+YOLO finetuned on **VisDrone**, 320x320, exported as plain float for the tablet and to ONNX for the
 browser. **AGPL-3.0**, from the weights below.
 
     https://huggingface.co/dronefreak/visdrone-yolov26n/resolve/main/best.pt

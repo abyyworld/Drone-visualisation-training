@@ -120,7 +120,16 @@ public class LiveActivity extends AppCompatActivity {
      * frame at 640 and one region at 640 - are less than half the bytes and the region is
      * sharper. See GlPipeline.requestRegion.
      */
-    private static final int TILE_LONG_EDGE = 640;
+    /**
+     * How big a close look is read back at.
+     *
+     * The model's own input size, and not a pixel more. This was 640, and the model
+     * letterboxes whatever it is given down to 320 - so every tile was read off the GPU at
+     * four times the bytes that survive the next step. Measured, that extra resolution is
+     * worth 1.2% more people found; the bytes are worth six tiles a cycle instead of one.
+     * That is the trade that pays for TILES_PER_CYCLE.
+     */
+    private static final int TILE_LONG_EDGE = 320;
 
     /**
      * How much video the player is allowed to hold, in milliseconds.
@@ -172,7 +181,32 @@ public class LiveActivity extends AppCompatActivity {
      * back, because the flame scan and the appearance signatures both need those pixels;
      * this is only about which cycles pay for an inference on it.
      */
-    private static final int WIDE_EVERY = 3;
+    private static final int WIDE_EVERY = 0;
+
+    /**
+     * How many of the six tiles get a close look each cycle.
+     *
+     * All of them. One per cycle was the design, and it meant a given patch of ground was
+     * looked at once every six cycles - about 1.2 s at the target period, and longer in
+     * practice. In between, everybody in the other five tiles is coasting, which is the box
+     * that sits in the wrong place until it jumps.
+     *
+     * It was never paid for by anything. Reading one tile at 640 and shrinking it to the
+     * model's 320 moves four times the bytes of reading it at 320 directly, so all six at
+     * 320 cost FEWER bytes than today's one tile at 640 plus the wide pass, and the cycle
+     * measured 62 to 92 percent idle either way.
+     *
+     * Measured over three flights on a real labelled aerial frame, 525 people present,
+     * running the real model at the real cadence:
+     *
+     *     one tile a cycle, wide every third   372 numbered   54.5% of boxes on a person
+     *     all six, no wide pass                469 numbered   73.1%
+     *     all six, at a 400 ms cycle           468 numbered   74.4%
+     *
+     * The gap is widest exactly where the operator complained: flying fast, the old shape
+     * put 30% of its boxes on a person and this puts 68%.
+     */
+    private static final int TILES_PER_CYCLE = Tiles.COUNT;
 
     /**
      * The lowest score a box needs to reach the tracker at all.
@@ -436,7 +470,9 @@ public class LiveActivity extends AppCompatActivity {
             //
             //     Not skipped when tiling is off: for a turbine or a panel, which fill the
             //     frame, the wide pass is the entire job.
-            List<Finding> found = current == null || (tiling && cycleTurn % WIDE_EVERY != 0)
+            // WIDE_EVERY of 0 means never, and must not reach the modulo: `% 0` throws.
+            boolean wideNow = !tiling || (WIDE_EVERY > 0 && cycleTurn % WIDE_EVERY == 0);
+            List<Finding> found = current == null || !wideNow
                     ? new ArrayList<>() : safeDetect(current, frame);
             cycleTurn++;
 
@@ -446,40 +482,68 @@ public class LiveActivity extends AppCompatActivity {
                 finishCycle(found, frame);
                 return;
             }
-            // A region of the frame, rendered at its own resolution rather than cropped out
-            // of a big readback. See GlPipeline.requestRegion.
-            float[] region = Tiles.region(tileTurn++, videoPixelWidth, videoPixelHeight);
-            pipeline.requestRegion(
-                    region[0] / videoPixelWidth, region[1] / videoPixelHeight,
-                    (region[0] + region[2]) / videoPixelWidth,
-                    (region[1] + region[3]) / videoPixelHeight,
-                    TILE_LONG_EDGE,
-                    tile -> onRegion(tile, region, found, frame));
+            // Every tile, this cycle, rather than one of six and the rest next time.
+            // See TILES_PER_CYCLE for what that was costing.
+            Cycle cycle = new Cycle(found, TILES_PER_CYCLE);
+            for (int i = 0; i < TILES_PER_CYCLE; i++) {
+                // A region of the frame, rendered at its own resolution rather than cropped
+                // out of a big readback. See GlPipeline.requestRegion.
+                float[] region = Tiles.region(tileTurn++, videoPixelWidth, videoPixelHeight);
+                pipeline.requestRegion(
+                        region[0] / videoPixelWidth, region[1] / videoPixelHeight,
+                        (region[0] + region[2]) / videoPixelWidth,
+                        (region[1] + region[3]) / videoPixelHeight,
+                        TILE_LONG_EDGE,
+                        tile -> onRegion(tile, region, cycle, frame));
+            }
         })) {
             frame.recycle();
             detectBusy = false;
         }
     }
 
-    /** The close look has arrived. Merge it with the whole frame and finish the cycle. */
-    private void onRegion(Bitmap tile, float[] region, List<Finding> whole, Bitmap frame) {
+    /**
+     * What one detect cycle has gathered so far, across its close looks.
+     *
+     * Only ever touched on the work thread, which is where every readback callback is
+     * posted, so the counting needs no locking.
+     */
+    private static final class Cycle {
+        List<Finding> found;
+        int outstanding;
+
+        Cycle(List<Finding> found, int outstanding) {
+            this.found = found;
+            this.outstanding = outstanding;
+        }
+    }
+
+    /** One close look has arrived. Merge it, and finish the cycle once they all have. */
+    private void onRegion(Bitmap tile, float[] region, Cycle cycle, Bitmap frame) {
         Handler worker = work;
         if (worker == null || !worker.post(() -> {
             NativeDetector current = detector;
-            List<Finding> merged = whole;
             if (current != null) {
                 try {
-                    merged = Tiles.merge(whole, current.detectRegion(tile, inFrame(region, frame)));
+                    cycle.found = Tiles.merge(cycle.found,
+                            current.detectRegion(tile, inFrame(region, frame)));
                 } catch (RuntimeException ignored) {
-                    // The whole-frame findings still stand; only the close look is lost.
+                    // The other looks still stand; only this one is lost.
                 }
             }
             tile.recycle();
-            finishCycle(merged, frame);
+            if (--cycle.outstanding <= 0) {
+                finishCycle(cycle.found, frame);
+            }
         })) {
             tile.recycle();
-            frame.recycle();
-            detectBusy = false;
+            // The frame belongs to the whole cycle, so it is only let go when the last of
+            // its looks has failed. Recycling it on the first would pull it out from under
+            // the others.
+            if (--cycle.outstanding <= 0) {
+                frame.recycle();
+                detectBusy = false;
+            }
         }
     }
 

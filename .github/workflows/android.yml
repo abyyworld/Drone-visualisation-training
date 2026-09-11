@@ -177,7 +177,7 @@ jobs:
               # The aerial people model the live screen runs, and the class list that goes
               # with it. NativeDetector reads both out of the assets at startup, so either
               # one missing is a live screen that cannot open its detector at all.
-              "assets/www/models/person-320-f16.tflite",
+              "assets/www/models/person-320-float.tflite",
               "assets/www/models/person-320.json",
               "assets/www/css/app.css",
               "assets/www/prompts/inspection.json",
