@@ -124,7 +124,7 @@
       0,
       1
     ],
-    "confThreshold": 0.25,
+    "confThreshold": 0.15,
     "iouThreshold": 0.45,
     "severityWeights": {
       "person": 5.0,
@@ -142,7 +142,7 @@
       "terrain": 1.0
     },
     "displayName": "Wildfire",
-    "notes": "Replaces one that did not work. The previous fire model returned the same score for every picture in the world and was removed; this one is a plain detect export with two classes rather than one, so it says which of smoke and fire it is looking at, and it responds to what it is shown. What is measured about it: nothing marked on 60 real drone frames with no fire in them, and a spread of 0.47 across five different pictures, so it reads its input. What is NOT measured is the number that matters most, recall on real fire, because there is no real fire footage in this repository and none reachable from where it is built. The one clip here is synthetic and says so in its own truth file, and three unrelated engines score zero on it, so it measures nothing about any of them. Treat the boxes as regions to look at until that number exists. One known false positive to be aware of: a ground-level photograph of a football pitch draws smoke at 0.47. None of which changes what a frame from above can show even with a model that works behind it: fire behind a smoke column, inside a treeline or under canopy does not appear from above at all, and a person the camera cannot resolve is the normal case rather than a rare one.",
+    "notes": "Replaces one that did not work, and now measured rather than assumed. Scored on a runner against 120 published pictures with fire in them, 150 real drone frames with none, and the fire set's own 120 no-fire pictures. See docs/metrics-wildfire.txt.\n\n    conf   found, of 120 fires   marked, of 150 drone frames   of 120 hard negatives\n    0.05              65                        10                        20\n    0.10              56                         4                        10\n    0.15              50                         0                         7\n    0.25              43                         0                         4\n    0.50              28                         0                         4\n\nThe threshold is 0.15 because that is the last row where the middle column is zero. Going there from 0.25 finds seven more fires and costs nothing at all on the footage this actually flies over; going lower starts marking ordinary drone frames, which is how an operator learns to ignore the boxes. It is a knee in a measurement, not a number somebody liked.\n\nWhat it does NOT say is that this is good at finding fire. It misses 70 of 120, and those are ground-level photographs, which is not how this flies. The aerial sets that would answer the real question (FLAME, FLAME2) are behind an IEEE DataPort account no machine here can reach. Treat the boxes as regions to look at.\n\nNone of which changes what a frame from above can show even with a model that works behind it: fire behind a smoke column, inside a treeline or under canopy does not appear from above at all, and a person the camera cannot resolve is the normal case rather than a rare one.",
     "zeroDetectionNote": "Nothing was marked in this frame. That describes this frame and nothing else: not the ground under the smoke, not what is inside the treeline, and not whether anyone is there. Fire behind a smoke column, under canopy or at night does not appear from above at all, and how often this model misses real fire has not been measured."
   },
   "ondevice": {

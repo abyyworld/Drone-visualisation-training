@@ -63,11 +63,26 @@ between that and shipping, and the workflow keeps trying candidates until one ge
 The licence was never the obstacle, whatever this used to say here: this project takes
 AGPL-3.0 deliberately and every detector it ships is already a YOLO derivative.
 
-**Recall on real fire is not measured.** The only clip in this repository is synthetic and
-says so in its own truth file, and three unrelated engines score zero on it, which makes it
-a measurement of nothing. Until real fire footage is in reach, the honest claim is that the
-model reads its input and marks nothing on sixty fire-free drone frames, and no more than
-that. See [`tools/evaluate_fire.py`](tools/evaluate_fire.py).
+**Recall on real fire is measured now, and it is not good.** Scored on a runner against 120
+published pictures with fire in them and 150 real drone frames with none
+([`docs/metrics-wildfire.txt`](docs/metrics-wildfire.txt)):
+
+| confidence | found, of 120 fires | marked, of 150 drone frames |
+|---|---|---|
+| 0.10 | 56 | 4 |
+| **0.15** | **50** | **0** |
+| 0.25 | 43 | 0 |
+| 0.50 | 28 | 0 |
+
+It misses more than half of them. What it almost never does is cry wolf: nothing at all on
+drone footage at every threshold from 0.15 up. That asymmetry is why the threshold is 0.15,
+which is the last row where the middle column is zero - a knee in a measurement rather than
+a number somebody liked.
+
+Two things that number is not. It is not coverage: a frame with nothing marked has not been
+cleared of anything. And it is not aerial. The pictures are ground level, because the sets
+that would match how this flies (FLAME, FLAME2) are behind an IEEE DataPort account no
+machine here can reach.
 
 The computed scan stays, because it is the only fire capability on the tablet and needs no
 model. Colour finds the candidates; time decides. Fire burns in place and
