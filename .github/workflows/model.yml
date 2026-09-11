@@ -8,10 +8,16 @@ name: Fetch and convert the detector
 #     So the runner does it, reproducibly, and commits the result.
 #
 # WHAT COMES OUT
-#     A TFLite int8 model at 320 pixels for the Android app, and an ONNX one for the
-#     browser. int8 because that is what a Qualcomm Hexagon DSP runs, and 320 because a
-#     tile of a 1920-wide frame arrives at about that size, so the model sees it nearly one
-#     to one.
+#     A plain-float TFLite model for the Android app and an ONNX one for the browser, both
+#     at the size asked for below and named after it.
+#
+#     WHY THE SIZE IS AN INPUT AND NOT A CONSTANT
+#     320 was chosen to match a sixth of a 1920-wide frame, so a tile arrived at the model
+#     roughly one to one. Measured against the alternative on four crowded VisDrone frames,
+#     that was the wrong half of the trade. The SAME weights exported at 640 and given half
+#     the frame per look reach 60% of the people where six 320 tiles reach 45%, at the same
+#     milliseconds per cycle and the same megabytes on disk, because two tiles cover the
+#     whole frame every cycle where six cover a sixth of it. Numbers in PERSON-640.md.
 
 on:
   workflow_dispatch:
@@ -26,6 +32,10 @@ on:
         description: 'Which weights to convert (blank tries the list for that subject)'
         required: false
         default: ''
+      imgsz:
+        description: 'Input size to export at, and the name the files take'
+        required: false
+        default: '640'
 
 permissions:
   contents: write
@@ -99,6 +109,7 @@ jobs:
         env:
           SUBJECT: ${{ inputs.subject }}
           CANDIDATE: ${{ inputs.candidate }}
+          IMGSZ: ${{ inputs.imgsz }}
         run: |
           .venv-onnx/bin/python - <<'PY'
           import json, os, pathlib, shutil, sys, urllib.parse, urllib.request
@@ -218,6 +229,7 @@ jobs:
               return found
 
           subject = os.environ.get("SUBJECT", "person").strip() or "person"
+          SIZE = int(os.environ.get("IMGSZ") or 640)
           named = os.environ.get("CANDIDATE", "").strip()
           if named:
               # Named by hand, so it is tried even if it is on the dead list: re-testing a
@@ -295,20 +307,20 @@ jobs:
 
               out = pathlib.Path("web/models")
               out.mkdir(parents=True, exist_ok=True)
-              onnx = model.export(format="onnx", imgsz=320, simplify=True, opset=12)
-              shutil.copy(onnx, out / f"{subject}-320.onnx")
+              onnx = model.export(format="onnx", imgsz=SIZE, simplify=True, opset=12)
+              shutil.copy(onnx, out / f"{subject}-{SIZE}.onnx")
 
-              session = ort.InferenceSession(str(out / f"{subject}-320.onnx"),
+              session = ort.InferenceSession(str(out / f"{subject}-{SIZE}.onnx"),
                                              providers=["CPUExecutionProvider"])
               spread, named, enough = model_liveness.judge(
-                  session, len(names), 320, ".liveness")
+                  session, len(names), SIZE, ".liveness")
               for name, score in named:
                   print(f"    {name:16} {score:.4f}", flush=True)
               print(f"  spread: {spread:.5f}", flush=True)
               if enough and spread < model_liveness.FLOOR:
                   print(f"  no: the same answer for every picture, so it reads nothing",
                         flush=True)
-                  (out / f"{subject}-320.onnx").unlink(missing_ok=True)
+                  (out / f"{subject}-{SIZE}.onnx").unlink(missing_ok=True)
                   return None
 
               # Written next to the model rather than typed into the manifest by hand: the
@@ -328,8 +340,8 @@ jobs:
                       "crowd" if subject == "person" else subject, {})
                   tuned = {k: entry[k] for k in ("confThreshold", "iouThreshold")
                            if k in entry}
-              (out / f"{subject}-320.json").write_text(json.dumps({
-                  "imgsz": 320,
+              (out / f"{subject}-{SIZE}.json").write_text(json.dumps({
+                  "imgsz": SIZE,
                   "labels": [str(names[i]) for i in sorted(names)],
                   "keepClasses": wanted,
                   "confThreshold": tuned.get("confThreshold", 0.25),
@@ -349,6 +361,7 @@ jobs:
               with open(os.environ["GITHUB_OUTPUT"], "a") as out:
                   out.write(f"source={url}\n")
                   out.write(f"subject={subject}\n")
+                  out.write(f"size={SIZE}\n")
               raise SystemExit(0)
 
           print()
@@ -372,6 +385,7 @@ jobs:
         if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
+          IMGSZ: ${{ steps.fetch.outputs.size }}
           # No installing things into a running interpreter. See the toolchain step above.
           YOLO_AUTOINSTALL: 'false'
         run: |
@@ -380,6 +394,7 @@ jobs:
           from ultralytics import YOLO
 
           subject = os.environ["SUBJECT"]
+          SIZE = int(os.environ["IMGSZ"])
 
           # float16, NOT int8, and the reason is measured rather than theoretical.
           #
@@ -414,11 +429,11 @@ jobs:
           # that is a trade worth making twice over on a controller nobody is short of space
           # on. Nothing is calibrated, so nothing can be miscalibrated.
           model = YOLO("candidate.pt")
-          tflite = model.export(format="tflite", imgsz=320)
+          tflite = model.export(format="tflite", imgsz=SIZE)
           out = pathlib.Path("web/models")
           out.mkdir(parents=True, exist_ok=True)
-          shutil.copy(tflite, out / f"{subject}-320-float.tflite")
-          print("wrote", out / f"{subject}-320-float.tflite", flush=True)
+          shutil.copy(tflite, out / f"{subject}-{SIZE}-float.tflite")
+          print("wrote", out / f"{subject}-{SIZE}-float.tflite", flush=True)
           PY
 
       # The tablet model, actually loaded and run, before it is published. An int8 export
@@ -427,7 +442,8 @@ jobs:
       - name: Check the tablet model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-float.tflite', steps.fetch.outputs.subject)) != ''
+          IMGSZ: ${{ steps.fetch.outputs.size }}
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-{1}-float.tflite', steps.fetch.outputs.subject, steps.fetch.outputs.size)) != ''
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib
@@ -435,8 +451,9 @@ jobs:
           from ai_edge_litert.interpreter import Interpreter
 
           subject = os.environ["SUBJECT"]
+          SIZE = int(os.environ["IMGSZ"])
 
-          interpreter = Interpreter(model_path=f"web/models/{subject}-320-float.tflite")
+          interpreter = Interpreter(model_path=f"web/models/{subject}-{SIZE}-float.tflite")
           interpreter.allocate_tensors()
           entry = interpreter.get_input_details()[0]
           exit_ = interpreter.get_output_details()[0]
@@ -458,12 +475,12 @@ jobs:
           #
           # This is not belt and braces. The app took the input size from the second
           # dimension, which is right for almost every TFLite vision model and wrong for
-          # this converter: it emits [1, 3, 320, 320], so the size came out as 3. The app
+          # this converter: it emits [1, 3, N, N], so the size came out as 3. The app
           # then built a three pixel square, left the rest of the tensor at zero, and found
           # nobody - with no error anywhere, which is indistinguishable from a frame with
           # nobody in it. The rules below are the ones the Java uses, so a converter that
           # changes its mind again fails here instead of on the tablet.
-          spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
+          spec = json.loads(pathlib.Path(f"web/models/{subject}-{SIZE}.json").read_text())
           shape = [int(v) for v in entry["shape"]]
           if len(shape) != 4:
               raise SystemExit(f"the app can only read a four dimensional input: {shape}")
@@ -497,9 +514,10 @@ jobs:
       # exports cleanly, loads cleanly, has an output of exactly the right shape, and marks
       # nothing. That is the failure the browser model already shipped once.
       - name: Check the tablet model responds to what it is shown
-        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-320-float.tflite', steps.fetch.outputs.subject)) != ''
+        if: (steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire') && hashFiles(format('web/models/{0}-{1}-float.tflite', steps.fetch.outputs.subject, steps.fetch.outputs.size)) != ''
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
+          IMGSZ: ${{ steps.fetch.outputs.size }}
         run: |
           .venv-tflite/bin/python - <<'PY'
           import json, os, pathlib, sys
@@ -508,10 +526,11 @@ jobs:
           from ai_edge_litert.interpreter import Interpreter
 
           subject = os.environ["SUBJECT"]
-          spec = json.loads(pathlib.Path(f"web/models/{subject}-320.json").read_text())
+          SIZE = int(os.environ["IMGSZ"])
+          spec = json.loads(pathlib.Path(f"web/models/{subject}-{SIZE}.json").read_text())
 
           interpreter = Interpreter(
-              model_path=f"web/models/{subject}-320-float.tflite")
+              model_path=f"web/models/{subject}-{SIZE}-float.tflite")
           interpreter.allocate_tensors()
 
           spread, named, enough = model_liveness.judge(
@@ -550,19 +569,21 @@ jobs:
       - name: Check the browser model actually runs
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
+          IMGSZ: ${{ steps.fetch.outputs.size }}
         run: |
           .venv-onnx/bin/python - <<'PY'
           import os, urllib.request, pathlib, numpy as np, onnxruntime as ort
           from ultralytics import YOLO
 
           subject = os.environ["SUBJECT"]
+          SIZE = int(os.environ["IMGSZ"])
 
-          session = ort.InferenceSession(f"web/models/{subject}-320.onnx",
+          session = ort.InferenceSession(f"web/models/{subject}-{SIZE}.onnx",
                                          providers=["CPUExecutionProvider"])
           shape = session.get_inputs()[0].shape
           print("input:", shape, flush=True)
 
-          blank = np.zeros((1, 3, 320, 320), dtype=np.float32)
+          blank = np.zeros((1, 3, SIZE, SIZE), dtype=np.float32)
           out = session.run(None, {session.get_inputs()[0].name: blank})[0]
           print("output:", out.shape, flush=True)
 
@@ -586,7 +607,7 @@ jobs:
               try:
                   path = pathlib.Path(description.split()[0] + ".jpg")
                   urllib.request.urlretrieve(url, path)
-                  found = model(str(path), imgsz=320, verbose=False)[0]
+                  found = model(str(path), imgsz=SIZE, verbose=False)[0]
                   names = found.names
                   people = [b for b in found.boxes if str(names[int(b.cls)]).lower()
                             in ("person", "pedestrian", "people")]
@@ -602,7 +623,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: detector-models
-          path: web/models/*-320*
+          path: web/models/*
           if-no-files-found: error
 
       - name: Commit it
@@ -611,7 +632,7 @@ jobs:
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          git add web/models/*-320* || true
+          git add web/models/*.onnx web/models/*.tflite web/models/*.json || true
           if git diff --cached --quiet; then
             echo "nothing changed"
             exit 0
@@ -649,9 +670,10 @@ jobs:
         if: steps.fetch.outputs.subject == 'person' || steps.fetch.outputs.subject == 'wildfire'
         env:
           SUBJECT: ${{ steps.fetch.outputs.subject }}
+          IMGSZ: ${{ steps.fetch.outputs.size }}
         run: |
-          if [ ! -s web/models/${SUBJECT}-320-float.tflite ]; then
-            echo "::error::No web/models/${SUBJECT}-320-float.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite float' step above for the reason."
+          if [ ! -s web/models/${SUBJECT}-${IMGSZ}-float.tflite ]; then
+            echo "::error::No web/models/${SUBJECT}-${IMGSZ}-float.tflite. The browser model landed; the tablet one did not. Read the 'Export TFLite float' step above for the reason."
             exit 1
           fi
-          ls -lh web/models/${SUBJECT}-320-float.tflite
+          ls -lh web/models/${SUBJECT}-${IMGSZ}-float.tflite
