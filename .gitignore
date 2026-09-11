@@ -61,6 +61,14 @@ weights/
 !web/models/*.md
 !web/models/*.onnx
 !web/models/manifest.json
+# experiments/ is where .github/workflows/model-experiment.yml puts a candidate
+# detector so it can be scored before anyone decides to ship it. Nothing loads that
+# folder: the app reads manifest.json, which does not list it, and the APK leaves it
+# out (android/app/build.gradle). The negations above only reach files sitting
+# directly in web/models/, so the subdirectory needs its own line or the weights are
+# silently dropped and the run looks like it worked.
+!web/models/experiments/*.onnx
+!web/models/experiments/*.json
 # Datasets. Tens of gigabytes, licensed separately, and rebuilt by
 # training/prepare_datasets.py from the sources listed in docs/VALIDATION.md.
 data/

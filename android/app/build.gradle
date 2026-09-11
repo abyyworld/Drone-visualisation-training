@@ -173,6 +173,12 @@ tasks.register('stageWebApp', Copy) {
         // was before it was cut to 85. The browser build is untouched and still has all of
         // them.
         exclude 'models/solar-320*'
+
+        // Candidates being measured, not shipped. web/models/experiments/ holds
+        // whatever model-experiment.yml last exported so it can be scored against the
+        // model in service; the manifest does not name it and nothing loads it. It has
+        // no business adding tens of megabytes to a controller's download.
+        exclude 'models/experiments/**'
     }
     into stagedAssets.map { it.dir('www') }
 }
