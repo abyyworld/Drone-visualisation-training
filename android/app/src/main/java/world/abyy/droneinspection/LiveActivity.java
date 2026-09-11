@@ -624,9 +624,9 @@ public class LiveActivity extends AppCompatActivity {
             NativeDetector fireModel = fireDetector;
             if (fireModel != null && detectionsRun % FIRE_EVERY == 0) {
                 try {
-                    for (Finding found : fireModel.detect(frame)) {
-                        fire.add(new FireScan.Region(found.label, found.confidence,
-                                found.x0, found.y0, found.x1, found.y1, false));
+                    for (Finding marked : fireModel.detect(frame)) {
+                        fire.add(new FireScan.Region(marked.label, marked.confidence,
+                                marked.x0, marked.y0, marked.x1, marked.y1, false));
                     }
                 } catch (RuntimeException | OutOfMemoryError ignored) {
                     // The scan's regions still stand; only this cycle's model pass is lost.
