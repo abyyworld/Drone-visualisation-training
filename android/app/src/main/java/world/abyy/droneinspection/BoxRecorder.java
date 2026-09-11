@@ -58,6 +58,23 @@ public final class BoxRecorder {
     /** How often the encoder's output is taken even if nothing asks. See drainSteadily. */
     private static final long DRAIN_INTERVAL_MS = 50;
 
+    /**
+     * How long to wait for the encoder to admit the recording has ended.
+     *
+     * stop() signals end of stream and then drains until the encoder marks a buffer with
+     * BUFFER_FLAG_END_OF_STREAM. That loop used to have no way out. An encoder that has
+     * already stalled - which on this hardware is exactly the situation a stop is most
+     * likely to follow - never sends it, so the drain span forever, the finally below it
+     * never ran, and the muxer was never stopped. A file whose muxer is never stopped has
+     * no index written to it at all, and no player will open it: the whole flight, on disk,
+     * at full size, unplayable.
+     *
+     * Two seconds is far longer than a healthy encoder needs and far shorter than a flight
+     * is worth. Past it the drain gives up and the file is closed with whatever was already
+     * written, which costs the last frames and saves everything before them.
+     */
+    private static final long END_OF_STREAM_NANOS = 2_000_000_000L;
+
     private final HandlerThread thread = new HandlerThread("box-recorder");
     private final Handler handler;
     private final int width;
@@ -74,6 +91,8 @@ public final class BoxRecorder {
     private MediaCodec encoder;
     private Surface inputSurface;
     private MediaMuxer muxer;
+    /** Whether a single frame ever reached the file. See wroteAnything(). */
+    private volatile boolean wroteSamples;
     private int trackIndex = -1;
     private boolean muxerStarted;
     private long startedAtNanos;
@@ -122,8 +141,55 @@ public final class BoxRecorder {
         handler = new Handler(thread.getLooper());
     }
 
+    /** Told the moment a recording dies on its own. Runs on this recorder's thread. */
+    public interface Listener {
+        void onRecordingFailed(String reason);
+    }
+
+    private volatile Listener listener;
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
     public boolean isRunning() {
         return running;
+    }
+
+    /** Did anything at all reach the file? False means an empty mp4 rather than a short one. */
+    public boolean wroteAnything() {
+        return wroteSamples;
+    }
+
+    /**
+     * One place a recording can die, and the only one.
+     *
+     * Every catch in this class used to set the reason, clear `running`, and return. That
+     * left the muxer open with no index ever written, so the file could not be played at
+     * all - and nothing above was told, so the app carried on believing it was recording
+     * and the button still offered to stop it. Closing the file here is the difference
+     * between losing the last second of a flight and losing the flight.
+     */
+    private void die(String reason) {
+        if (failure != null) {
+            return;                     // already dead, and already closed
+        }
+        failure = reason;
+        running = false;
+        // The FILE is closed here, and only the file.
+        //
+        // Not the encoder, not its input surface, not EGL. On the GPU path the pipeline is
+        // still rendering into that surface on its own thread and only stops when the main
+        // thread gets the message below; pulling the surface out from under it would raise
+        // a GL fault, which tears down the whole GPU path and takes the close-look tiling
+        // with it. Writing the index is what makes the difference between a playable file
+        // and an unopenable one, and it is all that has to happen now. The rest is torn
+        // down by stop() in the usual way.
+        closeFile();
+        Listener told = listener;
+        if (told != null) {
+            told.onRecordingFailed(reason);
+        }
     }
 
     /** Non-null once something has gone wrong; the screen shows it rather than staying quiet. */
@@ -229,8 +295,7 @@ public final class BoxRecorder {
             try {
                 drain(false);
             } catch (Exception encoding) {
-                failure = describe(encoding);
-                running = false;
+                die(describe(encoding));
             }
         }
     };
@@ -253,8 +318,7 @@ public final class BoxRecorder {
             try {
                 drain(false);
             } catch (Exception encoding) {
-                failure = describe(encoding);
-                running = false;
+                die(describe(encoding));
                 return;
             }
             handler.postDelayed(this, DRAIN_INTERVAL_MS);
@@ -283,8 +347,7 @@ public final class BoxRecorder {
                     drain(false);
                 }
             } catch (Exception encoding) {
-                failure = describe(encoding);
-                running = false;
+                die(describe(encoding));
             } finally {
                 frame.recycle();
             }
@@ -340,10 +403,20 @@ public final class BoxRecorder {
 
     private void drain(boolean endOfStream) {
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+        long giveUpAt = System.nanoTime() + END_OF_STREAM_NANOS;
         while (true) {
             int status = encoder.dequeueOutputBuffer(info, endOfStream ? TIMEOUT_US : 0);
             if (status == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 if (!endOfStream) {
+                    return;
+                }
+                if (System.nanoTime() > giveUpAt) {
+                    // The encoder is never going to admit the stream ended. Returning here
+                    // rather than spinning is what lets stop()'s finally close the muxer,
+                    // which is what puts an index on the file. See END_OF_STREAM_NANOS.
+                    if (failure == null) {
+                        failure = "the encoder did not finish; the last frames were lost";
+                    }
                     return;
                 }
                 continue;
@@ -370,6 +443,7 @@ public final class BoxRecorder {
                 encoded.position(info.offset);
                 encoded.limit(info.offset + info.size);
                 muxer.writeSampleData(trackIndex, encoded, info);
+                wroteSamples = true;
             }
             encoder.releaseOutputBuffer(status, false);
 
@@ -556,17 +630,38 @@ public final class BoxRecorder {
             encoder.release();
             encoder = null;
         }
-        if (muxer != null) {
-            try {
-                if (muxerStarted) {
-                    muxer.stop();
-                }
-            } catch (Exception ignored) {
-                // A muxer with no samples throws on stop; the file is simply empty.
-            }
-            muxer.release();
-            muxer = null;
+        closeFile();
+    }
+
+    /**
+     * Write the file's index and let go of it. Safe to call twice.
+     *
+     * Everything else in releaseQuietly is housekeeping; this is the part that decides
+     * whether the flight can be played back at all. Until muxer.stop() returns, what is on
+     * disk is a header and a pile of frames with nothing saying where they are, and no
+     * player will open it.
+     */
+    private void closeFile() {
+        if (muxer == null) {
+            return;
         }
+        try {
+            if (muxerStarted) {
+                muxer.stop();
+            }
+        } catch (Exception closing) {
+            // Not ignorable, whatever this used to say. A muxer with no samples does throw
+            // here and that file is merely empty - but the same throw on a full one means
+            // the flight is on disk and unplayable, and the app went on to tell the
+            // operator it had saved.
+            if (failure == null) {
+                failure = wroteSamples
+                        ? "the file could not be closed: " + describe(closing)
+                        : "nothing was recorded";
+            }
+        }
+        muxer.release();
+        muxer = null;
         muxerStarted = false;
     }
 }

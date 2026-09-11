@@ -55,6 +55,8 @@
     <!-- The small-window button, and what to say where the system will not give us one. -->
     <string name="small_window">Small window</string>
     <string name="pip_unsupported">This tablet will not give the app a small floating window. The recording still runs in the background.</string>
+    <string name="nothing_recorded">nothing reached the file</string>
+    <string name="recording_continued">The video path changed, so the recording carries on in a second file.</string>
     <string name="popout_close">Close the floating window</string>
     <string name="popout_resize">Drag to resize the floating window</string>
     <string name="popout_permission">To resize the floating window, allow this app to draw over other apps. Without it the window is the fixed size Android gives it.</string>

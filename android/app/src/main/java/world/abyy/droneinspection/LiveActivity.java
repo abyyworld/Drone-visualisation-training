@@ -1036,10 +1036,7 @@ public class LiveActivity extends AppCompatActivity {
         closePopout(false);
         stopWatchingTemperature();
         handler.removeCallbacksAndMessages(null);
-        if (recorder != null) {
-            recorder.stop(null);
-            recorder = null;
-        }
+        finishRecordingBeforeTeardown();
         if (analyser != null) {
             analyser.destroy();
             analyser = null;
@@ -1452,6 +1449,12 @@ public class LiveActivity extends AppCompatActivity {
         if (!usingGl) {
             return;
         }
+        // Computed and then used, which it was not before.
+        //
+        // This path stopped the recording and never started another, so one GL fault ended
+        // a flight's video permanently. The operator landed with a file covering the
+        // seconds up to the fault and nothing after it, and was told nothing: the fallback
+        // message talks about the video path and never mentions the recording.
         boolean wasRecording = isRecording();
         if (wasRecording) {
             stopRecording();
@@ -1464,6 +1467,22 @@ public class LiveActivity extends AppCompatActivity {
             player = null;
         }
         openStream();
+        if (wasRecording) {
+            // Into a new file, on the slow path, because the GPU one has just been taken
+            // away. The flight is split across two files, which is worth saying out loud
+            // and is a great deal better than the second half not existing.
+            //
+            // Delayed, because openStream() has only just asked for the stream: the
+            // fallback reads its frames off the TextureView and there is not one there yet.
+            // Starting immediately would find no frame, say "no video yet", and record
+            // nothing at all - which is the bug this is here to fix, in a new costume.
+            lastError = getString(R.string.recording_continued);
+            handler.postDelayed(() -> {
+                if (recorder == null && player != null) {
+                    startRecordingOnCpu();
+                }
+            }, 2000);
+        }
         refreshStatus();
     }
 
@@ -1614,7 +1633,21 @@ public class LiveActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Never start a second recording over a live one.
+     *
+     * The button's label and isRecording() used to be able to disagree: a recording that
+     * died on its own cleared the recorder's running flag while the button went on saying
+     * "Stop recording", so the next press took the start branch. That overwrote the field
+     * holding the first recorder, and the file holding the flight was orphaned with no
+     * index on it, unopenable, for good. recordingDied() now clears the field and resets
+     * the button, and this refuses the case anyway.
+     */
     private void startRecording() {
+        if (recorder != null) {
+            stopRecording();
+            return;
+        }
         if (usingGl && glPipeline != null) {
             startRecordingOnGpu();
         } else {
@@ -1649,6 +1682,9 @@ public class LiveActivity extends AppCompatActivity {
             return;
         }
         recorder = starting;
+        // Told when it dies, because on this path nothing else ever finds out: the CPU
+        // fallback polls failure() on its own tick and this one has no tick to poll on.
+        starting.setListener(this::recordingDied);
         framesDropped = 0;
         openFlightLog(stamp);
         glPipeline.startRecording(starting.input(), recordWidth, recordHeight,
@@ -1677,6 +1713,7 @@ public class LiveActivity extends AppCompatActivity {
         String stamp = timestamp();
         File file = new File(outputDirectory(), "flight-" + stamp + ".mp4");
         recorder = new BoxRecorder(file, recordWidth, recordHeight);
+        recorder.setListener(this::recordingDied);
         recorder.start();
         framesDropped = 0;
         openFlightLog(stamp);
@@ -1690,12 +1727,14 @@ public class LiveActivity extends AppCompatActivity {
     }
 
     private void stopRecording() {
-        // Released first: the moment the recording ends, this process has no business
-        // holding a notification or being exempt from being stopped. Unless the floating
-        // window is out, which needs the same protection for the same reason.
-        if (popout == null) {
-            RecordingService.stop(this);
-        }
+        // The service is NOT released here, deliberately, though it used to be.
+        //
+        // Ending the recording does not end the work: the file is finalised afterwards, on
+        // the recorder's own thread, and the last thing that happens there is the muxer
+        // writing the file's index. Dropping the foreground service first left the process
+        // killable across exactly that window, and a process killed there leaves the whole
+        // flight on disk in a file no player will open. It is released in the callback
+        // below instead, once the file is closed. Holding it a second longer is free.
         handler.removeCallbacks(recordTick);
         GlPipeline pipeline = glPipeline;
         if (pipeline != null) {
@@ -1723,10 +1762,26 @@ public class LiveActivity extends AppCompatActivity {
             return;
         }
         File file = finishing.output();
-        String problem = finishing.failure();
         finishing.stop(() -> handler.post(() -> {
+            // Asked AFTER the file is closed, not before.
+            //
+            // This used to read failure() on the line above stop() and test that snapshot
+            // in here. Every way finalising can fail happens after that snapshot was taken:
+            // the end-of-stream drain, and the muxer write that puts an index on the file.
+            // So the snapshot was always null, and the app always said it had saved - while
+            // handing the operator a file that would not open.
+            String problem = finishing.failure();
+            if (problem == null && !finishing.wroteAnything()) {
+                problem = getString(R.string.nothing_recorded);
+            }
             if (problem != null) {
                 lastError = getString(R.string.recording_failed, problem);
+                Toast.makeText(this, lastError, Toast.LENGTH_LONG).show();
+                if (!finishing.wroteAnything()) {
+                    // An empty file is worse than none: it sits in the gallery looking like
+                    // a flight nobody can open.
+                    file.delete();
+                }
             } else {
                 publish(file);
                 lastSaved = getString(R.string.saved_to, file.getParent());
@@ -1735,8 +1790,107 @@ public class LiveActivity extends AppCompatActivity {
                                 + savedTally,
                         Toast.LENGTH_LONG).show();
             }
+            if (popout == null) {
+                RecordingService.stop(this);
+            }
             refreshStatus();
         }));
+    }
+
+    /**
+     * Close the file, and WAIT for it, before anything else is torn down.
+     *
+     * This used to be recorder.stop(null) followed straight away by closePipeline(). stop()
+     * only posts to the recorder's thread and returns, so the muxer was still writing the
+     * file's index while closePipeline() destroyed the encoder's EGL surface from the GL
+     * thread - two threads pulling down opposite ends of one buffer queue. Either the
+     * process ended before the index was written, or the teardown threw. Both leave the
+     * whole flight on disk in a file that will not open.
+     *
+     * So the pipeline is detached from the encoder first, and then this blocks until the
+     * file is closed. Bounded, because onDestroy is not a place to hang: past the bound the
+     * app is closing anyway and the recorder's own end-of-stream deadline has already run.
+     */
+    private void finishRecordingBeforeTeardown() {
+        BoxRecorder finishing = recorder;
+        recorder = null;
+        if (finishing == null) {
+            return;
+        }
+        GlPipeline pipeline = glPipeline;
+        if (pipeline != null) {
+            pipeline.stopRecording();
+        }
+        FlightLog log = flightLog;
+        flightLog = null;
+        if (log != null) {
+            log.close();
+            publish(log.file());
+        }
+        final java.util.concurrent.CountDownLatch closed =
+                new java.util.concurrent.CountDownLatch(1);
+        finishing.stop(closed::countDown);
+        try {
+            // Long enough for the encoder's own two second deadline plus the muxer write.
+            closed.await(4, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        if (finishing.wroteAnything()) {
+            // Handed to the media scanner here too, which onDestroy never used to do, so a
+            // flight ended by the app closing was invisible in the gallery and over USB.
+            publish(finishing.output());
+        } else {
+            finishing.output().delete();
+        }
+        RecordingService.stop(this);
+    }
+
+    /**
+     * A recording died on its own, mid-flight.
+     *
+     * Reached from BoxRecorder's failure listener, which fires the moment an encoder or a
+     * muxer throws. Before this existed nothing was told: the recorder cleared its own
+     * running flag, isRecording() went false, the status line quietly dropped its REC
+     * counter, and the button went on saying "Stop recording". Pressing it then took the
+     * start branch and opened a SECOND recording over the top of the first, so the file
+     * holding the flight was abandoned for good.
+     */
+    private void recordingDied(String reason) {
+        handler.post(() -> {
+            BoxRecorder dead = recorder;
+            if (dead == null) {
+                return;
+            }
+            recorder = null;
+            handler.removeCallbacks(recordTick);
+            GlPipeline pipeline = glPipeline;
+            if (pipeline != null) {
+                pipeline.stopRecording();
+            }
+            FlightLog log = flightLog;
+            flightLog = null;
+            if (log != null) {
+                log.close();
+                publish(log.file());
+            }
+            recordButton.setText(R.string.start_recording);
+            backButton.setVisibility(View.VISIBLE);
+            // The recorder has already closed its own file by the time this runs, so
+            // whatever was captured before the fault is playable and worth publishing.
+            if (dead.wroteAnything()) {
+                publish(dead.output());
+                lastSaved = getString(R.string.saved_to, dead.output().getParent());
+            } else {
+                dead.output().delete();
+            }
+            lastError = getString(R.string.recording_failed, reason);
+            Toast.makeText(this, lastError, Toast.LENGTH_LONG).show();
+            if (popout == null) {
+                RecordingService.stop(this);
+            }
+            refreshStatus();
+        });
     }
 
     /**
