@@ -264,6 +264,28 @@ public class LiveActivity extends AppCompatActivity {
 
     /** Written on the work thread, read on the main one, hence volatile throughout. */
     private volatile NativeDetector detector;
+
+    /**
+     * The fire and smoke model, opened only for a wildfire flight.
+     *
+     * Null on any other flight, and null on a build with no fire model in it, which is not
+     * a fault: FireScan needs no model and is what this app did for fire before there was
+     * one. Both run in wildfire mode, because they fail differently. The model was measured
+     * finding 50 of 120 published fire pictures and marking none of 150 real drone frames
+     * (docs/metrics-wildfire.txt), so more than half the time it is the scan or nothing.
+     */
+    private volatile NativeDetector fireDetector;
+
+    /**
+     * How often the fire model gets a cycle, when one is loaded.
+     *
+     * Every other one. A wildfire flight still has people in it, and a person at a fire is
+     * the most important thing in the frame, so the people model cannot simply be given up
+     * for this. Two models on one Hexagon DSP and 2 GB of RAM is also not something to run
+     * flat out. Alternating costs each of them half the rate, which against a cycle of
+     * roughly 200 ms is still several looks a second at each.
+     */
+    private static final int FIRE_EVERY = 2;
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
     /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */
@@ -593,6 +615,23 @@ public class LiveActivity extends AppCompatActivity {
             } catch (RuntimeException | OutOfMemoryError ignored) {
                 fire = new ArrayList<>();
             }
+
+            // And the trained model, on the cycles it gets, added to what the scan found
+            // rather than replacing it. Neither is a superset of the other: the model knows
+            // what fire looks like and misses more than half of it, the scan knows what
+            // fire does over time and cannot tell a plume from a painted wall. Two engines
+            // marking the same fire twice is a smaller problem than one of them missing it.
+            NativeDetector fireModel = fireDetector;
+            if (fireModel != null && detectionsRun % FIRE_EVERY == 0) {
+                try {
+                    for (Finding found : fireModel.detect(frame)) {
+                        fire.add(new FireScan.Region(found.label, found.confidence,
+                                found.x0, found.y0, found.x1, found.y1, false));
+                    }
+                } catch (RuntimeException | OutOfMemoryError ignored) {
+                    // The scan's regions still stand; only this cycle's model pass is lost.
+                }
+            }
         }
         if (frame != null) {
             frame.recycle();
@@ -883,6 +922,7 @@ public class LiveActivity extends AppCompatActivity {
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
         scansForFire = "wildfire".equals(Settings.domain(this));
+        openFireDetector();
 
         // Crowd mode counts people, so it looks for people. A car in a crowd shot is
         // another box, another track, and another chance to be wrong about whoever is
@@ -959,6 +999,36 @@ public class LiveActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Open or close the fire model to match what the operator is flying for.
+     *
+     * Called on every start rather than once, because the domain is a setting and can change
+     * between flights. A crowd flight should not be carrying a fire model's weights around
+     * in 2 GB of RAM, and a wildfire flight that started life as a crowd one has to be able
+     * to pick it up without restarting the stream.
+     */
+    private void openFireDetector() {
+        if (!scansForFire) {
+            closeFireDetector();
+            return;
+        }
+        if (fireDetector != null) {
+            return;
+        }
+        StringBuilder why = new StringBuilder();
+        fireDetector = NativeDetector.openFire(this, why);
+        // No message when it is absent. The scan runs either way, and a line saying a model
+        // failed to load reads, on a fire screen, like a line about fire.
+    }
+
+    private void closeFireDetector() {
+        NativeDetector closing = fireDetector;
+        fireDetector = null;
+        if (closing != null) {
+            closing.close();
+        }
+    }
+
     @Override
     protected void onDestroy() {
         // Before anything is released: the window is showing a pipeline that is about to be
@@ -979,6 +1049,7 @@ public class LiveActivity extends AppCompatActivity {
             detector.close();
             detector = null;
         }
+        closeFireDetector();
         super.onDestroy();
     }
 

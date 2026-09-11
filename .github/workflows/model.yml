@@ -314,12 +314,26 @@ jobs:
               # Written next to the model rather than typed into the manifest by hand: the
               # class list and the input size are facts about the file, and a manifest that
               # disagrees with its model is a silent wrong answer.
+              # A threshold that was measured is not a default and must survive a
+              # re-conversion. The wildfire one is 0.15 because a sweep found that to be
+              # the last point with no false alarms at all on real drone footage
+              # (docs/metrics-wildfire.txt), and writing 0.25 over it here would quietly
+              # undo that every time these weights were fetched again. The tablet reads
+              # this file rather than the manifest, so the two disagreeing is not cosmetic:
+              # it is the browser and the tablet marking different things.
+              tuned = {}
+              manifest = pathlib.Path("web/models/manifest.json")
+              if manifest.exists():
+                  entry = json.loads(manifest.read_text()).get(
+                      "crowd" if subject == "person" else subject, {})
+                  tuned = {k: entry[k] for k in ("confThreshold", "iouThreshold")
+                           if k in entry}
               (out / f"{subject}-320.json").write_text(json.dumps({
                   "imgsz": 320,
                   "labels": [str(names[i]) for i in sorted(names)],
                   "keepClasses": wanted,
-                  "confThreshold": 0.25,
-                  "iouThreshold": 0.45,
+                  "confThreshold": tuned.get("confThreshold", 0.25),
+                  "iouThreshold": tuned.get("iouThreshold", 0.45),
               }, indent=2) + "\n")
               return len(names)
 

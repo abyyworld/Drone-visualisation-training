@@ -64,9 +64,11 @@ import java.util.Set;
  */
 public final class NativeDetector {
 
-    /** The model, and the facts about it, both written by .github/workflows/model.yml. */
-    private static final String MODEL_ASSET = "www/models/person-320-int8.tflite";
-    private static final String META_ASSET = "www/models/person-320.json";
+    /** The models, and the facts about each, all written by .github/workflows/model.yml. */
+    private static final String PERSON_MODEL = "www/models/person-320-int8.tflite";
+    private static final String PERSON_META = "www/models/person-320.json";
+    private static final String FIRE_MODEL = "www/models/wildfire-320-int8.tflite";
+    private static final String FIRE_META = "www/models/wildfire-320.json";
 
     /** Ultralytics' letterbox grey. The model was trained against padding this colour. */
     private static final int PAD = Color.rgb(114, 114, 114);
@@ -277,9 +279,35 @@ public final class NativeDetector {
      */
     @Nullable
     public static NativeDetector open(Context context, StringBuilder failure) {
+        return open(context, PERSON_MODEL, PERSON_META, true, failure);
+    }
+
+    /**
+     * The fire and smoke detector, for wildfire flights.
+     *
+     * A separate model rather than more classes on the people one, because nobody has
+     * published weights that know both, and because the two are wanted at different moments:
+     * a crowd flight never asks about smoke. Returns null when the tablet has no fire model,
+     * which is not a fault - FireScan still runs, needs no model at all, and is what this
+     * app did for fire before there was one.
+     */
+    @Nullable
+    public static NativeDetector openFire(Context context, StringBuilder failure) {
+        return open(context, FIRE_MODEL, FIRE_META, false, failure);
+    }
+
+    /**
+     * @param personLike whether every kept class is a person, and should be labelled so.
+     *                   True for the people model, where VisDrone's standing and sitting
+     *                   classes are one thing to this application. False for fire, where
+     *                   smoke and flame are different things and saying which is the point.
+     */
+    @Nullable
+    private static NativeDetector open(Context context, String modelAsset, String metaAsset,
+                                       boolean personLike, StringBuilder failure) {
         ByteBuffer model;
         try {
-            model = mapAsset(context, MODEL_ASSET);
+            model = mapAsset(context, modelAsset);
         } catch (Exception problem) {
             failure.append(describe(problem));
             return null;
@@ -293,10 +321,12 @@ public final class NativeDetector {
         // is the wrong trade by a wide margin, and it is what used to happen. A detector
         // running on defaults still marks people; one that never opened marks nothing and
         // looks exactly like a street with nobody on it.
-        String[] labels = {"person", "person", "bicycle", "car", "van", "truck", "tricycle",
-                "awning-tricycle", "bus", "motor", "others"};
-        Set<Integer> people = Yolo.classes(0, 1);
-        double conf = 0.25;
+        String[] labels = personLike
+                ? new String[]{"person", "person", "bicycle", "car", "van", "truck",
+                        "tricycle", "awning-tricycle", "bus", "motor", "others"}
+                : new String[]{"smoke", "fire"};
+        Set<Integer> people = personLike ? Yolo.classes(0, 1) : Yolo.classes(0, 1);
+        double conf = personLike ? 0.25 : 0.15;
         double iou = 0.45;
         boolean metadataFailed = false;
         // Parsed into its own variables and only adopted once all of it worked. Assigning
@@ -322,7 +352,12 @@ public final class NativeDetector {
                     throw new IllegalArgumentException("keepClasses " + id + " is not a class");
                 }
                 readPeople.add(id);
-                readLabels[id] = "person";
+                if (personLike) {
+                    // VisDrone separates standing from sitting and this application does
+                    // not. For fire, smoke and flame are different things and the whole
+                    // point of a two class model is saying which.
+                    readLabels[id] = "person";
+                }
             }
             if (readPeople.isEmpty()) {
                 throw new IllegalArgumentException("nothing would be kept, so nothing marked");
@@ -330,7 +365,7 @@ public final class NativeDetector {
 
             labels = readLabels;
             people = readPeople;
-            conf = meta.optDouble("confThreshold", 0.25);
+            conf = meta.optDouble("confThreshold", personLike ? 0.25 : 0.15);
             iou = meta.optDouble("iouThreshold", 0.45);
         } catch (Exception unreadable) {
             // Carry on with the defaults above. The status line says so, because a detector

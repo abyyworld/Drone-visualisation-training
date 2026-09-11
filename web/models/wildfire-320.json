@@ -8,6 +8,6 @@
     0,
     1
   ],
-  "confThreshold": 0.25,
+  "confThreshold": 0.15,
   "iouThreshold": 0.45
 }
