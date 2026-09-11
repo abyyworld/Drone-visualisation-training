@@ -40,11 +40,22 @@ It is two engines at once, and the detector half is not the same model in both p
 
 On the tablet it is YOLO finetuned on **VisDrone**, which is aerial footage full of people a
 few pixels tall seen from overhead. That is this job rather than an approximation of it, and
-somebody else had already done the work and published the weights. 2.8 MB, 320 px, int8,
-driven through LiteRT so that NNAPI can reach the Snapdragon's DSP. Ultralytics releases
-these weights under **AGPL-3.0**, which is a deliberate choice made possible by this being a
-public repository and a demonstration rather than a product. See
-[`web/models/PERSON-640.md`](web/models/PERSON-640.md).
+somebody else had already done the work and published the weights. 9.4 MB, 640 px, plain
+float, driven through LiteRT.
+
+Both of those numbers used to be smaller and both were making it worse. int8 puts a hard lid
+on every score the model can produce, 0.5045 against the float export's 0.8984, and lands
+box coordinates on a grid 21 real pixels wide; the top third of the sensitivity slider
+selected nothing at all and did it silently. And 320 was chosen so that a sixth of the frame
+arrived roughly one to one, which meant looking at one sixth of the frame per cycle and
+leaving everyone else as a guess until their tile came round. The same weights at 640,
+looking at half the frame twice a cycle, reach 49% of the people in a crowd where the old
+shape reached 36%, at the same milliseconds and the same megabytes.
+
+Ultralytics releases these weights under **AGPL-3.0**, which is a deliberate choice made
+possible by this being a public repository and a demonstration rather than a product. See
+[`web/models/PERSON-640.md`](web/models/PERSON-640.md) for the method and the numbers, and
+`tools/fly.py` with `tools/score_flight.mjs` to re-run them.
 
 In the browser the live view still runs a COCO-trained EfficientDet-Lite2 through MediaPipe,
 which finds people and vehicles at ground level and loses people from altitude. See
@@ -53,7 +64,9 @@ analysis screen runs the aerial model instead, so a drone still can be compared 
 two on one machine.
 
 Flame and smoke are found twice over. There is a trained model, and there is a scan that
-needs no model at all, and the second one is what runs on the tablet.
+needs no model at all, and on a wildfire flight the tablet runs both: they fail differently,
+and the model misses more than half, so two engines marking the same fire twice is a smaller
+problem than one of them missing it.
 
 The model took two attempts. The first returned the same score for black, white, noise, a
 flame-coloured block, sixty real drone photographs and fifty frames of the demo clip alike:
