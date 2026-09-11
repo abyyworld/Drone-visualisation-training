@@ -36,7 +36,7 @@
     "iouThreshold": 0.45,
     "severityWeights": {},
     "displayName": "Wind turbine blade",
-    "notes": "No model. Blade damage is the one subject here nobody appears to have published weights for: the conversion workflow searched the model index for wind turbine blade damage, defect detection, crack detection and inspection, and every search came back empty. That is a fact about what exists rather than a fault in the fetching. Until somebody publishes some, this subject needs a provider key, which describes a frame in words instead of boxing what is in it.",
+    "notes": "No model, and this is now a measured absence rather than a guess. Blade damage is the one subject here nobody appears to have published weights for. The conversion workflow searched the model index ten ways, from the narrow (wind turbine blade damage, blade crack, turbine inspection) to the broad (wind turbine, turbine blade, blade damage detection, windmill damage), and came back with zero candidates: not weights that failed a check, nothing carrying a checkpoint at all. Three separate runs, the same answer. That is a fact about what has been published rather than a fault in the fetching. Until somebody publishes some, this subject needs a provider key, which describes a frame in words instead of boxing what is in it.",
     "zeroDetectionNote": "Nothing was marked, because there is no blade model to mark anything with. This is not a reading about the blade."
   },
   "solar": {

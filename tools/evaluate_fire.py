@@ -42,7 +42,12 @@ import pathlib
 import sys
 
 SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-THRESHOLDS = (0.15, 0.25, 0.35, 0.50)
+# Down to 0.05, because the first measurement said the cost of going low is not what it
+# would be for people. At 0.15 this model marked nothing at all on 150 real drone frames,
+# so the usual trade of recall against false alarms barely exists on the footage this
+# actually flies over, and the only way to find where it starts is to look below where
+# anybody had thought to.
+THRESHOLDS = (0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50)
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
