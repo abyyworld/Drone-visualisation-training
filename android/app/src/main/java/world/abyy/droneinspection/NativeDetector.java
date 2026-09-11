@@ -325,7 +325,10 @@ public final class NativeDetector {
                 ? new String[]{"person", "person", "bicycle", "car", "van", "truck",
                         "tricycle", "awning-tricycle", "bus", "motor", "others"}
                 : new String[]{"smoke", "fire"};
-        Set<Integer> people = personLike ? Yolo.classes(0, 1) : Yolo.classes(0, 1);
+        // Both happen to keep the first two classes: person standing and person sitting
+        // for one model, smoke and fire for the other. Only a coincidence, and only a
+        // fallback - the file beside the model says which classes to keep.
+        Set<Integer> people = Yolo.classes(0, 1);
         double conf = personLike ? 0.25 : 0.15;
         double iou = 0.45;
         boolean metadataFailed = false;
@@ -334,7 +337,7 @@ public final class NativeDetector {
         // after the names, so a file that failed in between gave an empty keep set, and an
         // empty keep set is a detector that runs perfectly and marks nobody.
         try {
-            JSONObject meta = new JSONObject(new String(readAsset(context, META_ASSET), "UTF-8"));
+            JSONObject meta = new JSONObject(new String(readAsset(context, metaAsset), "UTF-8"));
 
             JSONArray names = meta.getJSONArray("labels");
             String[] readLabels = new String[names.length()];
