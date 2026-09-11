@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import pathlib
 import sys
 import urllib.parse
@@ -329,4 +330,19 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    # Leave without running the interpreter's shutdown, because the shutdown is what
+    # crashes. Streaming a dataset leaves a reader thread alive somewhere under pyarrow,
+    # and finalisation then aborts the process:
+    #
+    #     Fatal Python error: PyGILState_Release: auto-releasing thread-state, but no
+    #     thread-state for this thread
+    #     Python runtime state: finalizing
+    #     Aborted (core dumped)                                    exit code 134
+    #
+    # Every picture had already been written and the summary already printed when that
+    # happened, so the work was complete and the job failed anyway. The output is flushed
+    # by hand first, since _exit does not do it.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

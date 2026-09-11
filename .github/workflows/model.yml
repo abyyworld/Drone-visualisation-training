@@ -167,8 +167,14 @@ jobs:
               "person": ["visdrone yolo", "aerial person detection yolo"],
               "wildfire": ["fire smoke yolov8", "fire detection yolo",
                            "wildfire smoke yolo", "fire smoke detection"],
+              # Wider than the others, because four narrow searches have come back with
+              # nothing at all twice now - not weights that failed, zero candidates. The
+              # class check above is what makes a broad search safe: anything that turns up
+              # knowing nothing about blades is rejected before it can be converted.
               "turbine": ["wind turbine blade damage", "wind turbine defect detection",
-                          "turbine blade crack yolo", "wind turbine inspection yolo"],
+                          "turbine blade crack yolo", "wind turbine inspection yolo",
+                          "wind turbine", "turbine blade", "blade damage detection",
+                          "blade defect", "windmill damage", "turbine inspection"],
               "solar": ["solar panel defect detection", "solar panel fault yolo",
                         "photovoltaic defect detection", "solar panel inspection yolov8"],
           }
@@ -256,14 +262,36 @@ jobs:
               model = YOLO("candidate.pt")
               names = model.names
               print(f"  classes: {names}", flush=True)
-              if subject == "person":
-                  wanted = [i for i, n in names.items()
-                            if str(n).lower() in ("person", "pedestrian", "people")]
-                  if not wanted:
-                      print(f"  none of its classes are people", flush=True)
-                      return None
-              else:
-                  wanted = sorted(names)
+              # Does this model know anything about the subject it was searched for?
+              #
+              # Only people were checked before, and only people needed it while the
+              # searches were narrow enough that nothing else could turn up. Widening them
+              # breaks that: "blade damage" will happily return a model that detects
+              # something else entirely, and the responsiveness gate below would pass it,
+              # because responsiveness asks whether a model reads its input and not what it
+              # is looking at. A live model detecting the wrong thing is worse than no
+              # model, since it fills the screen with confident boxes.
+              #
+              # For people the match is also what gets kept: a van beside somebody is
+              # another box, another track, and another chance to be wrong about them. For
+              # the others everything the model knows is worth seeing, because a model
+              # trained on fire knows fire and smoke and little else.
+              ABOUT = {
+                  "person": ("person", "pedestrian", "people"),
+                  "wildfire": ("fire", "smoke", "flame"),
+                  "solar": ("panel", "solar", "photovoltaic", "pv", "cell", "defect",
+                            "dust", "bird", "snow", "damage", "crack", "hotspot"),
+                  "turbine": ("blade", "turbine", "crack", "erosion", "damage", "defect",
+                              "lightning", "delamination", "corrosion"),
+              }
+              about = ABOUT.get(subject, ())
+              relevant = [i for i, n in names.items()
+                          if any(word in str(n).lower() for word in about)]
+              if not relevant:
+                  print(f"  none of its classes are about {subject}: "
+                        f"{[str(n) for n in names.values()]}", flush=True)
+                  return None
+              wanted = relevant if subject == "person" else sorted(names)
 
               out = pathlib.Path("web/models")
               out.mkdir(parents=True, exist_ok=True)
