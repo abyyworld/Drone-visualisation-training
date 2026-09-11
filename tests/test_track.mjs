@@ -406,7 +406,14 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
     `coast ${shipped} ms against a ${roundTrip} ms round of tiles`);
 
   // And the other half of the same fix: holding an identity is not the same as being on
-  // screen, so the readout must not report a coasting track as present.
+  // screen, so the readout must not report a coasting track as present. That needs a gap
+  // between the two windows, and it is measured here rather than assumed - when the coast
+  // came down to 1200 ms the two were briefly equal, which left no interval at all in which
+  // somebody is held without being counted as present.
+  const held = new Tracker();
+  check('a track is held for longer than it is called present',
+    held.maxCoastMs > 750, `coast ${held.maxCoastMs} ms against a 750 ms in-view window`);
+
   const tracker = new Tracker({ confirmAfter: 2 });
   let clock = 1000;
   tracker.update([person(50, 50)], clock);
@@ -414,14 +421,21 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
   tracker.update([person(52, 50)], clock);
   check('someone just seen is in view', tracker.countOf('person') === 1);
 
-  clock += 2000;
+  clock += 900;
   tracker.update([], clock);
-  check('someone not seen for two seconds is not in view',
+  check('someone not seen for most of a second is not in view',
     tracker.countOf('person') === 0, `${tracker.countOf('person')} reported`);
   check('but is still held, so they keep their number',
     tracker.tracks.length === 1, `${tracker.tracks.length} held`);
   check('and are not counted a second time',
     tracker.countSeen('person') === 1, `${tracker.countSeen('person')} counted`);
+
+  // The far side of the coast window: once it has passed, the track is gone rather than
+  // sitting on screen describing where somebody used to be.
+  clock += 1400;
+  tracker.update([], clock);
+  check('and after the coast window they are let go',
+    tracker.tracks.length === 0, `${tracker.tracks.length} still held`);
 
   // And what the shipped defaults do with something that only looks like a person twice.
   // Measured against VisDrone's labels, about three boxes in ten land on no labelled person

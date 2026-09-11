@@ -67,18 +67,39 @@ public final class Tracker {
      * detected. A second and a half is a person walking behind something and out the other
      * side; anything longer is a box describing the past.
      *
+     * WHY IT IS 1200 AND WAS 4000
+     *     4000 was not chosen, it was forced. Under the old shape the detector looked at one
+     *     sixth of the frame per cycle, so a person outside the current tile was not observed
+     *     for six cycles running and a track that let go after a second and a half would drop
+     *     them and renumber them on the next look. The window was stretched until that stopped
+     *     happening, and the prose right above it went on saying a second and a half, because
+     *     that is what it should be.
+     *
+     *     Every person is now looked at every cycle, so five missed looks in a row is five
+     *     failures to detect somebody being looked straight at - which is a person who left,
+     *     not a person waiting their turn. Measured over four crowded frames at the real
+     *     cadence, dropping 4000 to 1200 moves the share of drawn boxes that are actually on a
+     *     person from 74.7% to 80.8%, for two extra numbers issued across three flights. A
+     *     coasting box IS the box sitting in the old place, so this is the same complaint the
+     *     tile change answers, met from the other side.
+     *
      * Kept in step with MAX_COAST_MS in web/js/track.js.
      */
-    private static final long MAX_COAST_MS = 4000;
+    private static final long MAX_COAST_MS = 1200;
 
     /**
      * How recently a track must have been seen to count as being in view now.
      *
      * Holding an identity and being visible are two different questions, and one number was
-     * answering both. The coast above is long because a person can go several seconds
-     * between looks; the readout is short because "in view" should mean in view.
+     * answering both. This has to stay BELOW the coast window or the two questions collapse back
+     * into one: a track would stop being reported as present at the same instant it is let go,
+     * and the window where somebody is held without being counted as present - the window that
+     * lets them keep their number through a couple of missed looks - would be empty.
+     *
+     * 750 ms is three cycles at the target period. Somebody not detected for three looks running
+     * is not in view, whatever is still being held for them.
      */
-    private static final long IN_VIEW_MS = 1200;
+    private static final long IN_VIEW_MS = 750;
 
     /**
      * How alike two colour signatures must be to be the same person coming back.
@@ -114,12 +135,25 @@ public final class Tracker {
      * survived a second look was issued a number and added to the total, so the total
      * climbed on things that were not people and the numbers on screen churned.
      *
-     * Four is a second and a bit of agreeing with itself. It does not fix the false boxes,
-     * which is a limit of the model rather than of the tracking, but it stops them being
-     * counted as people, and the cost is that somebody who crosses the frame very fast is
-     * drawn a moment later.
+     * It went to three when the detector was looking at one sixth of the frame per cycle,
+     * because three sightings then meant three rounds of six tiles, four and a half seconds,
+     * and a fourth really did cost people who are only ever seen briefly.
+     *
+     * The whole frame is looked at every cycle now, so a sighting is a cycle and four of
+     * them is one second. Measured over four crowded frames at the real cadence, charging
+     * every number to the person it spent the most frames on:
+     *
+     *     three sightings   49% of the people reached, 1.50 numbers each, 150 on nobody
+     *     four              49% reached, 1.46 each, 149 on nobody
+     *     five              48% reached, 1.44 each, 148 on nobody
+     *
+     * Four costs no reach at all and takes a number off about one person in twenty five;
+     * five starts costing people. It does not fix the false boxes, which is a limit of the
+     * model rather than of the tracking, but it stops them being counted as people.
+     *
+     * Kept in step with CONFIRM_AFTER in web/js/track.js.
      */
-    private static final int CONFIRM_AFTER = 3;
+    private static final int CONFIRM_AFTER = 4;
 
     /**
      * How sure the detector has to be before a box may start a new identity.
