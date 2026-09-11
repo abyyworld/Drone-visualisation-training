@@ -143,6 +143,18 @@ public class LiveActivity extends AppCompatActivity {
      *     the repeat numbering flat or better in every one. Same weights, same file size,
      *     same milliseconds. The model was never weak; it was being starved of pixels and
      *     then asked to remember what it could not see for five cycles out of six.
+     *
+     * AND IT COSTS FEWER TRIPS OFF THE GPU, NOT MORE
+     *     Worth writing down because the opposite is the obvious guess. A cycle reads 906
+     *     thousand pixels now against 578 thousand before, but GlPipeline reads in strips of
+     *     at most READ_CHUNK_PIXELS and paces one strip per rendered video frame, so what
+     *     costs wall clock is the number of strips and not the number of pixels. A 320 tile
+     *     is 320x181 and fills a fraction of one strip; a 640 tile is 640x529 and fills two.
+     *
+     *         before   whole frame 2 strips + six tiles at 1   =  8 strips, 267 ms at 30 fps
+     *         now      whole frame 2 strips + two tiles at 2   =  6 strips, 200 ms
+     *
+     *     So the readback stopped being the thing that sets how fast a cycle can repeat.
      */
     private static final int TILE_LONG_EDGE = 640;
 
