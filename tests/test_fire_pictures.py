@@ -80,3 +80,57 @@ def test_true_and_false_are_unambiguous_where_nought_and_one_are_not(fetcher):
 @pytest.mark.parametrize("label", ["cat", "street", "", "   ", None, 3.5, ["fire"]])
 def test_anything_it_cannot_read_is_left_out_rather_than_guessed(fetcher, label):
     assert fetcher.classify(label, None) is None
+
+
+# ---------------------------------------------------------------------------------------
+# The other two shapes a published fire dataset comes in
+# ---------------------------------------------------------------------------------------
+#
+# The first version of the fetcher read only a label column, and the run that followed
+# rejected two perfectly usable datasets on its way past: one carried its labels as
+# detection boxes, the other as a boolean saying "this is a counterexample". The column
+# lists below are the real ones those datasets reported.
+
+NAMES = ["fire", "smoke"]
+
+
+@pytest.mark.parametrize("objects,names,expected", [
+    # hiennguyen9874/fire-smoke-detection: image_id, image, width, height, objects
+    ({"bbox": [[0, 0, 1, 1], [2, 2, 3, 3]], "category": [0, 1]}, NAMES, "fire"),
+    ([{"bbox": [0, 0, 1, 1], "category": 0}], NAMES, "fire"),
+    # No boxes is not missing data. It is what a detection set's empty frames are for.
+    ({"bbox": [], "category": []}, NAMES, "clear"),
+    ([], NAMES, "clear"),
+    ({"category": [0]}, ["no_fire"], "clear"),
+])
+def test_boxes_say_whether_a_picture_has_fire_in_it(fetcher, objects, names, expected):
+    assert fetcher.verdict_from_objects(objects, names) == expected
+
+
+@pytest.mark.parametrize("objects,names", [
+    # Categories with nothing to turn them into words: the same refusal as a bare label.
+    ({"category": [0, 1]}, None),
+    ({"category": [0]}, ["car"]),
+    ("nonsense", NAMES),
+    (None, NAMES),
+    ({"bbox": [[0, 0, 1, 1]]}, NAMES),      # boxes but no categories at all
+])
+def test_boxes_it_cannot_read_are_refused(fetcher, objects, names):
+    assert fetcher.verdict_from_objects(objects, names) is None
+
+
+def test_a_negative_flag_means_a_counterexample(fetcher):
+    # fireviewer/fire-smoke-detection-corpus-v1 carries a boolean "negative" column.
+    keys = (None, None, "negative")
+    assert fetcher.verdict_for_row({"negative": True}, keys, None) == "clear"
+    assert fetcher.verdict_for_row({"negative": False}, keys, None) == "fire"
+    assert fetcher.verdict_for_row({"negative": "maybe"}, keys, None) is None
+    assert fetcher.verdict_for_row({}, keys, None) is None
+
+
+def test_an_unreadable_label_falls_through_to_the_next_shape(fetcher):
+    # A bare 0 says nothing, but the boxes beside it do, so the row is still usable.
+    row = {"label": 0, "objects": {"category": [0]}}
+    assert fetcher.verdict_for_row(row, ("label", "objects", None), ["fire"]) == "fire"
+    # And when nothing is readable, the row is left out rather than guessed at.
+    assert fetcher.verdict_for_row({"label": 0}, ("label", None, None), None) is None

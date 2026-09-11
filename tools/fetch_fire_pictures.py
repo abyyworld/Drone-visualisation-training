@@ -49,8 +49,18 @@ SEARCH = [
 ]
 
 # Column names that carry the picture, and the ones that carry whether it is a fire.
+#
+# Three shapes, because published fire datasets come in three and the first version of this
+# only read one of them and rejected two perfectly good sets on its way past:
+#
+#   a label column        one word per picture. The classification shape.
+#   an objects column     boxes with categories. The detection shape, and the better one:
+#                         a picture with a fire box in it has fire in it.
+#   a negative flag       a boolean saying this picture is a counterexample.
 IMAGE_KEYS = ("image", "img", "picture", "jpg", "png")
 LABEL_KEYS = ("label", "labels", "class", "target", "category")
+OBJECT_KEYS = ("objects", "annotations", "boxes", "bbox")
+NEGATIVE_KEYS = ("negative", "is_negative", "no_fire")
 
 # Values that mean "this picture has fire or smoke in it", and the ones that mean it does
 # not. Anything else is left out rather than guessed at.
@@ -128,6 +138,85 @@ def classify(value, names):
     return "clear" if word in CLEAR_WORDS else None
 
 
+def category_names(feature):
+    """The words a dataset publishes for a categorical column, or None."""
+    for attribute in ("names",):
+        names = getattr(feature, attribute, None)
+        if names:
+            return list(names)
+    # A sequence of categories: the names live on the element rather than the sequence.
+    for attribute in ("feature", "_feature"):
+        inner = getattr(feature, attribute, None)
+        if inner is not None:
+            found = category_names(inner)
+            if found:
+                return found
+    if isinstance(feature, dict):
+        for inner in feature.values():
+            found = category_names(inner)
+            if found:
+                return found
+    return None
+
+
+def verdict_from_objects(objects, names):
+    """Fire, clear or unreadable, from a detection dataset's boxes.
+
+    A picture whose boxes are all fire or smoke has fire in it. A picture with no boxes at
+    all is a counterexample, which is exactly what a detection set's empty frames are for.
+    Without published names for the categories this refuses, for the same reason a bare
+    number is refused: the integers alone do not say which class is which.
+    """
+    if objects is None:
+        return None
+    # Either a list of per-object dicts, or a dict of parallel lists. Both are published.
+    if isinstance(objects, dict):
+        categories = next((v for k, v in objects.items()
+                           if str(k).lower() in ("category", "categories", "label",
+                                                 "labels", "class", "classes")), None)
+        if categories is None:
+            return None
+    elif isinstance(objects, (list, tuple)):
+        categories = []
+        for item in objects:
+            if not isinstance(item, dict):
+                return None
+            found = next((v for k, v in item.items()
+                          if str(k).lower() in ("category", "label", "class")), None)
+            categories.append(found)
+    else:
+        return None
+
+    if not categories:
+        # No boxes: nothing in this picture was worth marking.
+        return "clear"
+    verdicts = {classify(c, names) for c in categories}
+    if "fire" in verdicts:
+        return "fire"
+    if verdicts == {"clear"}:
+        return "clear"
+    return None
+
+
+def verdict_for_row(row, keys, names):
+    """What this one row says about itself, by whichever of the three shapes it has."""
+    label_key, object_key, negative_key = keys
+    if label_key is not None:
+        verdict = classify(row.get(label_key), names)
+        if verdict is not None:
+            return verdict
+    if object_key is not None:
+        verdict = verdict_from_objects(row.get(object_key), names)
+        if verdict is not None:
+            return verdict
+    if negative_key is not None:
+        flag = row.get(negative_key)
+        if isinstance(flag, bool):
+            # "negative" means a counterexample: no fire in it.
+            return "clear" if flag else "fire"
+    return None
+
+
 def harvest(name, out, limit):
     """Save up to `limit` pictures from one dataset, split by what its labels say.
 
@@ -140,22 +229,33 @@ def harvest(name, out, limit):
     rows = load_dataset(name, split="train", streaming=True)
     features = getattr(rows, "features", None) or {}
 
-    image_key = next((k for k in features if str(k).lower() in IMAGE_KEYS), None)
-    label_key = next((k for k in features if str(k).lower() in LABEL_KEYS), None)
-    if image_key is None or label_key is None:
-        print(f"    no usable image and label columns in {list(features)}", flush=True)
+    def column(wanted):
+        return next((k for k in features if str(k).lower() in wanted), None)
+
+    image_key = column(IMAGE_KEYS)
+    label_key = column(LABEL_KEYS)
+    object_key = column(OBJECT_KEYS)
+    negative_key = column(NEGATIVE_KEYS)
+    if image_key is None:
+        print(f"    no picture column in {list(features)}", flush=True)
+        return counts
+    if label_key is None and object_key is None and negative_key is None:
+        print(f"    nothing that says whether there is fire in it, in {list(features)}",
+              flush=True)
         return counts
 
-    names = []
-    try:
-        names = list(features[label_key].names)
-    except Exception:
-        pass
+    names = None
+    for key in (label_key, object_key):
+        if key is not None and names is None:
+            names = category_names(features[key])
+    print(f"    reading {[k for k in (label_key, object_key, negative_key) if k]}"
+          f"{f', classes {names}' if names else ''}", flush=True)
 
+    keys = (label_key, object_key, negative_key)
     for row in rows:
         if counts["fire"] >= limit and counts["clear"] >= limit:
             break
-        verdict = classify(row.get(label_key), names)
+        verdict = verdict_for_row(row, keys, names)
         if verdict is None or counts[verdict] >= limit:
             continue
         picture = row.get(image_key)
