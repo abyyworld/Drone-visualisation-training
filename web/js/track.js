@@ -454,8 +454,9 @@ export class Tracker {
       usedDetections.add(pair.index);
 
       const detection = detections[pair.index];
-      const previous = centre(pair.track.box);
       const observedCentre = centre(detection.box);
+      // How many cycles since this track was last actually SEEN, rather than predicted.
+      const coasted = Math.max(1, pair.track.missed + 1);
 
       pair.track.box = detection.box;
       pair.track.confidence = detection.confidence;
@@ -472,14 +473,30 @@ export class Tracker {
           : detection.signature;
       }
       // Smoothed, so one noisy frame does not send the coasting prediction sideways.
+      //
+      // Measured from where the track was last SEEN, and divided by how many cycles ago
+      // that was. It used to be measured against track.box, which by then had been coasted
+      // forward by the velocity on every missed cycle - so the difference was the
+      // prediction's leftover error, not how far the person had gone, and feeding that back
+      // in as velocity is a loop that fights itself. Under one look per six cycles, which is
+      // what the tile rotation gave every track, it oscillates instead of settling: the box
+      // overshoots, gets pulled back, overshoots the other way. That is a box that sits in
+      // the wrong place and jumps.
+      const last = pair.track.lastObserved ?? observedCentre;
       const observed = [
-        observedCentre[0] - previous[0],
-        observedCentre[1] - previous[1],
+        (observedCentre[0] - last[0]) / coasted,
+        (observedCentre[1] - last[1]) / coasted,
       ];
-      pair.track.velocity = [
-        pair.track.velocity[0] * 0.6 + observed[0] * 0.4,
-        pair.track.velocity[1] * 0.6 + observed[1] * 0.4,
-      ];
+      // A pairing made only because there was nothing else it could be is not evidence
+      // about motion. Letting it set velocity is what flings a coasting box across the
+      // frame. See unambiguousPairs.
+      if (pair.score > LONELY_SCORE) {
+        pair.track.velocity = [
+          pair.track.velocity[0] * 0.6 + observed[0] * 0.4,
+          pair.track.velocity[1] * 0.6 + observed[1] * 0.4,
+        ];
+      }
+      pair.track.lastObserved = observedCentre;
       pair.track.path.push(observedCentre);
       if (pair.track.path.length > 60) pair.track.path.shift();
     }
@@ -515,6 +532,9 @@ export class Tracker {
         lastFrame: this.frame,
         lastSeenAt: now,
         velocity: [0, 0],
+        // Where this track was last actually seen. Velocity is measured from here, never
+        // from the coasted box. See the velocity update in update().
+        lastObserved: centre(detection.box),
         path: [centre(detection.box)],
       });
     }
