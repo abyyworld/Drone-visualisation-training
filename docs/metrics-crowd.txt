@@ -14,17 +14,55 @@ HOW A NUMBER IS JUDGED
     on person share of drawn boxes that were on a labelled person
 
                                        reached     each   stray   on person
-  320 at six tiles, coast 4000             36%     1.56     101       72.7%
-  320 at six tiles, this tracker           35%     1.55     101       80.2%
-  640 at two tiles, old tracker            49%     1.48     148       74.7%
-  640 at two tiles, this tracker           49%     1.46     149       81.0%
+  320 at six tiles, coast 4000             36%     1.55      97       73.3%
+  320 at six tiles, this tracker           36%     1.55     103       80.0%
+  640 at two tiles, old tracker            49%     1.48     149       74.7%
+  640 at two tiles, this tracker           49%     1.49     158       80.8%
+
+HOW MUCH OF THE CROWD IS OUTLINED AT ANY MOMENT
+
+  A different question from the table above, and the one an operator is actually looking
+  at: not "did this person ever get a number" but "is there a box on them right now".
+
+  Drawing and numbering used to be one decision, so a box appeared only once a track had
+  been confirmed - about a second after somebody walked into frame, which reads as the
+  detector not seeing them - and a detection too faint to start an identity was thrown
+  away and never drawn at all. They are two decisions now.
+
+                                            of people   boxes drawn   on a person
+    confirmed tracks only, as it shipped        43.4%         44294        71.1%
+    every detection, numbered when proven       55.2%         60973        65.6%
+
+  Twelve more people in every hundred have a box on them at any given instant. The price
+  is in the last column: about one box in three sits on nobody rather than one in four.
+  That is the deliberate shape of it - a box says "something is there", which is true from
+  the first look, and a number says "this is a person and it is this one", which is not
+  true yet and is withheld until it is.
+
+  This is why boxing more did not make the counting worse. A faint track is provisional:
+  drawn, matchable, and unable to be numbered or counted until a detection the tracker
+  would have believed on its own agrees with it. It also never outbids a real track for a
+  detection - without that rule the repeat numbering went from 1.47 per person to 1.63,
+  because faint boxes were taking observations away from people who then coasted and were
+  renumbered.
+
+  55.2% is not 100% and cannot be made 100% here. The rest are people the model did not
+  detect at all, at any confidence, and no drawing rule can outline somebody the detector
+  never returned. Raising that ceiling is a detection problem, not a display one.
 
 WHAT THE COLUMNS SAY
   The first row is what was flying before any of this. The last is what ships. Thirteen
   more people in every hundred get a number, each of them gets slightly fewer numbers,
   and four boxes in five sit on somebody instead of three in four.
 
-  Stray went the wrong way, 101 to 149, and that is the price. Looking at the whole
+  The number shown on a box is no longer the internal track id. That id is spent the
+  moment any detection arrives that no existing track wanted, including every flicker
+  that never survives to a second look, so one real person in a scene with sixty-six
+  discarded flickers was labelled "person 67". The number is issued at confirmation from
+  a counter that only moves for confirmed people, so the highest number on screen is the
+  number of people counted.
+
+  Stray went the wrong way, 97 to 158, and that is the price. Looking at the whole
   frame every cycle is more chances to be confidently wrong as well as more chances to
   be right. Buying them back was measured: raising the confidence a new identity needs
   from 0.25 to 0.29 removes 30 of them and costs four points of people found, which is

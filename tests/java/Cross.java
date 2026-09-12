@@ -135,6 +135,71 @@ public class Cross {
       System.out.println(line);
     }
 
+    // Boxes drawn against numbers issued: two different questions, and they must be the
+    // same two in both languages. See Tracker.visible() and cross.mjs.
+    for (int people : new int[]{1, 3}) {
+      for (int steps : new int[]{1, 3, 4, 8}) {
+        Tracker tracker = new Tracker();
+        long clock = 1000;
+        for (int step = 0; step < steps; step++) {
+          List<Finding> few = new ArrayList<>();
+          for (int i = 0; i < people; i++) {
+            float x = i * 120;
+            few.add(new Finding("person", "high", "", x, 100, x + 10, 122));
+          }
+          tracker.update(few, clock);
+          clock += 250;
+        }
+        List<Tracker.Track> drawn = tracker.visible();
+        List<Integer> numbers = new ArrayList<>();
+        for (Tracker.Track track : drawn) {
+          numbers.add(track.number);
+        }
+        Collections.sort(numbers);
+        int issued = 0;
+        StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < numbers.size(); i++) {
+          if (numbers.get(i) > 0) {
+            issued++;
+          }
+          if (i > 0) {
+            joined.append(',');
+          }
+          joined.append(numbers.get(i));
+        }
+        System.out.println("track-number-" + people + "-" + steps + ": drawn " + drawn.size()
+            + " numbered " + issued + " [" + joined + "]");
+      }
+    }
+
+    // Faint detections: drawn, and not counted until something confident agrees. Every
+    // other case here hands the tracker boxes at 0.8. See Tracker.provisional.
+    for (float conf : new float[]{0.18f, 0.30f}) {
+      for (int strongAt : new int[]{-1, 5}) {
+        Tracker tracker = new Tracker();
+        long clock = 1000;
+        for (int step = 0; step < 8; step++) {
+          boolean strong = strongAt >= 0 && step >= strongAt;
+          List<Finding> one = new ArrayList<>();
+          Finding f = new Finding("person", "high", "", 100, 100, 140, 180);
+          f.confidence = strong ? 0.8f : conf;
+          one.add(f);
+          tracker.update(one, clock);
+          clock += 250;
+        }
+        List<Tracker.Track> drawn = tracker.visible();
+        int numbered = 0;
+        for (Tracker.Track track : drawn) {
+          if (track.number > 0) {
+            numbered++;
+          }
+        }
+        System.out.println("track-faint-" + conf + "-" + strongAt + ": drawn "
+            + drawn.size() + " numbered " + numbered
+            + " counted " + tracker.countSeen("person"));
+      }
+    }
+
     for (int people : new int[]{1, 2, 3}) {
       StringBuilder line = new StringBuilder("track-sparse-" + people + ":");
       for (int speed : new int[]{0, 20, 45, 60, 90}) {

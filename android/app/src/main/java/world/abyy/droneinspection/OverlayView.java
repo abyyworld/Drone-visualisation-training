@@ -55,6 +55,7 @@ public class OverlayView extends View {
     private static final long STALE_AFTER_MS = 15_000;
 
     private final Paint boxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private DashPathEffect unproven;
     private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint statusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -92,6 +93,10 @@ public class OverlayView extends View {
         firePaint.setStyle(Paint.Style.FILL);
         fireOutline.setStyle(Paint.Style.STROKE);
         fireOutline.setPathEffect(new DashPathEffect(new float[]{16f, 10f}, 0f));
+        // A finer dash than the flame one, for a track that has a box but has not yet
+        // earned a number. Different enough from a solid box to read at a glance, and
+        // different enough from the flame dash not to be mistaken for one.
+        unproven = new DashPathEffect(new float[]{8f, 6f}, 0f);
         setWillNotDraw(false);
     }
 
@@ -257,26 +262,40 @@ public class OverlayView extends View {
 
         // Live tracks next, at full weight, with the identity on the label. These are
         // current: they came from this device on the last frame it managed.
+        //
+        // EVERY DETECTION GETS A BOX; ONLY A PROVEN ONE GETS A NUMBER
+        //     The list arriving here is Tracker.visible() rather than open(), so somebody
+        //     who has just walked into frame is drawn on the very first look instead of
+        //     waiting about a second to be confirmed. Until they are confirmed their number
+        //     is zero and the label is left off: a box says "something is there", which is
+        //     true from the first frame, and a number says "this is a person and it is this
+        //     one", which is not true yet.
+        //
+        //     Drawn dashed while unproven, the same way a flame region is, so the difference
+        //     is visible at a glance rather than inferred from a missing label.
         float trackScaleX = trackFrameWidth > 0 ? width / (float) trackFrameWidth : 1f;
         float trackScaleY = trackFrameHeight > 0 ? height / (float) trackFrameHeight : 1f;
         boolean labelled = tracks.size() <= LABEL_LIMIT;
         for (Tracker.Track track : tracks) {
             int colour = PALETTE[colourIndex(track.label) % PALETTE.length];
+            boolean proven = track.number > 0;
             boxPaint.setColor(colour);
             boxPaint.setAlpha(track.coasted() ? 120 : 255);
+            boxPaint.setPathEffect(proven ? null : unproven);
 
             RectF box = new RectF(
                     track.box[0] * trackScaleX, track.box[1] * trackScaleY,
                     track.box[2] * trackScaleX, track.box[3] * trackScaleY);
             canvas.drawRect(box, boxPaint);
+            boxPaint.setPathEffect(null);
 
-            if (!labelled) {
-                // Too many to read. The box is the information at this density; the
-                // numbers are in the status line.
+            if (!labelled || !proven) {
+                // Too many to read, or nothing proven to say yet. The box is the
+                // information either way; the numbers are in the status line.
                 continue;
             }
 
-            String text = track.label + " #" + track.id;
+            String text = track.label + " #" + track.number;
             labelPaint.getTextBounds(text, 0, text.length(), textBounds);
             float pad = stroke * 2;
             float top = Math.max(0, box.top - textBounds.height() - pad * 2);

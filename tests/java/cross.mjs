@@ -119,6 +119,54 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     console.log(`track-coast-${gap}: ${counts.join(' ')}`);
   }
 
+  // Boxes drawn against numbers issued, which are two different questions and must be the
+  // same two in both languages. Reported as: how many are drawn, how many carry a number,
+  // and the numbers themselves - so an id leaking into the label, or one language issuing a
+  // number a cycle earlier than the other, shows up as a difference rather than as a bug on
+  // a tablet. See Tracker.visible().
+  for (const people of [1, 3]) {
+    for (const steps of [1, 3, 4, 8]) {
+      const tracker = new Tracker();
+      let clock = 1000;
+      for (let step = 0; step < steps; step += 1) {
+        const few = [];
+        for (let i = 0; i < people; i += 1) {
+          const x = i * 120;
+          few.push({ label: 'person', confidence: 0.8, box: [x, 100, x + 10, 122] });
+        }
+        tracker.update(few, clock);
+        clock += 250;
+      }
+      const drawn = tracker.visible();
+      const numbers = drawn.map((d) => d.number).sort((a, b) => a - b);
+      console.log(`track-number-${people}-${steps}: drawn ${drawn.length} `
+        + `numbered ${numbers.filter((n) => n > 0).length} [${numbers.join(',')}]`);
+    }
+  }
+
+  // Faint detections: drawn, and not counted until something confident agrees. Every other
+  // case here hands the tracker boxes at 0.8, so nothing else would notice the two languages
+  // disagreeing about the provisional path. See Tracker.provisional.
+  for (const conf of [0.18, 0.30]) {
+    for (const strongAt of [-1, 5]) {
+      const tracker = new Tracker();
+      let clock = 1000;
+      for (let step = 0; step < 8; step += 1) {
+        const strong = strongAt >= 0 && step >= strongAt;
+        tracker.update([{
+          label: 'person',
+          confidence: strong ? 0.8 : conf,
+          box: [100, 100, 140, 180],
+        }], clock);
+        clock += 250;
+      }
+      const drawn = tracker.visible();
+      console.log(`track-faint-${conf}-${strongAt}: drawn ${drawn.length} `
+        + `numbered ${drawn.filter((d) => d.number > 0).length} `
+        + `counted ${tracker.countSeen('person')}`);
+    }
+  }
+
   // And the sparse scene, at the size a person actually is from altitude. See Cross.
   for (const people of [1, 2, 3]) {
     const counts = [];

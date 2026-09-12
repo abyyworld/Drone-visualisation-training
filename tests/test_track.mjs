@@ -575,5 +575,79 @@ console.log('\nA weak box may keep somebody, and may not invent one');
     carried.countSeen('person') === 1, `${carried.countSeen('person')} counted`);
 }
 
+
+// ---------------------------------------------------------------------------------------
+// The number on the box, and the box without a number
+//
+// Reported from a flight: "even though there's only one person it says person67". The
+// tracker was right and the label was wrong. It printed track.id, which is spent the moment
+// any detection arrives that no existing track wanted - so every flicker of gravel and roof
+// vent that never survived to a second look took a number with it, and the one real person
+// on screen came out as #67.
+console.log('\nThe number an operator reads');
+{
+  const tracker = new Tracker();
+  let clock = 1000;
+
+  // Sixty-six flickers, each in a place no other one used, each seen once and never again.
+  //
+  // Scattered rather than walked along a line. Marching them across the frame in order was
+  // the first attempt and the tracker read it, quite correctly, as a camera panning at a
+  // steady rate: it predicted each old box forward onto the next detection, matched them,
+  // and built six long-lived tracks out of what was meant to be sixty-six unrelated
+  // flickers. See estimateDrift.
+  const scatter = (i) => (i * 37) % 66;
+  for (let i = 0; i < 66; i += 1) {
+    const k = scatter(i);
+    tracker.update([person(600 + (k % 11) * 120, 400 + Math.floor(k / 11) * 140)], clock);
+    clock += 2000;   // longer than the coast window, so none of them is held to the next
+  }
+  // Then one person, who stays put and keeps being seen.
+  for (let i = 0; i < 6; i += 1) {
+    tracker.update([person(100, 100)], clock);
+    clock += 250;
+  }
+
+  const numbered = tracker.open().filter((t) => t.label === 'person');
+  check('the one person who stayed is confirmed', numbered.length === 1,
+    `${numbered.length} confirmed`);
+  check('and is numbered 1, not 67', numbered[0]?.number === 1,
+    `got #${numbered[0]?.number}, internal id ${numbered[0]?.id}`);
+  check('the internal id did run away, which is why it is not shown',
+    numbered[0]?.id > 1, `id ${numbered[0]?.id}`);
+  check('and the running total agrees with the highest number',
+    tracker.countSeen('person') === 1, `${tracker.countSeen('person')} counted`);
+}
+
+// The other half: a box on the first look, a number only once it is earned. An operator
+// asked for every person boxed without waiting to be verified; the answer is to separate
+// the box from the number rather than to lower the bar on both.
+console.log('\nBoxed at once, numbered when proven');
+{
+  const tracker = new Tracker();
+  const seen = tracker.update([person(200, 200)], 1000);
+  check('nothing is numbered on the first look', seen.length === 0, `${seen.length} numbered`);
+  const drawn = tracker.visible();
+  check('but it is already drawn', drawn.length === 1, `${drawn.length} drawn`);
+  check('with no number on it yet', drawn[0].number === 0, `#${drawn[0].number}`);
+
+  let clock = 1250;
+  for (let i = 0; i < 4; i += 1) { tracker.update([person(200, 200)], clock); clock += 250; }
+  check('and once it has agreed with itself, it has one',
+    tracker.visible()[0].number === 1, `#${tracker.visible()[0].number}`);
+  check('and is still only one box', tracker.visible().length === 1);
+}
+
+// A one-frame flicker must not leave a box drifting across the screen with nothing behind
+// it. It is drawn on the frame it was seen and gone on the next.
+console.log('\nA flicker is drawn once and not held');
+{
+  const tracker = new Tracker();
+  tracker.update([person(300, 300)], 1000);
+  check('drawn on the look it appeared', tracker.visible().length === 1);
+  tracker.update([], 1250);
+  check('and not drawn once it stops being seen', tracker.visible().length === 0,
+    `${tracker.visible().length} still drawn`);
+}
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

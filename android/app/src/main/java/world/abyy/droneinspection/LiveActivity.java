@@ -739,7 +739,12 @@ public class LiveActivity extends AppCompatActivity {
             }
         }
 
-        final List<Tracker.Track> finalTracks = tracks;
+        // What gets DRAWN is wider than what gets counted. update() returns the confirmed
+        // tracks, which is the right list for the fire scan's occluders above and for the
+        // running total; the overlay gets visible(), which also includes somebody detected
+        // on this very cycle and not yet proven. They are boxed immediately and numbered
+        // only once they have earned it. See Tracker.visible().
+        final List<Tracker.Track> finalTracks = tracker.visible();
         final List<FireScan.Region> finalFire = fire;
         // When the next cycle may start: never sooner than the target period, and never
         // sooner than the duty cycle allows given what this one actually cost. A device

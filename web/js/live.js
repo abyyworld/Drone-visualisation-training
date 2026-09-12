@@ -455,22 +455,29 @@ export class LiveView {
 
     this.drawFire(ctx, lineWidth, fontSize);
 
-    const open = this.tracker.open();
+    // visible(), not open(): everything detected gets a box straight away, and only a
+    // track that has agreed with itself gets a number. A box says "something is there",
+    // which is true from the first frame; a number says "this is a person and it is this
+    // one", which is not true yet. See Tracker.visible().
+    const open = this.tracker.visible();
     const labelled = open.length <= LABEL_LIMIT;
     for (const track of open) {
       const colour = colorFor(track.classId ?? 0);
+      const proven = track.number > 0;
       // A coasted box is a prediction rather than an observation, and is drawn as one. An
       // operator should be able to see at a glance which boxes the model is still looking at.
       ctx.globalAlpha = track.missed > 0 ? PALETTE_ALPHA_COASTED : 1;
       ctx.strokeStyle = colour;
-      ctx.setLineDash(track.missed > 0 ? [lineWidth * 3, lineWidth * 2] : []);
+      if (track.missed > 0) ctx.setLineDash([lineWidth * 3, lineWidth * 2]);
+      else if (!proven) ctx.setLineDash([lineWidth * 1.5, lineWidth]);
+      else ctx.setLineDash([]);
 
       const [x0, y0, x1, y1] = track.box;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
       ctx.setLineDash([]);
 
-      if (labelled) {
-        const label = `${track.label} #${track.id}`;
+      if (labelled && proven) {
+        const label = `${track.label} #${track.number}`;
         const padding = lineWidth * 2;
         const textWidth = ctx.measureText(label).width;
         const top = Math.max(0, y0 - fontSize - padding * 2);
