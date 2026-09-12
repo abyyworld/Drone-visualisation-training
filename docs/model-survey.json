@@ -1,0 +1,313 @@
+{
+  "person from the air": {
+    "Bluehippo321/yolo11x-visdrone": {
+      "matched": "visdrone yolo11",
+      "downloads": 0,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11x_visdrone_50epoch.pt",
+          114.383513
+        ]
+      ]
+    },
+    "ENOT-AutoDL/yolov8s_visdrone": {
+      "matched": "visdrone",
+      "downloads": 194,
+      "likes": 11,
+      "weights": [
+        [
+          "baseline_enot/weights/best.pt",
+          22.526382
+        ],
+        [
+          "baseline_enot/weights/last.pt",
+          22.529006
+        ],
+        [
+          "baseline_enot_nano/weights/best.pt",
+          6.267993
+        ],
+        [
+          "baseline_enot_nano/weights/last.pt",
+          6.269337
+        ],
+        [
+          "baseline_ultralytics/weights/best.pt",
+          22.494126
+        ],
+        [
+          "baseline_ultralytics/weights/last.pt",
+          22.496494
+        ],
+        [
+          "enot_neural_architecture_selection_x2/weights/best.pt",
+          10.432046
+        ],
+        [
+          "enot_neural_architecture_selection_x2/weights/last.pt",
+          10.433966
+        ],
+        [
+          "enot_neural_architecture_selection_x3/weights/best.pt",
+          7.559662
+        ],
+        [
+          "enot_neural_architecture_selection_x3/weights/last.pt",
+          7.561326
+        ]
+      ]
+    },
+    "Mahadih534/YoloV8-VisDrone": {
+      "matched": "visdrone yolo",
+      "downloads": 0,
+      "likes": 4,
+      "weights": [
+        [
+          "visDrone.pt",
+          22.500889
+        ]
+      ]
+    },
+    "RISEF/yolov11s-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 52,
+      "likes": 0,
+      "weights": [
+        [
+          "weights/best.onnx",
+          38.39702
+        ],
+        [
+          "weights/best.pt",
+          19.162067
+        ],
+        [
+          "weights/last.pt",
+          19.162067
+        ]
+      ]
+    },
+    "abdulsamad99/yolo11m-visdrone": {
+      "matched": "visdrone yolo11",
+      "downloads": 0,
+      "likes": 0,
+      "weights": [
+        [
+          "best.pt",
+          40.541925
+        ],
+        [
+          "last.pt",
+          40.541925
+        ]
+      ]
+    },
+    "dronefreak/visdrone-yolov11l": {
+      "matched": "visdrone yolov11",
+      "downloads": 46,
+      "likes": 7,
+      "weights": [
+        [
+          "best.pt",
+          51.209177
+        ]
+      ]
+    },
+    "dronefreak/visdrone-yolov11m": {
+      "matched": "visdrone yolov11",
+      "downloads": 1439,
+      "likes": 4,
+      "weights": [
+        [
+          "best.pt",
+          40.53438
+        ]
+      ]
+    },
+    "dronefreak/visdrone-yolov11n": {
+      "matched": "visdrone yolov11",
+      "downloads": 284,
+      "likes": 6,
+      "weights": [
+        [
+          "best.pt",
+          5.49737
+        ]
+      ]
+    },
+    "dronefreak/visdrone-yolov11x": {
+      "matched": "visdrone yolov11",
+      "downloads": 243,
+      "likes": 6,
+      "weights": [
+        [
+          "best.pt",
+          114.410009
+        ]
+      ]
+    },
+    "erbayat/yolov11l-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 10,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11l-visdrone.pt",
+          51.214482
+        ]
+      ]
+    },
+    "erbayat/yolov11m-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 12,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11m-visdrone.pt",
+          40.526181
+        ]
+      ]
+    },
+    "erbayat/yolov11n-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 33,
+      "likes": 0,
+      "weights": [
+        [
+          "best.pt",
+          5.478995
+        ]
+      ]
+    },
+    "erbayat/yolov11s-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 13,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11s-visdrone.pt",
+          19.186259
+        ]
+      ]
+    },
+    "erbayat/yolov11x-visdrone": {
+      "matched": "visdrone yolov11",
+      "downloads": 9,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11x-visdrone.pt",
+          114.40245
+        ]
+      ]
+    },
+    "mshamrai/yolov8l-visdrone": {
+      "matched": "visdrone",
+      "downloads": 81,
+      "likes": 5,
+      "weights": [
+        [
+          "best.pt",
+          87.626888
+        ]
+      ]
+    },
+    "mshamrai/yolov8m-visdrone": {
+      "matched": "visdrone",
+      "downloads": 289,
+      "likes": 1,
+      "weights": [
+        [
+          "best.pt",
+          52.006688
+        ]
+      ]
+    },
+    "mshamrai/yolov8n-visdrone": {
+      "matched": "visdrone",
+      "downloads": 358,
+      "likes": 1,
+      "weights": [
+        [
+          "best.pt",
+          6.219384
+        ]
+      ]
+    },
+    "mshamrai/yolov8s-visdrone": {
+      "matched": "visdrone",
+      "downloads": 678,
+      "likes": 8,
+      "weights": [
+        [
+          "best.pt",
+          22.491704
+        ]
+      ]
+    },
+    "mshamrai/yolov8x-visdrone": {
+      "matched": "visdrone",
+      "downloads": 272,
+      "likes": 15,
+      "weights": [
+        [
+          "best.pt",
+          136.701192
+        ]
+      ]
+    },
+    "orirdx/yolo11s-visdrone": {
+      "matched": "visdrone yolo11",
+      "downloads": 0,
+      "likes": 0,
+      "weights": [
+        [
+          "yolo11s-visdrone-last.pt",
+          19.160346
+        ],
+        [
+          "yolo11s-visdrone.pt",
+          19.160346
+        ]
+      ]
+    },
+    "smidm/yolov5-visdrone": {
+      "matched": "visdrone",
+      "downloads": 0,
+      "likes": 0,
+      "weights": [
+        [
+          "yolov5s-visdrone.pt",
+          57.123975
+        ]
+      ]
+    }
+  },
+  "fire from the air": {
+    "sanqierere/yolo26m-UAV-fire-smoke-detection": {
+      "matched": "UAV fire smoke",
+      "downloads": 34,
+      "likes": 0,
+      "weights": [
+        [
+          "weights/best.pt",
+          44.02005
+        ]
+      ]
+    },
+    "xiazh0219/yolo26m-UAV-fire-smoke-detection": {
+      "matched": "UAV fire smoke",
+      "downloads": 1352,
+      "likes": 1,
+      "weights": [
+        [
+          "weights/best.pt",
+          44.02005
+        ]
+      ]
+    }
+  },
+  "solar panel defects": {},
+  "turbine blade damage": {}
+}
