@@ -2,6 +2,33 @@ Real VisDrone MOT sequences, flown at the tablet's cadence.
 Consecutive frames of real flights; every person carries a target id, so a
 second number issued to somebody is a measured identity switch.
 
+WHICH COLUMNS TO BELIEVE
+  reached and numbers-each are sound. They are keyed on the dataset's own target id, so
+  they say how many real people got a number and how many numbers each of them collected.
+  That second column is the "why does it say person 67" complaint, measured.
+
+  "on a person" is NOT a false-positive rate and must not be quoted as one. It ranges from
+  16% to 76% across these sequences on identical code, which is far too wide to be the
+  detector. Measured, the boxes that match no labelled person are systematically SMALLER
+  than the ones that match:
+
+    sequence              matched          unmatched
+    uav0000137_00458_v    1197 at 86 px     732 at 49 px
+    uav0000339_00001_v     573 at 61 px     440 at 28 px
+    uav0000182_00000_v     116 at 31 px    1204 at 23 px
+
+  Half the size, every sequence. Two readings fit that and this harness cannot separate
+  them: people far enough away that the dataset stopped annotating them, or the detector
+  firing on small clutter. What can be said is that the sequences scoring worst are the
+  ones full of small unmatched boxes, so the column is measuring how much distant detail a
+  sequence contains at least as much as it measures the detector.
+
+  An earlier guess here was wrong and is recorded so it is not made again: the ignored
+  regions VisDrone marks do not explain it. The sequence scoring 16% has only 8% of its
+  frame ignored, and its people are nearly twice the size of those in the sequence
+  scoring 76%.
+
+
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
   uav0000117_02622_v     104       60       95       35     55          16%
