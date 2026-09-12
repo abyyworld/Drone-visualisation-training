@@ -144,6 +144,15 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     }
   }
 
+  // The windows the tracker derives from the cadence a device is achieving. Two
+  // implementations of one rule, and a tablet that disagreed with the browser about how long
+  // to hold somebody would count the same crowd differently. See Tracker.setCadence.
+  for (const cycle of [60, 125, 200, 250, 400, 600, 1000, 2500]) {
+    const t = new Tracker();
+    t.setCadence(cycle);
+    console.log(`cadence-${cycle}: coast ${t.maxCoastMs} inView ${t.inViewMs}`);
+  }
+
   // Where the video sits inside the view. Written out here rather than imported, because
   // the point is to check the Java against the contract rather than against itself. See
   // Letterbox.java.

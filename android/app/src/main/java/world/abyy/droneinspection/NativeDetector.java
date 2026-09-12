@@ -390,11 +390,20 @@ public final class NativeDetector {
             return null;
         }
 
-        // Opened alongside, not instead. NNAPI first: this model is int8, and int8 through
-        // NNAPI is what reaches the Hexagon DSP, the one piece of silicon on this device
-        // actually built for the job. The GPU is the fallback. If neither will even load,
-        // which is common enough on a 2018 driver stack, that is simply the end of it and
-        // the CPU carries on alone.
+        // Opened alongside, not instead. NNAPI first, then the GPU. If neither will even
+        // load, which is common enough on a 2018 driver stack, that is the end of it and the
+        // CPU carries on alone.
+        //
+        // This used to say "NNAPI first, because this model is int8 and int8 through NNAPI is
+        // what reaches the Hexagon DSP". The model is plain float now - int8 was putting a
+        // hard ceiling of 0.5045 on every score it could produce - so that reasoning is gone,
+        // and a float graph may well not reach the DSP at all.
+        //
+        // The order does not matter much for that reason: nothing here is trusted on its
+        // claims. run() races the delegate against the CPU on real frames of this stream and
+        // decide() adopts it only if it is both faster AND finds as many people, so a
+        // delegate that cannot handle this model is measured and dropped on the device rather
+        // than assumed to be good here.
         Interpreter candidate = null;
         AutoCloseable candidateDelegate = null;
         String candidateName = "";

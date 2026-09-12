@@ -342,6 +342,9 @@ public class LiveActivity extends AppCompatActivity {
     /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */
     private volatile long cycleStartedAt;
     private volatile long nextCycleAt;
+
+    /** The cycle time this device is actually managing, smoothed. See Tracker.setCadence. */
+    private volatile long smoothedCycleMs;
     /**
      * A multiplier on the cycle period, raised when Android says the device is too hot.
      * One while it is comfortable; larger while it is not.
@@ -752,8 +755,25 @@ public class LiveActivity extends AppCompatActivity {
         // at a hundred per cent of a slower CPU, which is how it climbs back out.
         long took = SystemClock.uptimeMillis() - cycleStartedAt;
         long period = Math.round(TARGET_PERIOD_MS * thermalEase);
-        nextCycleAt = SystemClock.uptimeMillis()
-                + Math.max(0, Math.max(period, Math.round(took / DUTY_CYCLE)) - took);
+        long wait = Math.max(0, Math.max(period, Math.round(took / DUTY_CYCLE)) - took);
+        nextCycleAt = SystemClock.uptimeMillis() + wait;
+
+        // Tell the tracker how fast this device is really going.
+        //
+        // Its coast window is three looks and its in-view window two, and both were written
+        // down in milliseconds against a 250 ms cycle - which is what a desktop CPU managed
+        // while the numbers were being tuned, not what this tablet does. On a controller
+        // running at 600 ms a cycle, an 800 ms coast is barely one look: everybody would be
+        // let go between consecutive looks at them and renumbered on the next, which is the
+        // exact failure those numbers were tuned to avoid.
+        //
+        // Smoothed, because one slow cycle is a hiccup and the windows should follow the
+        // trend rather than the noise. Thermal throttling moves it too, which is right: a
+        // tablet that has slowed down is one where a person waits longer between looks.
+        long cycle = took + wait;
+        smoothedCycleMs = smoothedCycleMs <= 0 ? cycle
+                : Math.round(smoothedCycleMs * 0.8 + cycle * 0.2);
+        tracker.setCadence(smoothedCycleMs);
 
         handler.post(() -> {
             overlay.setTracks(finalTracks, frameWidth, frameHeight);

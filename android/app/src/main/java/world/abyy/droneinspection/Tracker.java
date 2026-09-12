@@ -103,6 +103,53 @@ public final class Tracker {
     private static final long MAX_COAST_MS = 800;
 
     /**
+     * The coast budget in force, which the device may set from the cadence it ACHIEVES.
+     *
+     * WHY THIS IS NOT A CONSTANT ANY MORE
+     *     800 ms is not a fact about people, it is three looks at a 250 ms cycle - and 250 ms
+     *     is what a desktop CPU managed, not what an MK15 does. On a tablet running at 600 ms
+     *     a cycle, 800 ms is barely one look: everybody would be let go between consecutive
+     *     looks at them and renumbered on the next, which is exactly the failure this value
+     *     was tuned to avoid. The number would have been silently wrong on the one device it
+     *     is for.
+     *
+     *     Looks is the right unit on both sides of the trade. Holding through a brief miss is
+     *     worth it because a miss is a LOOK that failed; coasting costs because a stale box
+     *     gets one chance per LOOK to steal the detection belonging to whoever is standing
+     *     where it drifted to. Neither is a duration.
+     *
+     *     So LiveActivity measures its own cycle and sets this. The default stands for
+     *     anything that does not, including the browser.
+     */
+    private volatile long coastMs = MAX_COAST_MS;
+
+    /** How recently a track must have been seen to count as in view. See IN_VIEW_MS. */
+    private volatile long inViewMs = 500;
+
+    /** The windows in force, so tests can check the two ports agree. See setCadence. */
+    public long coastMs() {
+        return coastMs;
+    }
+
+    public long inViewMs() {
+        return inViewMs;
+    }
+
+    /**
+     * Set the two windows from the cadence the device is actually managing.
+     *
+     * @param cycleMs the measured time from the start of one detect cycle to the next
+     */
+    public void setCadence(long cycleMs) {
+        long cycle = Math.max(80, Math.min(2000, cycleMs));
+        // Three looks to let go, two to stop being called present. The gap between them is
+        // what lets somebody keep their number through a couple of missed looks; see
+        // IN_VIEW_MS for why it must not close.
+        coastMs = Math.max(400, Math.min(6000, cycle * 3));
+        inViewMs = Math.max(250, Math.min(4000, cycle * 2));
+    }
+
+    /**
      * How recently a track must have been seen to count as being in view now.
      *
      * Holding an identity and being visible are two different questions, and one number was
@@ -115,6 +162,7 @@ public final class Tracker {
      * is not in view, whatever is still being held for them.
      */
     private static final long IN_VIEW_MS = 500;
+    // Read through inViewMs, which setCadence may move. This is the default it starts at.
 
     /**
      * How alike two colour signatures must be to be the same person coming back.
@@ -465,7 +513,7 @@ public final class Tracker {
         // that is being let go is put into the gallery on its way out.
         for (int i = tracks.size() - 1; i >= 0; i--) {
             Track track = tracks.get(i);
-            if (track.missed > MAX_MISSES || now - track.lastSeenAt > MAX_COAST_MS) {
+            if (track.missed > MAX_MISSES || now - track.lastSeenAt > coastMs) {
                 remember(track, now);
                 tracks.remove(i);
             }
@@ -562,7 +610,7 @@ public final class Tracker {
         long now = System.currentTimeMillis();
         int n = 0;
         for (Track track : open()) {
-            if (track.label.equals(label) && now - track.lastSeenAt <= IN_VIEW_MS) {
+            if (track.label.equals(label) && now - track.lastSeenAt <= inViewMs) {
                 n += 1;
             }
         }

@@ -482,6 +482,7 @@ export class Tracker {
     maxCoastMs = MAX_COAST_MS,
     reidSimilarity = REID_SIMILARITY,
     reidWindowMs = REID_WINDOW_MS,
+    inViewMs = IN_VIEW_MS,
   } = {}) {
     this.minIou = minIou;
     this.maxMisses = maxMisses;
@@ -490,6 +491,7 @@ export class Tracker {
     this.maxCoastMs = maxCoastMs;
     this.reidSimilarity = reidSimilarity;
     this.reidWindowMs = reidWindowMs;
+    this.inViewMs = inViewMs;
     /**
      * People this tracker has seen and lost, so it knows them when they come back.
      * Each entry is {id, label, signature, lastSeen, counted}.
@@ -764,6 +766,29 @@ export class Tracker {
    * has been seen `confirmAfter` times. That is the difference between a steady overlay and
    * one that strobes.
    */
+  /**
+   * Set the coast and in-view windows from the cadence the device is ACHIEVING.
+   *
+   * MAX_COAST_MS is not a fact about people. It is three looks at a 250 ms cycle, and
+   * 250 ms is what a desktop CPU managed while these were tuned rather than what a
+   * controller does. On a tablet running at 600 ms a cycle, 800 ms is barely one look:
+   * everybody would be let go between consecutive looks at them and renumbered on the next,
+   * which is the exact failure the value was tuned to avoid.
+   *
+   * Looks is the right unit on both sides. Holding through a brief miss is worth it because
+   * a miss is a LOOK that failed; coasting costs because a stale box gets one chance per
+   * LOOK to steal the detection belonging to whoever stands where it drifted to.
+   *
+   * Kept in step with Tracker.setCadence in the Java.
+   *
+   * @param cycleMs measured time from the start of one detect cycle to the next
+   */
+  setCadence(cycleMs) {
+    const cycle = Math.max(80, Math.min(2000, cycleMs));
+    this.maxCoastMs = Math.max(400, Math.min(6000, cycle * 3));
+    this.inViewMs = Math.max(250, Math.min(4000, cycle * 2));
+  }
+
   open() {
     return this.tracks.filter((t) => t.seen >= this.confirmAfter);
   }
@@ -797,7 +822,7 @@ export class Tracker {
   countOf(label, now = this.now ?? Date.now()) {
     return this.tracks.filter((t) => t.label === label
       && t.seen >= this.confirmAfter
-      && now - t.lastSeenAt <= IN_VIEW_MS).length;
+      && now - t.lastSeenAt <= this.inViewMs).length;
   }
 
   /**

@@ -173,6 +173,15 @@ public class Cross {
       }
     }
 
+    // The windows the tracker derives from the cadence a device is achieving. See
+    // Tracker.setCadence, and the twin in cross.mjs.
+    for (int cycle : new int[]{60, 125, 200, 250, 400, 600, 1000, 2500}) {
+      Tracker t = new Tracker();
+      t.setCadence(cycle);
+      System.out.println("cadence-" + cycle + ": coast " + t.coastMs()
+          + " inView " + t.inViewMs());
+    }
+
     // Where the video sits inside the view. GlPipeline places the picture with this and
     // OverlayView places the boxes with it, and when those two disagreed every box on screen
     // sat off its person by the width of the black bars, all flight. They are one function
