@@ -1,0 +1,22 @@
+Real VisDrone MOT sequences, flown at the tablet's cadence.
+Consecutive frames of real flights; every person carries a target id, so a
+second number issued to somebody is a measured identity switch.
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000117_02622_v     104       66      125       59    134          16%
+  TOTAL              104       66      125       59    134        15.6%
+  reached 63% of the people, and gave them 1.89 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000137_00458_v      77       56      106       50     37          42%
+  TOTAL               77       56      106       50     37        41.8%
+  reached 73% of the people, and gave them 1.89 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000086_00000_v      76       68      121       53     24          73%
+  TOTAL               76       68      121       53     24        73.4%
+  reached 89% of the people, and gave them 1.78 numbers each
+
