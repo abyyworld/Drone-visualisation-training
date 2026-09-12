@@ -330,13 +330,34 @@ public class LiveActivity extends AppCompatActivity {
     /**
      * How often the fire model gets a cycle, when one is loaded.
      *
-     * Every other one. A wildfire flight still has people in it, and a person at a fire is
-     * the most important thing in the frame, so the people model cannot simply be given up
-     * for this. Two models on one Hexagon DSP and 2 GB of RAM is also not something to run
-     * flat out. Alternating costs each of them half the rate, which against a cycle of
-     * roughly 200 ms is still several looks a second at each.
+     * Every one, and this used to be every other one on a reason that did not survive being
+     * measured.
+     *
+     * WHAT THE OLD REASONING GOT WRONG
+     *     It said alternating "costs each of them half the rate", and that a wildfire flight
+     *     still has people in it so the people model cannot be given up. Neither is what the
+     *     code does: the fire pass runs IN ADDITION to the person pass, never instead of it,
+     *     so the person model was already running every cycle and alternating only ever
+     *     halved the rate of the fire model. The trade being described was not the trade
+     *     being made.
+     *
+     *     And measured, the thing being saved is small. On the same machine, one look each:
+     *
+     *         person, two tiles at 640    153 ms   (76.5 ms a tile)
+     *         fire, whole frame at 320     25 ms
+     *
+     *     So alternating saved about 12 ms on a cycle of 166, under 8 percent, and bought it
+     *     by halving how often the tablet looks for fire on a flight whose entire purpose is
+     *     looking for fire - with a model that already misses more than half of what it is
+     *     shown (docs/metrics-wildfire.txt). Eight percent of cycle time is the wrong thing
+     *     to protect there, and the tracker absorbs the longer cycle by itself now, because
+     *     its windows follow the cadence the device achieves rather than a fixed figure.
+     *
+     *     Memory was the other half of the old argument and it is not a constraint either.
+     *     Both models held open at once measured 124 MB of a two gigabyte device: 85 MB for
+     *     the person model and 39 MB for the fire one.
      */
-    private static final int FIRE_EVERY = 2;
+    private static final int FIRE_EVERY = 1;
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
     /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */
