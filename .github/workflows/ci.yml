@@ -58,6 +58,23 @@ jobs:
       - name: Flame and smoke
         run: node tests/test_firescan.mjs
 
+      # The shipped weights against what the app believes about them. Every check in this
+      # file is an importorskip on a runtime, and no job installed one, so it has been
+      # green and empty since it was written - which is the same shape as the bug it
+      # exists to catch: the model reports an empty scene and an empty scene looks exactly
+      # like a frame with nobody in it. The runtimes go in here, and a run that SKIPPED
+      # rather than passed is failed, because a silent skip is how this got missed.
+      - name: The shipped model against its spec
+        run: |
+          python3 -m pip install --quiet pytest ai-edge-litert
+          set -o pipefail
+          python3 -m pytest tests/test_model_contract.py -q -rs | tee /tmp/contract.log
+          if grep -qi "skipped" /tmp/contract.log; then
+            echo "::error::A model-contract check skipped instead of running. It is only"
+            echo "::error::worth anything with the runtimes present; see the log above."
+            exit 1
+          fi
+
       - name: Run browser tests
         run: node tests/test_web.mjs
 
