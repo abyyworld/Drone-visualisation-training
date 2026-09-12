@@ -1,0 +1,95 @@
+name: Fly a real video sequence
+
+# WHY THIS IS NOT THE OTHER HARNESS
+#     tools/fly.py pans across ONE labelled frame. That models the camera moving and it does
+#     not model anything else: the people are frozen relative to each other, there is no
+#     motion blur, no rolling shutter, no compression that gets worse when the scene moves,
+#     and nobody walks behind anybody. Every tracking number this project has quoted came
+#     out of that.
+#
+#     VisDrone's tracking sets are real consecutive frames of real flights, and they carry a
+#     target id per person per frame. That means identity switches can be MEASURED against
+#     truth rather than inferred from which person a box mostly sat on - which is the one
+#     question the operator keeps asking, in the form "why does it say person 67".
+#
+#     It runs here rather than locally because the dataset hosts are reachable from a runner
+#     and not from the machine that writes this code. Same reason as model.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sequences:
+        description: 'How many sequences to fly'
+        required: false
+        default: '3'
+      seconds:
+        description: 'Seconds of each sequence'
+        required: false
+        default: '20'
+
+permissions:
+  contents: write
+
+jobs:
+  fly:
+    name: Fly
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow onnxruntime
+
+      - name: Find real annotated drone video
+        id: fetch
+        run: |
+          python - <<'PY'
+          import io, json, os, pathlib, sys, urllib.parse, urllib.request, zipfile
+
+          # Searched rather than hard-coded, so a dead address is REPORTED instead of
+          # silently skipped. The same mistake once let a fire model ship that answered the
+          # same score for every picture.
+          TERMS = ["VisDrone MOT", "VisDrone VID", "visdrone tracking",
+                   "drone multi object tracking", "UAV pedestrian tracking"]
+
+          def candidates():
+              out = []
+              for term in TERMS:
+                  url = ("https://huggingface.co/api/datasets?search="
+                         + urllib.parse.quote(term) + "&limit=10")
+                  try:
+                      request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                      with urllib.request.urlopen(request, timeout=60) as response:
+                          listing = json.load(response)
+                  except Exception as problem:
+                      print(f"  could not search {term!r}: {problem}", flush=True)
+                      continue
+                  for entry in listing:
+                      name = entry.get("id")
+                      if name and name not in out:
+                          out.append(name)
+                          print(f"  {term!r} -> {name}", flush=True)
+              return out
+
+          found = candidates()
+          print(f"\n{len(found)} dataset candidates", flush=True)
+          pathlib.Path("candidates.json").write_text(json.dumps(found, indent=2))
+          if not found:
+              print("::warning::No annotated drone video datasets were reachable. "
+                    "This is a fact about what is published and searchable, not a failure "
+                    "of the pipeline being tested.", flush=True)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"count={len(found)}\n")
+          PY
+
+      - name: What was found
+        run: cat candidates.json
