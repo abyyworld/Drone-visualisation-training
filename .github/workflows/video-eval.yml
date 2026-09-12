@@ -175,6 +175,44 @@ jobs:
           done < flown.txt
           cat docs/metrics-video.txt
 
+      - name: Are the strays real people the dataset did not label
+        run: |
+          python - <<'PY'
+          import json, pathlib, statistics
+
+          # The ignored-region theory did not survive the numbers: the sequence with 16% of
+          # boxes on a labelled person has only 8% of its frame ignored, and its people are
+          # BIGGER than the sequence that scored 73%. So this asks the other question - are
+          # the boxes that matched nothing simply smaller than the ones that matched, which
+          # is what "real people too far away for the dataset to annotate" looks like.
+          for flight in sorted(pathlib.Path(".").glob("flight-*.json")):
+              data = json.loads(flight.read_text())
+              matched, unmatched = [], []
+              for run in data["runs"]:
+                  for frame in run["frames"]:
+                      truth = frame["truth"]
+                      for d in frame["detections"]:
+                          b = d["box"]
+                          def iou(p):
+                              x0, y0 = max(b[0], p[0]), max(b[1], p[1])
+                              x1, y1 = min(b[2], p[2]), min(b[3], p[3])
+                              if x1 <= x0 or y1 <= y0:
+                                  return 0.0
+                              i = (x1 - x0) * (y1 - y0)
+                              return i / ((b[2]-b[0])*(b[3]-b[1]) + (p[2]-p[0])*(p[3]-p[1]) - i)
+                          height = b[3] - b[1]
+                          (matched if any(iou(p) >= 0.3 for p in truth) else unmatched).append(height)
+              print(f"{flight.stem}:", flush=True)
+              print(f"    detections matching a labelled person  {len(matched):>6}, "
+                    f"median height {statistics.median(matched) if matched else 0:.0f} px", flush=True)
+              print(f"    detections matching nothing            {len(unmatched):>6}, "
+                    f"median height {statistics.median(unmatched) if unmatched else 0:.0f} px", flush=True)
+          PY
+
+      - name: What settings do best on this footage
+        run: |
+          node tools/sweep_tracker.mjs flight-*.json | tee -a docs/metrics-video.txt
+
       - name: Commit the report
         run: |
           git config user.name abyyworld
