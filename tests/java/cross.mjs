@@ -144,6 +144,27 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     }
   }
 
+  // How far a thing may jump between two looks and still be the same thing.
+  //
+  // The last thing the tracker tries, when nothing overlaps and nothing is close enough to
+  // its size, is "you are the only candidate near me and I am the only one near you". That
+  // has a ceiling on it, and the ceiling is on the DISTANCE: the Java checked each axis on
+  // its own instead, which let a corner 495 pixels away be paired as if it were 350, so the
+  // tablet reunited a person with a box the browser would have called somebody new. The
+  // jumps below straddle it - 300 and 350 are inside it per-axis and outside it by distance.
+  for (const jump of [100, 250, 300, 350, 420]) {
+    const tracker = new Tracker();
+    let clock = 1000;
+    for (let step = 0; step < 10; step += 1) {
+      const at = step < 5 ? 0 : jump;
+      tracker.update([{ label: 'person', confidence: 0.8,
+        box: [at, 100 + at, at + 10, 122 + at] }], clock);
+      clock += 250;
+    }
+    console.log(`track-jump-${jump}: seen ${tracker.countSeen('person')} `
+      + `numbers [${tracker.visible().map((t) => t.number).sort((a, b) => a - b).join(',')}]`);
+  }
+
   // The windows the tracker derives from the cadence a device is achieving. Two
   // implementations of one rule, and a tablet that disagreed with the browser about how long
   // to hold somebody would count the same crowd differently. See Tracker.setCadence.

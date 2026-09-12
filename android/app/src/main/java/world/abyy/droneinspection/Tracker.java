@@ -896,10 +896,16 @@ public final class Tracker {
         float[] to = centre(other);
         double dx = to[0] - at[0];
         double dy = to[1] - at[1];
-        if (Math.abs(dx) > DRIFT_MAX || Math.abs(dy) > DRIFT_MAX) {
+        // The ceiling is on the DISTANCE, not on each axis, which is what the JavaScript
+        // does here. Checking the axes separately admits a corner 566 pixels away as if it
+        // were 400, so this port was pairing things across a gap the app it is a port of
+        // refuses. estimateDrift is the one that checks per axis, deliberately: there the
+        // two axes are separate votes about how the picture moved.
+        double away = Math.hypot(dx, dy);
+        if (away > DRIFT_MAX) {
             return -1;
         }
-        return Math.hypot(dx, dy);
+        return away;
     }
 
     private static float median(List<float[]> offsets, int axis) {

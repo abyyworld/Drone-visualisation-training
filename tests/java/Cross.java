@@ -173,6 +173,34 @@ public class Cross {
       }
     }
 
+    // How far a thing may jump between two looks and still be the same thing. The twin of
+    // this is in cross.mjs, and it is there because the ceiling used to be checked per axis
+    // here and by distance there. See Tracker.separation.
+    for (int jump : new int[]{100, 250, 300, 350, 420}) {
+      Tracker tracker = new Tracker();
+      long clock = 1000;
+      for (int step = 0; step < 10; step++) {
+        int at = step < 5 ? 0 : jump;
+        List<Finding> one = new ArrayList<>();
+        Finding f = new Finding("person", "high", "", at, 100 + at, at + 10, 122 + at);
+        f.confidence = 0.8f;
+        one.add(f);
+        tracker.update(one, clock);
+        clock += 250;
+      }
+      List<Integer> numbers = new ArrayList<>();
+      for (Tracker.Track drawn : tracker.visible()) {
+        numbers.add(drawn.number);
+      }
+      Collections.sort(numbers);
+      StringBuilder joined = new StringBuilder();
+      for (int i = 0; i < numbers.size(); i++) {
+        joined.append(i == 0 ? "" : ",").append(numbers.get(i));
+      }
+      System.out.println("track-jump-" + jump + ": seen " + tracker.countSeen("person")
+          + " numbers [" + joined + "]");
+    }
+
     // The windows the tracker derives from the cadence a device is achieving. See
     // Tracker.setCadence, and the twin in cross.mjs.
     for (int cycle : new int[]{60, 125, 200, 250, 400, 600, 1000, 2500}) {
