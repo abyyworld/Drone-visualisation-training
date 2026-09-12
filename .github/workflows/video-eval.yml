@@ -154,7 +154,7 @@ jobs:
               print(f"{stem}: {width}x{height}, {len(frames)} frames", flush=True)
               print(f"    labelled people rows {people_rows}, median height "
                     f"{statistics.median(heights) if heights else 0:.0f} px "
-                    f"({(statistics.median(heights) if heights else 0) * 640/1306:.1f} px to the model)",
+                    f"({(statistics.median(heights) if heights else 0) * 640/1133:.1f} px to the model)",
                     flush=True)
               print(f"    ignored-region rows {ignored_rows}, covering {share:.0%} of the "
                     f"frame on average", flush=True)
@@ -217,9 +217,12 @@ jobs:
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          git add docs/metrics-video.txt
-          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          if git diff --quiet -- docs/metrics-video.txt; then echo "nothing changed"; exit 0; fi
+          # The pull comes FIRST and the add after it. --autostash restores the report
+          # UNSTAGED, so staging before the rebase leaves an empty index and commits a
+          # completed measurement into nothing.
           git pull --rebase --autostash origin main || true
+          git add docs/metrics-video.txt
           git commit -m "Fly real video sequences and record what they say
 
           VisDrone MOT val, consecutive frames of real flights, with a target id per
