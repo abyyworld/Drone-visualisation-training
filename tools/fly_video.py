@@ -247,11 +247,11 @@ def main():
         if n % 10 == 0:
             print(f"  {n}/{wanted} cycles", file=sys.stderr, flush=True)
 
-    # A truth lookup that matches nothing reads exactly like a flight over an empty field:
-    # every cycle reports nobody present, the scorer divides by zero people and prints
-    # tidy-looking zeroes, and the run goes green. That is how a fire model once shipped
-    # that answered the same score for every picture. If the frame numbering in the
-    # annotations does not line up with the file names, say so here.
+    # A truth lookup that matches nothing is indistinguishable from a flight with nothing
+    # annotated in it: every cycle carries an empty truth list, the scorer divides by an
+    # empty total and prints tidy-looking zeroes, and the run goes green. That is how a fire
+    # model once shipped here that answered the same score for every picture. If the frame
+    # numbering in the annotations does not line up with the file names, say so here.
     matched = sum(len(f["who"]) for f in out_frames)
     if not matched:
         raise SystemExit(
