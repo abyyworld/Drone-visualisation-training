@@ -214,17 +214,32 @@ jobs:
           # none, printed the schema and refused to invent one. That refusal is why this is
           # written against the real columns rather than against a guess that scored.
           NAME = "baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire"
-          WANT = 600
+          PER_SOURCE = 150
+
+          # Downloaded rather than streamed, and this is the whole point of the exercise.
+          # Streaming the first 600 rows reached only two of the corpora in it - dfire and
+          # aiformankind, both taken from the ground - and reported a confident table under
+          # the heading AERIAL without a single aerial picture in it. The flame and forest
+          # sets, which are the drone footage this was fetched for, were further down a
+          # stream that was never read that far.
+          #
+          # A sample that stops early is not a sample, it is the beginning of the file.
           try:
-              data = load_dataset(NAME, split="validation", streaming=True)
-              rows = []
-              for row in data:
-                  rows.append(row)
-                  if len(rows) >= WANT:
-                      break
+              data = load_dataset(NAME, split="validation")
           except Exception as problem:
               print(f"::warning::could not load {NAME}: {problem}")
               raise SystemExit(0)
+
+          # Evenly across sources, so a corpus that happens to be large cannot drown the one
+          # that actually matches how this flies.
+          taken = collections.Counter()
+          rows = []
+          for row in data:
+              src = row.get("source")
+              if taken[src] >= PER_SOURCE:
+                  continue
+              taken[src] += 1
+              rows.append(row)
           if not rows:
               print("::warning::no rows came back")
               raise SystemExit(0)
