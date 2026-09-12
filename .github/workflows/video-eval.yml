@@ -53,10 +53,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy pillow onnxruntime
 
+      # Kept between runs. The host answers 429 to a handful of fetches of the same
+      # several-hundred-megabyte zip in an afternoon, and comparing two detectors means
+      # several runs in an afternoon - a rate limit is not a reason for a measurement to
+      # fail, and refetching identical bytes is the thing causing it.
+      - name: Restore the dataset if a previous run fetched it
+        uses: actions/cache@v4
+        with:
+          path: mot.zip
+          key: visdrone-mot-val-v1
+
       - name: Fetch VisDrone MOT val
         run: |
           python - <<'PY'
-          import pathlib, urllib.request, zipfile
+          import pathlib, time, urllib.error, urllib.request, zipfile
 
           # Found by searching the dataset index (see git history for the search step that
           # turned this up). Real consecutive frames of real flights, with a target id per
@@ -64,10 +74,26 @@ jobs:
           # identity switch a measurement rather than an inference.
           URL = ("https://huggingface.co/datasets/rayavarapuhemanthkumar/"
                  "visdrone-detection-tracking/resolve/main/VisDrone2019-MOT-val.zip")
-          request = urllib.request.Request(URL, headers={"User-Agent": "curl/8"})
-          with urllib.request.urlopen(request, timeout=900) as response:
-              pathlib.Path("mot.zip").write_bytes(response.read())
-          size = pathlib.Path("mot.zip").stat().st_size
+          zipped = pathlib.Path("mot.zip")
+          # Backoff rather than one attempt. The last run died on a 429 with everything
+          # else about it working, and a measurement thrown away by a rate limit reads in
+          # the log like a measurement that could not be made.
+          if zipped.exists() and zipped.stat().st_size > 10_000_000:
+              print(f"cached: {zipped.stat().st_size/1e6:.0f} MB", flush=True)
+          else:
+              request = urllib.request.Request(URL, headers={"User-Agent": "curl/8"})
+              for attempt in range(5):
+                  try:
+                      with urllib.request.urlopen(request, timeout=900) as response:
+                          zipped.write_bytes(response.read())
+                      break
+                  except urllib.error.HTTPError as refused:
+                      wait = 20 * (attempt + 1)
+                      print(f"  {refused.code} from the host, waiting {wait}s", flush=True)
+                      if attempt == 4:
+                          raise
+                      time.sleep(wait)
+          size = zipped.stat().st_size
           print(f"got {size/1e6:.0f} MB", flush=True)
           if size < 10_000_000:
               raise SystemExit("too small to be the dataset")
