@@ -19,6 +19,51 @@ HOW A NUMBER IS JUDGED
   640 at two tiles, old tracker            49%     1.48     149       74.7%
   640 at two tiles, this tracker           49%     1.49     158       80.8%
 
+WHAT HAPPENS WHEN THE SCENE IS NOT A CROWD
+
+  Everything above this line was measured on the four most crowded frames in the
+  validation set. Those are the top four of 548, and they are not what this flies over.
+  The whole set, by how many people are in the frame:
+
+        0 people    17 frames
+      1-5           64
+      6-15         127
+     16-40         261      <- the common case
+    41-100          67
+      100+          12      <- what every number above was measured on
+
+  So the same pipeline, three flights over three representative frames from each band:
+
+    scene              boxed now   reached   numbers each   boxes on a person
+    sparse (1-5)            37%       41%        1.00              68%
+    light (6-15)            42%       46%        1.39              61%
+    busy (16-40)            42%       45%        1.31              70%
+    crowded (41-100)        31%       34%        1.40              61%
+    dense (100+)            42%       44%        1.35              75%
+
+  THE SPARSE ANSWER: 1.00 numbers each. Nobody is counted twice, at all. The repeat
+  numbering that made one person read as "person 67" is a crowd problem and it does not
+  happen when there are a handful of people to follow.
+
+  THE UNCOMFORTABLE ANSWER: detection does not get easier when the scene empties out. It
+  is about 40 to 46 percent everywhere. A sparse scene is not a sparse-and-therefore-easy
+  scene; it is the same people at the same size with more ground between them.
+
+  Which is the real limit, and it is not the crowd:
+
+    scene              median person   as the model sees it
+    sparse (1-5)            34 px            16.4 px
+    light (6-15)            27 px            13.2 px
+    busy (16-40)            23 px            11.3 px
+    crowded (41-100)        27 px            13.2 px
+    dense (100+)            26 px            12.5 px
+
+  Eleven to sixteen pixels, whatever the density. That is what sets the ceiling. More
+  people in frame does not make each one harder to see, and fewer does not make them
+  easier; flying lower does, and so would a model that is better at objects this small.
+  Everything this project has tuned - tile count, export size, thresholds, coast windows -
+  moves the number by a few points around that ceiling. None of it moves the ceiling.
+
 HOW MUCH OF THE CROWD IS OUTLINED AT ANY MOMENT
 
   A different question from the table above, and the one an operator is actually looking
@@ -39,12 +84,24 @@ HOW MUCH OF THE CROWD IS OUTLINED AT ANY MOMENT
   the first look, and a number says "this is a person and it is this one", which is not
   true yet and is withheld until it is.
 
-  This is why boxing more did not make the counting worse. A faint track is provisional:
-  drawn, matchable, and unable to be numbered or counted until a detection the tracker
-  would have believed on its own agrees with it. It also never outbids a real track for a
-  detection - without that rule the repeat numbering went from 1.47 per person to 1.63,
-  because faint boxes were taking observations away from people who then coasted and were
-  renumbered.
+DRAWING THE FAINT ONES TOO: TRIED, MEASURED, TAKEN BACK OUT
+
+  The obvious next step was to draw a box for a detection too faint to start an identity,
+  so that nothing the model saw at all went unboxed. On the crowded frames it looked like
+  a win. Across the densities it is not. Per frame, as an operator sees it:
+
+    scene              boxes on people        boxes on nobody
+    light (6-15)        4.4 -> 5.6             2.9 -> 4.5
+    busy (16-40)       10.3 -> 12.7            4.5 -> 9.9
+    dense (100+)       52.2 -> 64.6           17.5 -> 26.9
+
+  Only in the densest band does it add more right boxes than wrong ones, and that band is
+  twelve frames out of 548. In the common case it puts two boxes on empty ground for every
+  one it puts on a person. A screen where two boxes in five are on nothing is not a screen
+  anybody can use, so it is out.
+
+  It is also redundant: the sensitivity slider sets that same threshold, so an operator who
+  wants those blobs boxed can lower it, and can watch what it costs while they do.
 
   55.2% is not 100% and cannot be made 100% here. The rest are people the model did not
   detect at all, at any confidence, and no drawing rule can outline somebody the detector

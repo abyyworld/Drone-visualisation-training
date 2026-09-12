@@ -229,23 +229,6 @@ public final class Tracker {
         public final List<float[]> path = new ArrayList<>();
         boolean counted;
 
-        /**
-         * Drawn, but not yet anybody.
-         *
-         * A detection too faint to start an identity used to be thrown away, so a person the
-         * model was only half sure about had no box at all. It gets one now: the track is
-         * created, drawn, and matched to like any other, and it simply cannot be numbered or
-         * counted until a detection the tracker would have believed on its own agrees with
-         * it. Drawing and counting are two decisions, and only the second one needs to be
-         * careful.
-         *
-         * Measured on four crowded frames: a box on 55.2% of the people in view against
-         * 43.4% before, with the repeat numbering moving 1.47 to 1.49.
-         *
-         * Kept in step with provisional in web/js/track.js.
-         */
-        boolean provisional;
-
         Track(int id, String label, float[] box, float confidence, long now) {
             this.id = id;
             this.label = label;
@@ -320,15 +303,7 @@ public final class Tracker {
         // Appended rather than merged: they score below every real affinity, so the greedy
         // pass below only reaches them for a track and a detection nothing else wanted.
         pairs.addAll(unambiguousPairs(detections));
-        // Somebody who has been counted always gets first refusal. A provisional track is a
-        // box drawn over something that may be nothing, and letting it outbid a real track
-        // for a detection - which it will, whenever the real track's box has drifted and the
-        // faint one happens to sit closer - takes the observation away from a person, who
-        // then misses, coasts, and eventually gets a second number. Measured: without this,
-        // boxing the faint ones put the repeat numbering up from 1.47 per person to 1.63.
-        // Score decides between equals; being real is not a score.
-        pairs.sort(Comparator.comparing((Pair p) -> p.track.provisional)
-                .thenComparing(Comparator.comparingDouble((Pair p) -> p.score).reversed()));
+        pairs.sort(Comparator.comparingDouble((Pair p) -> p.score).reversed());
 
         Set<Track> usedTracks = new HashSet<>();
         Set<Integer> usedDetections = new HashSet<>();
@@ -346,11 +321,6 @@ public final class Tracker {
             pair.track.confidence = detections.get(pair.index).confidence;
             pair.track.missed = 0;
             pair.track.seen += 1;
-            // A confident look is what turns a drawn box into somebody who can be numbered.
-            if (pair.track.provisional
-                    && detections.get(pair.index).confidence >= newTrackConfidence) {
-                pair.track.provisional = false;
-            }
             pair.track.lastSeenAt = now;
             float[] fresh = detections.get(pair.index).signature;
             if (fresh != null) {
@@ -393,10 +363,19 @@ public final class Tracker {
             }
             Finding detection = detections.get(i);
 
-            // A box too weak to be somebody NEW. It may keep a person alive through a bad
-            // moment and it may not invent one. See NEW_TRACK_CONFIDENCE. It is still drawn:
-            // the track is created provisional, which can be seen and cannot be counted.
-            boolean faint = detection.confidence > 0 && detection.confidence < newTrackConfidence;
+            // A box too weak to be somebody new. It was offered to every track above and
+            // none of them wanted it, so it stops here: it may keep a person alive through
+            // a bad moment, and it may not invent one. See NEW_TRACK_CONFIDENCE.
+            //
+            // Drawing these anyway was tried and measured across five scene densities, and
+            // taken back out: in the scenes this actually flies it puts more boxes on empty
+            // ground than on people (busy scenes, per frame: 10.2 to 12.7 boxes on people
+            // against 4.5 to 9.9 on nobody). The sensitivity slider sets this threshold, so
+            // anybody who wants them boxed can lower it and see what it costs. Numbers in
+            // docs/metrics-crowd.txt and in the twin comment in web/js/track.js.
+            if (detection.confidence > 0 && detection.confidence < newTrackConfidence) {
+                continue;
+            }
 
             // Before issuing a new number, ask whether this is someone already known. A
             // track that closed because its subject walked behind something is not a
@@ -405,7 +384,6 @@ public final class Tracker {
             Remembered known = recognise(detection, now);
             Track track = new Track(known != null ? known.id : nextId++, detection.label,
                     boxOf(detection), detection.confidence, now);
-            track.provisional = faint && known == null;
             track.signature = detection.signature;
             if (known != null) {
                 if (track.signature == null) {
@@ -443,7 +421,7 @@ public final class Tracker {
         // Counted once, when a track becomes confirmed: not while it is a one-frame
         // flicker, and not again on every frame after.
         for (Track track : tracks) {
-            if (track.seen >= CONFIRM_AFTER && !track.counted && !track.provisional) {
+            if (track.seen >= CONFIRM_AFTER && !track.counted) {
                 track.counted = true;
                 if (track.number == 0) {
                     track.number = nextNumber++;
@@ -469,7 +447,7 @@ public final class Tracker {
     public List<Track> open() {
         List<Track> confirmed = new ArrayList<>();
         for (Track track : tracks) {
-            if (track.seen >= CONFIRM_AFTER && !track.provisional) {
+            if (track.seen >= CONFIRM_AFTER) {
                 confirmed.add(track);
             }
         }
@@ -554,8 +532,7 @@ public final class Tracker {
         long now = System.currentTimeMillis();
         int n = 0;
         for (Track track : open()) {
-            if (track.label.equals(label) && !track.provisional
-                    && now - track.lastSeenAt <= IN_VIEW_MS) {
+            if (track.label.equals(label) && now - track.lastSeenAt <= IN_VIEW_MS) {
                 n += 1;
             }
         }

@@ -492,16 +492,7 @@ export class Tracker {
     // Appended rather than merged: they score below every real affinity, so the greedy pass
     // below only reaches them for a track and a detection nothing else wanted.
     pairs.push(...unambiguousPairs(this.tracks, detections));
-    // Somebody who has been counted always gets first refusal. A provisional track is a box
-    // drawn over something that may be nothing, and letting it outbid a real track for a
-    // detection - which it will, whenever the real track's box has drifted and the faint one
-    // happens to sit closer - takes the observation away from a person, who then misses,
-    // coasts, and eventually gets a second number. Measured: without this, boxing the faint
-    // ones put the repeat numbering up from 1.47 numbers per person to 1.63. Score decides
-    // between equals; being real is not a score.
-    pairs.sort((a, b) => (a.track.provisional === b.track.provisional)
-      ? b.score - a.score
-      : (a.track.provisional ? 1 : -1));
+    pairs.sort((a, b) => b.score - a.score);
 
     const usedTracks = new Set();
     const usedDetections = new Set();
@@ -520,11 +511,6 @@ export class Tracker {
       pair.track.certainty = detection.certainty ?? pair.track.certainty;
       pair.track.missed = 0;
       pair.track.seen += 1;
-      // A confident look is what turns a drawn box into somebody who can be numbered.
-      if (pair.track.provisional
-          && (detection.confidence ?? 1) >= this.newTrackConfidence) {
-        pair.track.provisional = false;
-      }
       pair.track.lastFrame = this.frame;
       pair.track.lastSeenAt = now;
       if (detection.signature) {
@@ -566,20 +552,30 @@ export class Tracker {
     for (const [index, detection] of detections.entries()) {
       if (usedDetections.has(index)) continue;
 
-      // A box too weak to be somebody NEW. It was offered to every track above and none of
-      // them wanted it, so it may keep a person alive through a bad moment and it may not
-      // invent one. See NEW_TRACK_CONFIDENCE.
+      // A box too weak to be somebody new. It was offered to every track above and none of
+      // them wanted it, so it stops here: it may keep a person alive through a bad moment,
+      // and it may not invent one. See NEW_TRACK_CONFIDENCE.
       //
-      // It is still drawn, though, and that is the difference between this and dropping it.
-      // The operator's instruction was to box everything and stop making them wait for it to
-      // be verified; the reason it could not simply be done is that drawing and numbering
-      // were one decision, so boxing a faint blob also counted it as a person. They are two
-      // decisions now. A track born faint is `provisional`: it is drawn, it can be matched
-      // to and grow, and it cannot be numbered or counted until a detection the tracker
-      // would have believed on its own agrees with it. Measured on four crowded frames,
-      // this puts a box on 55.6% of the people in view against 42.6% before, and the count
-      // does not move, because none of these are counted until something confident says so.
-      const faint = (detection.confidence ?? 1) < this.newTrackConfidence;
+      // DRAWING THESE ANYWAY WAS TRIED, AND MEASURED, AND TAKEN BACK OUT
+      //     The ask was to box everyone without waiting for verification. Half of that is
+      //     right and is what visible() does. The other half - drawing a blob too faint to
+      //     start an identity - was measured across five scene densities, per frame, as an
+      //     operator sees it:
+      //
+      //         scene            boxes on people      boxes on nobody
+      //         light  (6-15)      4.4 -> 5.6           2.9 -> 4.5
+      //         busy   (16-40)    10.2 -> 12.7          4.5 -> 9.9
+      //         dense  (100+)     52.4 -> 64.6         17.7 -> 26.9
+      //
+      //     In a crowd it roughly breaks even. In the scenes this actually flies - 16 to 40
+      //     people is 261 of the 548 validation frames, and 100+ is twelve of them - it puts
+      //     more boxes on empty ground than on people. An operator cannot use a screen where
+      //     two boxes in five are on nothing.
+      //
+      //     It is also redundant. The sensitivity slider sets this threshold, so anybody who
+      //     wants those faint blobs boxed can have them by lowering it, and can see what it
+      //     costs while they do it. See docs/metrics-crowd.txt.
+      if ((detection.confidence ?? 1) < this.newTrackConfidence) continue;
 
       // Before issuing a new number, ask whether this is someone already known. A track
       // that closed because its subject walked behind something is not a different person
@@ -599,8 +595,6 @@ export class Tracker {
         // Carried across, and this is the whole point: someone already counted is not
         // counted again when they come back.
         counted: known ? known.counted : false,
-        // Drawn, but not yet anybody. Cleared by the first confident look. See `faint`.
-        provisional: faint && !known,
         // Carried across with the count for the same reason: somebody who walks behind a
         // van and out the other side is not a new person and must not get a new number.
         number: known ? known.number : 0,
@@ -638,7 +632,7 @@ export class Tracker {
     // Counted once, at the moment a track becomes confirmed - not while it is a one-frame
     // flicker, and not again on every frame after.
     for (const track of this.tracks) {
-      if (track.seen >= this.confirmAfter && !track.counted && !track.provisional) {
+      if (track.seen >= this.confirmAfter && !track.counted) {
         track.counted = true;
         // The number is issued HERE, when somebody is confirmed to be somebody, and not
         // when a box first appears.
@@ -729,7 +723,7 @@ export class Tracker {
    * one that strobes.
    */
   open() {
-    return this.tracks.filter((t) => t.seen >= this.confirmAfter && !t.provisional);
+    return this.tracks.filter((t) => t.seen >= this.confirmAfter);
   }
 
   /**
@@ -761,7 +755,6 @@ export class Tracker {
   countOf(label, now = this.now ?? Date.now()) {
     return this.tracks.filter((t) => t.label === label
       && t.seen >= this.confirmAfter
-      && !t.provisional
       && now - t.lastSeenAt <= IN_VIEW_MS).length;
   }
 
