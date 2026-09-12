@@ -25,7 +25,7 @@ ANNOTATION FORMAT (VisDrone MOT)
     frame, target_id, x, y, w, h, score, category, truncation, occlusion
     Categories 1 and 2 are pedestrian and people, which is what the app keeps.
 """
-import argparse, collections, json, pathlib, sys
+import argparse, collections, json, math, pathlib, sys
 import numpy as np
 import onnxruntime as ort
 from PIL import Image
@@ -97,6 +97,72 @@ def detect(view, conf, offset=(0.0, 0.0)):
     return [b for b in found if b[2] - b[0] > 1 and b[3] - b[1] > 1]
 
 
+# --------------------------------------------------------------------------- re-identification
+#
+# WHY THE HARNESS HAS TO DO THIS
+#     The tracker's answer to "somebody walked behind a van and came out the other side" is
+#     recognise(): it keeps a colour signature for every track it lets go and reunites them
+#     rather than issuing a second number. That mechanism is the direct answer to the
+#     complaint that one person collects several numbers.
+#
+#     A harness that hands the tracker boxes and no signatures turns it off completely.
+#     Every re-acquisition then gets a fresh number, and the repeat-numbering figure it
+#     reports is a bound on how bad things could be rather than a measurement of how bad
+#     they are. Every number this project has published about numbering was measured with it
+#     off.
+#
+# A PORT, AND IT HAS TO STAY ONE
+#     This is web/js/reid.js describe(), in Python. Both are checked against each other by
+#     tools/check_reid_port.py, because a signature that differs from the app's would make
+#     every re-identification number here fiction.
+BANDS = 4
+WHOLE_BAND = 3
+LEVELS = 4
+BIN_COUNT = LEVELS * LEVELS * LEVELS
+MIN_BOX_WIDTH = 6
+MIN_BOX_HEIGHT = 8
+
+
+def describe(frame, box):
+    """A colour signature for one box, or None when it is too few pixels to describe."""
+    width, height = frame.shape[1], frame.shape[0]
+    x0 = max(0, int(round(box[0])))
+    y0 = max(0, int(round(box[1])))
+    x1 = min(width, int(round(box[2])))
+    y1 = min(height, int(round(box[3])))
+    if x1 - x0 < MIN_BOX_WIDTH or y1 - y0 < MIN_BOX_HEIGHT:
+        return None
+
+    crop = frame[y0:y1, x0:x1]
+    # Integer division into LEVELS buckets per channel, coarse on purpose: a finer histogram
+    # is more precise about lighting and less about the person, and the lighting changes as
+    # a drone moves while the person does not.
+    binned = ((crop.astype(np.int32) * LEVELS) >> 8)
+    bins = (binned[:, :, 0] * LEVELS + binned[:, :, 1]) * LEVELS + binned[:, :, 2]
+
+    signature = np.zeros(BANDS * BIN_COUNT, dtype=np.float32)
+    rows = y1 - y0
+    band_height = rows / WHOLE_BAND
+    for band in range(WHOLE_BAND):
+        # The JavaScript puts row y in band floor(y / bandHeight), so a band STARTS at
+        # ceil(band * bandHeight) - not int(). They agree whenever the box divides into
+        # three exactly and differ by a whole row of pixels whenever it does not, which is
+        # most of the time. tools/check_reid_port.py caught this; without it the signatures
+        # would have been quietly wrong for every person whose height is not a multiple of
+        # three, and the re-identification measured here would have been about a mechanism
+        # the app does not have.
+        lo = math.ceil(band * band_height)
+        hi = rows if band == WHOLE_BAND - 1 else math.ceil((band + 1) * band_height)
+        take = bins[lo:hi]
+        if take.size == 0:
+            continue
+        counts = np.bincount(take.ravel(), minlength=BIN_COUNT).astype(np.float32)
+        signature[band * BIN_COUNT:(band + 1) * BIN_COUNT] = counts / take.size
+    whole = np.bincount(bins.ravel(), minlength=BIN_COUNT).astype(np.float32)
+    signature[WHOLE_BAND * BIN_COUNT:] = whole / bins.size
+    return [round(float(v), 6) for v in signature]
+
+
 def truth_by_frame(path):
     """frame index -> [(target_id, box), ...] for people only."""
     people = collections.defaultdict(list)
@@ -154,6 +220,7 @@ def main():
         here = truth.get(index, [])
         present.update(t for t, _ in here)
 
+        pixels = np.asarray(view, dtype=np.uint8)
         found = []
         for _ in range(args.tiles_per_cycle):
             x, y, w, h = region(turn, columns, rows, width, height)
@@ -163,8 +230,15 @@ def main():
         found = nms(found, 0.55)
 
         out_frames.append({
-            "detections": [{"label": "person", "confidence": round(float(b[4]), 4),
-                            "box": [round(float(v), 2) for v in b[:4]]} for b in found],
+            "detections": [dict(
+                label="person",
+                confidence=round(float(b[4]), 4),
+                box=[round(float(v), 2) for v in b[:4]],
+                # What the tracker needs to recognise somebody who left and came back. See
+                # describe() above, and the note about why leaving it out understates the
+                # numbering.
+                **({"signature": sig} if (sig := describe(pixels, b[:4])) else {}),
+            ) for b in found],
             "truth": [[round(float(v), 2) for v in box] for _, box in here],
             # The real person, from the dataset. Not an inference about which person a box
             # mostly sat on - which is what makes an identity switch measured here.
