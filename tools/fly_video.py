@@ -25,7 +25,7 @@ ANNOTATION FORMAT (VisDrone MOT)
     frame, target_id, x, y, w, h, score, category, truncation, occlusion
     Categories 1 and 2 are pedestrian and people, which is what the app keeps.
 """
-import argparse, collections, json, math, pathlib, sys
+import argparse, collections, json, math, pathlib, sys, time
 import numpy as np
 import onnxruntime as ort
 from PIL import Image
@@ -37,6 +37,11 @@ OVERLAP = 0.18                      # Tiles.OVERLAP
 SIGN_LONG_EDGE = 640                # LiveActivity.DETECT_LONG_EDGE
 
 SPEC = SIZE = KEEP = SESSION = None
+# Milliseconds inside the model, per look, collected so a candidate can be compared with the
+# shipped detector on speed as well as on what it finds. A runner's CPU is not the tablet's,
+# so the absolute figure means little; the ratio between two models measured the same way on
+# the same frames is the part that carries over.
+LOOK_MS = []
 
 
 def load(onnx):
@@ -84,8 +89,10 @@ def detect(view, conf, offset=(0.0, 0.0)):
     px, py = (SIZE - dw) // 2, (SIZE - dh) // 2
     square = Image.new("RGB", (SIZE, SIZE), (114, 114, 114))
     square.paste(view.resize((dw, dh), Image.BILINEAR), (px, py))
+    started = time.perf_counter()
     head = SESSION.run(None, {SESSION.get_inputs()[0].name:
                               np.asarray(square, np.float32).transpose(2, 0, 1)[None] / 255})[0][0]
+    LOOK_MS.append((time.perf_counter() - started) * 1000)
     best = head[4:][KEEP].max(axis=0)
     found = []
     for i in np.nonzero(best >= conf)[0]:
@@ -283,13 +290,16 @@ def main():
             f"would have reported an empty field rather than a failure.")
 
     name = pathlib.Path(args.sequence).name
+    looks = sorted(LOOK_MS)
+    median_ms = looks[len(looks) // 2] if looks else 0.0
     pathlib.Path(args.out).write_text(json.dumps({
         "period": args.period,
         "config": {**vars(args), "grid": args.grid},
+        "msPerLook": round(median_ms, 1),
         "runs": [{"name": name, "peoplePresent": len(present), "frames": out_frames}],
     }))
     print(f"wrote {args.out}: {name}, {len(out_frames)} cycles of {args.period} ms, "
-          f"{len(present)} distinct people")
+          f"{len(present)} distinct people, {median_ms:.1f} ms a look")
 
 
 if __name__ == "__main__":

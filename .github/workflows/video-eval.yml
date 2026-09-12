@@ -26,6 +26,10 @@ on:
         description: 'Seconds of each sequence'
         required: false
         default: '20'
+      model:
+        description: 'Detector to fly (a path in the repo). A candidate from web/models/experiments/ is written to its own report and does not touch the shipped one.'
+        required: false
+        default: 'web/models/person-640.onnx'
 
 permissions:
   contents: write
@@ -77,6 +81,7 @@ jobs:
         env:
           SEQUENCES: ${{ inputs.sequences }}
           SECONDS: ${{ inputs.seconds }}
+          MODEL: ${{ inputs.model }}
         run: |
           python - <<'PY'
           import os, pathlib, subprocess, sys
@@ -101,6 +106,10 @@ jobs:
 
           wanted = int(os.environ.get("SEQUENCES") or 3)
           seconds = float(os.environ.get("SECONDS") or 20)
+          model = os.environ.get("MODEL") or "web/models/person-640.onnx"
+          if not pathlib.Path(model).exists():
+              raise SystemExit(f"no such model in the repo: {model}")
+          print(f"flying {model}", flush=True)
           flown = []
           for count, path in ranked[:wanted]:
               sequence = root / "sequences" / path.stem
@@ -110,6 +119,7 @@ jobs:
               out = f"flight-{path.stem}.json"
               subprocess.run([sys.executable, "tools/fly_video.py",
                               "--sequence", str(sequence), "--annotations", str(path),
+                              "--model", model,
                               "--seconds", str(seconds), "--out", out], check=True)
               flown.append(out)
           # The trailing newline is load-bearing. `while read` returns false on a last line
@@ -165,22 +175,35 @@ jobs:
           PY
 
       - name: Score them
+        env:
+          MODEL: ${{ inputs.model }}
         run: |
+          # A candidate writes its own report. Overwriting the shipped one with a model
+          # the app does not load would leave the repo claiming numbers for a detector
+          # nobody is flying, which is the failure this whole experiments folder exists
+          # to avoid.
+          MODEL="${MODEL:-web/models/person-640.onnx}"
+          case "$MODEL" in
+            web/models/person-640.onnx) REPORT=docs/metrics-video.txt ;;
+            *) REPORT="docs/metrics-video-$(basename "$MODEL" .onnx).txt" ;;
+          esac
+          echo "REPORT=$REPORT" >> "$GITHUB_ENV"
           {
             echo "Real VisDrone MOT sequences, flown at the tablet's cadence."
             echo "Consecutive frames of real flights; every person carries a target id, so a"
             echo "second number issued to somebody is a measured identity switch."
+            echo "Detector: $MODEL"
             echo
-          } > docs/metrics-video.txt
+          } > "$REPORT"
           # `|| [ -n "$f" ]` so a file list without a trailing newline still scores its last
           # entry, and no pipe into tee, because a pipeline's status is tee's: score_flight
           # could fail on a flight and the step would go green with that flight missing.
           while read -r f || [ -n "$f" ]; do
             [ -z "$f" ] && continue
-            node tools/score_flight.mjs "$f" >> docs/metrics-video.txt
-            echo >> docs/metrics-video.txt
+            node tools/score_flight.mjs "$f" >> "$REPORT"
+            echo >> "$REPORT"
           done < flown.txt
-          cat docs/metrics-video.txt
+          cat "$REPORT"
 
       - name: Are the strays real people the dataset did not label
         run: |
@@ -218,18 +241,23 @@ jobs:
 
       - name: What settings do best on this footage
         run: |
-          node tools/sweep_tracker.mjs flight-*.json | tee -a docs/metrics-video.txt
+          node tools/sweep_tracker.mjs flight-*.json | tee -a "$REPORT"
 
       - name: Commit the report
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          if git diff --quiet -- docs/metrics-video.txt; then echo "nothing changed"; exit 0; fi
+          # --porcelain rather than diff --quiet, because a candidate's report is a NEW
+          # file: git diff says a path it has never tracked is unchanged, so the run would
+          # announce "nothing changed" and throw the measurement away.
+          if [ -z "$(git status --porcelain -- "$REPORT")" ]; then
+            echo "nothing changed"; exit 0
+          fi
           # The pull comes FIRST and the add after it. --autostash restores the report
           # UNSTAGED, so staging before the rebase leaves an empty index and commits a
           # completed measurement into nothing.
           git pull --rebase --autostash origin main || true
-          git add docs/metrics-video.txt
+          git add "$REPORT"
           git commit -m "Fly real video sequences and record what they say
 
           VisDrone MOT val, consecutive frames of real flights, with a target id per

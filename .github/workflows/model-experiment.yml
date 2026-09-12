@@ -104,9 +104,14 @@ jobs:
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          git add web/models/experiments
-          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          if [ -z "$(git status --porcelain -- web/models/experiments)" ]; then
+            echo "nothing changed"; exit 0
+          fi
+          # The pull comes FIRST and the add after it: --autostash restores the export
+          # UNSTAGED, so staging before the rebase leaves an empty index and commits an
+          # exported candidate into nothing.
           git pull --rebase --autostash origin main || true
+          git add web/models/experiments
           git commit -m "Try ${{ inputs.candidate }} as ${{ inputs.name }}, unshipped
 
           Exported into web/models/experiments/, which nothing loads, so it can be

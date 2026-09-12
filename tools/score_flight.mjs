@@ -62,7 +62,11 @@ for (const run of data.runs) {
   P += run.peoplePresent; R += reached; N += numbers; X += stray; B += boxes; ON += on;
 }
 const c = data.config;
-console.log(`${c.tiles_per_cycle} tile/cycle, ${c.grid}, ${data.period} ms, ${c.model.split('/').pop()}`);
+// The median time inside the model, per look, on whatever machine flew this. Meaningless
+// on its own - a runner is not the tablet - and the only honest way to compare two models
+// on speed, because it is the same machine and the same frames for both.
+const speed = data.msPerLook ? `, ${data.msPerLook} ms a look` : '';
+console.log(`${c.tiles_per_cycle} tile/cycle, ${c.grid}, ${data.period} ms, ${c.model.split('/').pop()}${speed}`);
 console.log(`  ${'flight'.padEnd(14)}${'present'.padStart(8)}${'reached'.padStart(9)}${'numbers'.padStart(9)}${'repeats'.padStart(9)}${'stray'.padStart(7)}${'on a person'.padStart(13)}`);
 for (const [n, p, r, nn, rep, st, pct] of rows)
   console.log(`  ${n.padEnd(14)}${String(p).padStart(8)}${String(r).padStart(9)}${String(nn).padStart(9)}${String(rep).padStart(9)}${String(st).padStart(7)}${(pct.toFixed(0)+'%').padStart(13)}`);
