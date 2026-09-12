@@ -1,36 +1,36 @@
-model      wildfire-320.onnx
+model      wildfire-640.onnx
 labels     ['smoke', 'fire']
 pictures   120 with fire or smoke, 150 without
 
   conf    marked, of fire   marked, of fire-free
        (higher is better)      (lower is better)
-  0.05             65/120                 10/150
-  0.10             56/120                  4/150
-  0.15             50/120                  0/150
-  0.20             46/120                  0/150
-  0.25             43/120                  0/150
-  0.35             39/120                  0/150
-  0.50             28/120                  0/150
+  0.05            102/120                 24/150
+  0.10             91/120                 22/150
+  0.15             79/120                 17/150
+  0.20             72/120                 11/150
+  0.25             66/120                  9/150
+  0.35             55/120                  5/150
+  0.50             40/120                  4/150
 
 the app runs at 0.15
 
-said nothing about 70 of 120 pictures with fire in them:
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0000.jpg
+said nothing about 41 of 120 pictures with fire in them:
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0002.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0003.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0006.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0008.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0011.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0013.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0014.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0016.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0020.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0022.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0023.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0024.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0025.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0026.jpg
-  ... and 55 more
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0035.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0040.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0049.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0051.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0053.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0055.jpg
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0056.jpg
+  ... and 26 more
 
 Neither column is coverage. A picture with nothing marked has not been cleared
 of anything; it failed to meet a threshold. Thin smoke on a bright sky, fire
@@ -39,39 +39,39 @@ identical to the one an empty field returns.
 
 Against the fire dataset's own no-fire pictures rather than drone footage:
 
-    model      wildfire-320.onnx
+    model      wildfire-640.onnx
     labels     ['smoke', 'fire']
     pictures   120 with fire or smoke, 120 without
     
       conf    marked, of fire   marked, of fire-free
            (higher is better)      (lower is better)
-      0.05             65/120                 20/120
-      0.10             56/120                 10/120
-      0.15             50/120                  7/120
-      0.20             46/120                  6/120
-      0.25             43/120                  4/120
-      0.35             39/120                  4/120
-      0.50             28/120                  4/120
+      0.05            102/120                 54/120
+      0.10             91/120                 36/120
+      0.15             79/120                 29/120
+      0.20             72/120                 23/120
+      0.25             66/120                 21/120
+      0.35             55/120                 16/120
+      0.50             40/120                 11/120
     
     the app runs at 0.15
     
-    said nothing about 70 of 120 pictures with fire in them:
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0000.jpg
+    said nothing about 41 of 120 pictures with fire in them:
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0002.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0003.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0006.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0008.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0011.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0013.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0014.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0016.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0020.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0022.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0023.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0024.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0025.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0026.jpg
-      ... and 55 more
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0035.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0040.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0049.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0051.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0053.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0055.jpg
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0056.jpg
+      ... and 26 more
     
     Neither column is coverage. A picture with nothing marked has not been cleared
     of anything; it failed to meet a threshold. Thin smoke on a bright sky, fire
@@ -94,48 +94,48 @@ Where the pictures came from:
     }
 
 ==============================================================================
-SHIPPING: wildfire-320, generic ground-level weights, at 320
+SHIPPING: wildfire-640, at 640
 311 pictures from baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire
 
   every source together  (179 burning, 132 not)
       conf     found, of burning    marked, of clear
-      0.05                74/179              14/132
-      0.10                65/179              10/132
-      0.15                60/179               6/132
-      0.20                54/179               5/132
-      0.25                52/179               4/132
-      0.35                46/179               3/132
-      0.50                39/179               2/132
+      0.05               103/179              19/132
+      0.10                96/179              15/132
+      0.15                90/179              12/132
+      0.20                82/179              10/132
+      0.25                78/179               8/132
+      0.35                65/179               4/132
+      0.50                52/179               2/132
 
   aiformankind  (11 burning, 0 not)
       conf     found, of burning    marked, of clear
-      0.05                  6/11                   -
-      0.10                  5/11                   -
-      0.15                  4/11                   -
-      0.20                  3/11                   -
-      0.25                  2/11                   -
-      0.35                  2/11                   -
-      0.50                  2/11                   -
+      0.05                  8/11                   -
+      0.10                  7/11                   -
+      0.15                  7/11                   -
+      0.20                  6/11                   -
+      0.25                  6/11                   -
+      0.35                  5/11                   -
+      0.50                  3/11                   -
 
   dfire  (48 burning, 102 not)
       conf     found, of burning    marked, of clear
-      0.05                 41/48              10/102
-      0.10                 41/48               7/102
-      0.15                 41/48               4/102
-      0.20                 39/48               3/102
-      0.25                 38/48               2/102
-      0.35                 35/48               2/102
-      0.50                 32/48               1/102
+      0.05                 47/48              13/102
+      0.10                 47/48              10/102
+      0.15                 47/48               8/102
+      0.20                 46/48               6/102
+      0.25                 46/48               4/102
+      0.35                 44/48               2/102
+      0.50                 39/48               1/102
 
   pyro  (120 burning, 30 not)
       conf     found, of burning    marked, of clear
-      0.05                27/120                4/30
-      0.10                19/120                3/30
-      0.15                15/120                2/30
-      0.20                12/120                2/30
-      0.25                12/120                2/30
-      0.35                 9/120                1/30
-      0.50                 5/120                1/30
+      0.05                48/120                6/30
+      0.10                42/120                5/30
+      0.15                36/120                4/30
+      0.20                30/120                4/30
+      0.25                26/120                4/30
+      0.35                16/120                2/30
+      0.50                10/120                1/30
 
   Neither column is coverage. A picture with nothing marked has not been
   cleared of anything; it failed to meet a threshold.
