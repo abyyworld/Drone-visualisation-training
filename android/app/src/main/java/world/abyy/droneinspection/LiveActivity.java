@@ -205,9 +205,26 @@ public class LiveActivity extends AppCompatActivity {
     /**
      * How often the whole frame is looked at, in cycles, when tiling is on.
      *
-     * See onWholeFrame for the measurement behind it. Every cycle still reads the frame
-     * back, because the flame scan and the appearance signatures both need those pixels;
-     * this is only about which cycles pay for an inference on it.
+     * Never, and that is measured rather than assumed now. Two tiles already cover every
+     * pixel of the frame every cycle, so the wide pass is a second, coarser look at ground
+     * that has just been looked at properly - and it costs a whole inference, which is half
+     * the cycle.
+     *
+     * Flown both ways over five real VisDrone sequences:
+     *
+     *     wide pass   cycle it implies   reached   numbers each   on nobody
+     *     off             250 ms            66%       1.43           197
+     *     on              250 ms            69%       1.56           218
+     *     on              400 ms            61%       1.51           170
+     *
+     * The middle row is the trap, and it is the same trap a stronger model set: given a
+     * cycle it cannot have, the wide pass finds three points more people. Given the cycle
+     * its own inference leaves - 153 ms of tiles plus 77 of wide is a 380 ms cycle where
+     * the tiles alone manage 255 - it loses five. See docs/metrics-video-wide.txt and
+     * docs/metrics-video-wide-400ms.txt.
+     *
+     * Every cycle still READS the frame back, because the appearance signatures and the
+     * flame scan both need those pixels; this is only about paying for an inference on it.
      */
     private static final int WIDE_EVERY = 0;
 
@@ -569,10 +586,12 @@ public class LiveActivity extends AppCompatActivity {
             //     inference every cycle, which was half the budget spent for a tenth of the
             //     result, and that inference is what set how fast the cycle could repeat.
             //
-            //     So when tiling is on it runs every third cycle. The cycles in between are
-            //     a close look and nothing else, which makes them cheaper, which means more
-            //     of them a second, which brings each tile round again sooner. That gap was
-            //     what forced the coast window up to four seconds.
+            //     So when tiling is on it does not run at all, and that has since been
+            //     measured on real video rather than argued: on at the cycle it forces, it
+            //     reaches 61% of the people where off reaches 66%. The cycles it buys are
+            //     close looks and nothing else, which makes them cheaper, which means more
+            //     of them a second, which brings every person round again sooner. See
+            //     WIDE_EVERY for the table.
             //
             //     Not skipped when tiling is off: for a turbine or a panel, which fill the
             //     frame, the wide pass is the entire job.
