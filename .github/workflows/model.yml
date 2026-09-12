@@ -327,12 +327,15 @@ jobs:
               # class list and the input size are facts about the file, and a manifest that
               # disagrees with its model is a silent wrong answer.
               # A threshold that was measured is not a default and must survive a
-              # re-conversion. The wildfire one is 0.15 because a sweep found that to be
-              # the last point with no false alarms at all on real drone footage
-              # (docs/metrics-wildfire.txt), and writing 0.25 over it here would quietly
-              # undo that every time these weights were fetched again. The tablet reads
-              # this file rather than the manifest, so the two disagreeing is not cosmetic:
-              # it is the browser and the tablet marking different things.
+              # re-conversion, so whatever the manifest carries wins over the fallback
+              # below. The wildfire one is 0.25, chosen at 640 as a judgement rather than
+              # a knee: at that resolution there is no threshold with zero false alarms on
+              # real drone footage at all, and 0.15 would find more fire while marking one
+              # clear frame in nine (docs/metrics-wildfire.txt). Writing a default over a
+              # measured value here would quietly undo that every time these weights were
+              # fetched again. The tablet reads this file rather than the manifest, so the
+              # two disagreeing is not cosmetic: it is the browser and the tablet marking
+              # different things.
               tuned = {}
               manifest = pathlib.Path("web/models/manifest.json")
               if manifest.exists():

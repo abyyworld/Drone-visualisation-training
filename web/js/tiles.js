@@ -37,14 +37,15 @@ export function tileRegion(index, frameWidth, frameHeight) {
   const padX = tileWidth * TILE_OVERLAP;
   const padY = tileHeight * TILE_OVERLAP;
 
+  // Each edge is clamped to the frame on its own. Clamping the width instead leaves a
+  // tile holding a pad the frame edge already took from it, and the two halves of a 1920
+  // frame come out 1305 and 1132 wide: read into the same square, the left half of every
+  // frame is looked at 15% smaller than the right. Tiles.java does the same.
   const x = Math.max(0, column * tileWidth - padX);
   const y = Math.max(0, row * tileHeight - padY);
-  return {
-    x,
-    y,
-    width: Math.min(frameWidth - x, tileWidth + padX * 2),
-    height: Math.min(frameHeight - y, tileHeight + padY * 2),
-  };
+  const right = Math.min(frameWidth, (column + 1) * tileWidth + padX);
+  const bottom = Math.min(frameHeight, (row + 1) * tileHeight + padY);
+  return { x, y, width: right - x, height: bottom - y };
 }
 
 /** Intersection over union, for deciding whether two boxes are one thing. */

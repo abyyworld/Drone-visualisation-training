@@ -103,6 +103,10 @@ export class LiveView {
     // small to find. On for a crowd or a fire, where there is.
     this.tiled = true;
     this.detections = 0;
+    // The cycle this machine is actually managing, smoothed, and the clock reading the
+    // worker path measures it from. Feeds Tracker.setCadence. See noteCycle.
+    this.smoothedCycleMs = 0;
+    this.lastCycleAt = 0;
     this.startedAt = 0;
     this.recorder = null;
     this.recorded = [];
@@ -189,6 +193,8 @@ export class LiveView {
     this.fire.reset();
     this.fireRegions = [];
     this.detections = 0;
+    this.smoothedCycleMs = 0;
+    this.lastCycleAt = 0;
     this.startedAt = performance.now();
     this.running = true;
     this.loop();
@@ -298,6 +304,7 @@ export class LiveView {
 
     const took = performance.now() - started;
     const gap = Math.max(MIN_GAP_MS, Math.min(took, MAX_GAP_MS));
+    this.noteCycle(took + gap);
     this.detectHandle = setTimeout(() => this.detectLoop(), gap);
   }
 
@@ -383,6 +390,26 @@ export class LiveView {
     this.detectHandle = setTimeout(() => this.detectLoop(), MIN_GAP_MS);
   }
 
+  /**
+   * Tell the tracker how fast this machine is actually looking.
+   *
+   * The coast and in-view windows are counted in LOOKS, not in milliseconds, so they only
+   * mean what they were tuned to mean if the tracker knows how long a look takes here. The
+   * Java has done this since the cadence went in (LiveActivity, after each cycle) and this
+   * side never did, so the WebView inside the APK - which is where a browser build actually
+   * runs on the controller - kept the desktop's 800 ms and 500 ms however slowly it was
+   * going. Same smoothing as the Java, so the two agree.
+   *
+   * @param cycleMs one whole cycle: the detection and the gap after it
+   */
+  noteCycle(cycleMs) {
+    if (!(cycleMs > 0)) return;
+    this.smoothedCycleMs = this.smoothedCycleMs <= 0
+      ? cycleMs
+      : Math.round(this.smoothedCycleMs * 0.8 + cycleMs * 0.2);
+    this.tracker.setCadence(this.smoothedCycleMs);
+  }
+
   onWorkerMessage(message) {
     if (message?.type === 'error') {
       this.workerBusy = false;
@@ -393,6 +420,9 @@ export class LiveView {
 
     this.workerBusy = false;
     this.workerInference = message.inferenceMs ?? 0;
+    const now = performance.now();
+    if (this.lastCycleAt > 0) this.noteCycle(now - this.lastCycleAt);
+    this.lastCycleAt = now;
     this.tracker.update(message.found ?? [], performance.now());
     this.fireRegions = message.regions ?? [];
     this.detections += 1;

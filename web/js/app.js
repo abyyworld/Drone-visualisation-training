@@ -715,12 +715,16 @@ async function analyseOnDevice(image, base) {
       classId: t.classId,
       confidence: t.confidence,
       box: t.box.map((v) => Math.round(v)),
-      trackId: t.id,
+      // The number issued at confirmation, not the internal id. They are different: the
+      // id counts every track ever started, including the flickers that were never
+      // confirmed, so labelling with it is how one person in an empty field came back as
+      // "person 67". The overlay was fixed for this; the report was not.
+      trackId: t.number,
       seenFrames: t.seen,
       coasted: t.missed > 0,
       note: t.missed > 0
-        ? `#${t.id}, predicted - not seen for ${t.missed} frame${t.missed === 1 ? '' : 's'}`
-        : `#${t.id}, seen in ${t.seen} frame${t.seen === 1 ? '' : 's'}`,
+        ? `#${t.number}, predicted - not seen for ${t.missed} frame${t.missed === 1 ? '' : 's'}`
+        : `#${t.number}, seen in ${t.seen} frame${t.seen === 1 ? '' : 's'}`,
     }));
   }
 

@@ -98,7 +98,9 @@ def region(index, columns, rows, width, height):
     px, py = tw * OVERLAP, th * OVERLAP
     x = max(0.0, column * tw - px)
     y = max(0.0, row * th - py)
-    return [x, y, min(width - x, tw + px * 2), min(height - y, th + py * 2)]
+    right = min(float(width), (column + 1) * tw + px)
+    bottom = min(float(height), (row + 1) * th + py)
+    return [x, y, right - x, bottom - y]
 
 
 def detect(view, conf, offset=(0.0, 0.0)):
@@ -121,7 +123,12 @@ def detect(view, conf, offset=(0.0, 0.0)):
             offset[1] + min(view.height, (cy + h / 2 - py) / scale),
             float(best[i]),
         ])
-    return [b for b in found if b[2] - b[0] > 1 and b[3] - b[1] > 1]
+    # Each pass NMSes its own findings at the spec's threshold, because that is what
+    # Yolo.decodeHead does before anything leaves the detector. Leaving it to the
+    # cross-tile merge alone uses 0.55 where the app uses 0.45, so a second box on
+    # one person survives here that the tablet would already have dropped.
+    return nms([b for b in found if b[2] - b[0] > 1 and b[3] - b[1] > 1],
+               SPEC.get("iouThreshold", 0.45))
 
 
 def render(source, step, pan):

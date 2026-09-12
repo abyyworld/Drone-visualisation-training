@@ -34,6 +34,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 MODELS = ROOT / "web" / "models"
 OVERLAP = 0.18                      # Tiles.OVERLAP
+SIGN_LONG_EDGE = 640                # LiveActivity.DETECT_LONG_EDGE
 
 SPEC = SIZE = KEEP = SESSION = None
 
@@ -72,7 +73,9 @@ def region(index, columns, rows, width, height):
     px, py = tw * OVERLAP, th * OVERLAP
     x = max(0.0, column * tw - px)
     y = max(0.0, row * th - py)
-    return [x, y, min(width - x, tw + px * 2), min(height - y, th + py * 2)]
+    right = min(float(width), (column + 1) * tw + px)
+    bottom = min(float(height), (row + 1) * th + py)
+    return [x, y, right - x, bottom - y]
 
 
 def detect(view, conf, offset=(0.0, 0.0)):
@@ -94,7 +97,12 @@ def detect(view, conf, offset=(0.0, 0.0)):
             offset[1] + min(view.height, (cy + h / 2 - py) / scale),
             float(best[i]),
         ])
-    return [b for b in found if b[2] - b[0] > 1 and b[3] - b[1] > 1]
+    # Each pass NMSes its own findings at the spec's threshold, because that is what
+    # Yolo.decodeHead does before anything leaves the detector. Leaving it to the
+    # cross-tile merge alone uses 0.55 where the app uses 0.45, so a second box on
+    # one person survives here that the tablet would already have dropped.
+    return nms([b for b in found if b[2] - b[0] > 1 and b[3] - b[1] > 1],
+               SPEC.get("iouThreshold", 0.45))
 
 
 # --------------------------------------------------------------------------- re-identification
@@ -220,7 +228,20 @@ def main():
         here = truth.get(index, [])
         present.update(t for t, _ in here)
 
-        pixels = np.asarray(view, dtype=np.uint8)
+        # Sign on the SAME pixels the tablet signs on, not the native frame.
+        #
+        # signPeople() runs on the whole-frame readback, which GlPipeline caps at
+        # DETECT_LONG_EDGE and never upscales. On 1080p footage that is 640x360, so a person
+        # 30 px tall in the file is 10 px tall where the signature is taken, and one 22 px
+        # tall falls under Reid's 8-row floor and gets no signature at all. Describing the
+        # native frame instead hands the tracker a signature for everybody, at three times
+        # the colour detail the device has, and every re-identification number measured that
+        # way is better than the tablet's rather than equal to it.
+        sign_scale = min(1.0, SIGN_LONG_EDGE / max(width, height))
+        sign_view = view if sign_scale >= 1.0 else view.resize(
+            (max(1, round(width * sign_scale)), max(1, round(height * sign_scale))),
+            Image.BILINEAR)
+        pixels = np.asarray(sign_view, dtype=np.uint8)
         found = []
         for _ in range(args.tiles_per_cycle):
             x, y, w, h = region(turn, columns, rows, width, height)
@@ -237,7 +258,8 @@ def main():
                 # What the tracker needs to recognise somebody who left and came back. See
                 # describe() above, and the note about why leaving it out understates the
                 # numbering.
-                **({"signature": sig} if (sig := describe(pixels, b[:4])) else {}),
+                **({"signature": sig} if (sig := describe(
+                    pixels, [v * sign_scale for v in b[:4]])) else {}),
             ) for b in found],
             "truth": [[round(float(v), 2) for v in box] for _, box in here],
             # The real person, from the dataset. Not an inference about which person a box

@@ -1,7 +1,7 @@
 # `wildfire-640-float.tflite` and `wildfire-640.onnx`
 
-YOLOv8n finetuned on fire and smoke, 320x320, exported as plain float for the tablet and to ONNX for
-the browser. **AGPL-3.0**, from the weights below.
+YOLOv8n finetuned on fire and smoke, exported at **640x640** as plain float for the tablet and
+to ONNX for the browser. **AGPL-3.0**, from the weights below.
 
     https://huggingface.co/rabahdev/fire-smoke-yolov8n/resolve/main/best.pt
 
@@ -33,10 +33,10 @@ Both the browser export and the quantised tablet one are gated on it, because in
 away almost all of the precision in every weight and is a far more likely way to arrive at a
 dead model than a bad download.
 
-## What it is worth
+## What it was worth at 320, which is what it USED to ship at
 
-Measured on a runner, against 120 published pictures with fire in them, 150 real drone frames
-with none, and the fire set's own 120 no-fire pictures. Full report in
+Kept because the section below is a comparison and needs something to compare against. This
+is the old export, not the one on disk. Full report in
 [`docs/metrics-wildfire.txt`](../../docs/metrics-wildfire.txt).
 
 | confidence | found, of 120 fires | marked, of 150 drone frames | of 120 hard negatives |
@@ -84,14 +84,15 @@ It is quoted anyway, because a wildfire near the urban interface is exactly the 
 this matters most and is the one the strict number describes.
 
 
-**It missed more than half at 320.** That is the headline and it is not buried: at the threshold
-this runs at, 70 of 120 pictures with fire in them come back empty.
+### It still misses about half, and it does now cry wolf
 
-What it almost never does is cry wolf. Nothing at all on real drone footage, at every
-threshold from 0.15 up. That asymmetry is the whole reason the threshold is 0.15: it is the
-last row where the middle column is zero, a knee in a measurement rather than a number
-somebody liked. The sweep used to stop at 0.15, so the knee sat one row below the bottom of
-the table and could not be seen.
+At 640 and the shipped 0.25, 54 of 120 pictures with fire in them come back empty, and 9 of
+150 fire-free drone frames come back marked. Both halves of that are worse than the sentence
+this section used to carry, which said the model never marked clear ground - true at 320, and
+not true at any threshold at 640.
+
+Two engines is the answer to the first half and the operator is the answer to the second. A
+marked frame is a frame to look at, never a frame that has been decided.
 
 Two things this number is not.
 

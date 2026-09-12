@@ -14,9 +14,9 @@ import java.util.List;
  *     people rather than fifty: they are not being missed by a threshold, they are not
  *     being shown to the model at all.
  *
- *     Half that frame is 960 across, which the model squeezes by 1.5 rather than 3, and the
- *     same person arrives at twenty-four pixels. Same model, same weights, nearly twice the
- *     size on the thing being looked for.
+ *     Half that frame, plus the overlap, is 1133 across, which the model squeezes by 1.77
+ *     rather than 3, and the same person arrives at twenty-three pixels. Same model, same
+ *     weights, nearly twice the size on the thing being looked for.
  *
  * WHY TWO AND NOT SIX
  *     Six 320-pixel tiles was the old shape and it gave a person about the same pixels as
@@ -53,13 +53,16 @@ final class Tiles {
         float padX = tileWidth * OVERLAP;
         float padY = tileHeight * OVERLAP;
 
+        // Clamp each edge to the frame separately. Clamping the width instead keeps a pad
+        // the frame edge already ate: tile 0 of a 1920 frame would start at 0 (its left pad
+        // clamped away) and still be given the full padded width, coming out 1305 wide
+        // against tile 1's 1132. Read into the same 640 square, that is the left half of
+        // every frame looked at 15% smaller than the right half.
         float x = Math.max(0f, column * tileWidth - padX);
         float y = Math.max(0f, row * tileHeight - padY);
-        return new float[]{
-                x, y,
-                Math.min(frameWidth - x, tileWidth + padX * 2),
-                Math.min(frameHeight - y, tileHeight + padY * 2),
-        };
+        float right = Math.min(frameWidth, (column + 1) * tileWidth + padX);
+        float bottom = Math.min(frameHeight, (row + 1) * tileHeight + padY);
+        return new float[]{x, y, right - x, bottom - y};
     }
 
     /** Intersection over union, for deciding whether two boxes are one thing. */

@@ -77,20 +77,22 @@ The licence was never the obstacle, whatever this used to say here: this project
 AGPL-3.0 deliberately and every detector it ships is already a YOLO derivative.
 
 **Recall on real fire is measured now, and it is not good.** Scored on a runner against 120
-published pictures with fire in them and 150 real drone frames with none
-([`docs/metrics-wildfire.txt`](docs/metrics-wildfire.txt)):
+published pictures with fire in them and 150 real drone frames with none, at the 640 the
+model now runs at ([`docs/metrics-wildfire.txt`](docs/metrics-wildfire.txt)):
 
 | confidence | found, of 120 fires | marked, of 150 drone frames |
 |---|---|---|
-| 0.10 | 56 | 4 |
-| **0.15** | **50** | **0** |
-| 0.25 | 43 | 0 |
-| 0.50 | 28 | 0 |
+| 0.15 | 79 | 17 |
+| 0.20 | 72 | 11 |
+| **0.25** | **66** | **9** |
+| 0.35 | 55 | 5 |
+| 0.50 | 40 | 4 |
 
-It misses more than half of them. What it almost never does is cry wolf: nothing at all on
-drone footage at every threshold from 0.15 up. That asymmetry is why the threshold is 0.15,
-which is the last row where the middle column is zero - a knee in a measurement rather than
-a number somebody liked.
+It misses about half of them, and it does mark clear ground: roughly one fire-free frame in
+seventeen at the threshold it ships at. At 320 there was a threshold with no false alarms at
+all and that is why 0.15 used to be the number here; at 640 no such threshold exists, so
+0.25 is a judgement written down rather than a knee in a curve. 0.15 finds 79 and marks 17,
+about one frame in nine, which is where an operator stops reading the boxes at all.
 
 Two things that number is not. It is not coverage: a frame with nothing marked has not been
 cleared of anything. And it is not aerial. The pictures are ground level, because the sets

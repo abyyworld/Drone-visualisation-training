@@ -102,9 +102,10 @@ public class LiveActivity extends AppCompatActivity {
     /**
      * What the frame is scaled to before detection.
      *
-     * The model works at 448 px, so handing it a 1080p frame only costs a bigger downscale
-     * inside MediaPipe. 640 keeps small subjects resolvable without paying for pixels the
-     * model throws away.
+     * The model's own input is 640 square, so this is one to one on the long edge and
+     * nothing is read off the GPU that the letterbox would only throw away again. It is
+     * also the picture the appearance signatures are taken from, so it has to be big enough
+     * to tell two people apart by colour: see signPeople and Reid.
      */
     private static final int DETECT_LONG_EDGE = 640;
 
@@ -321,9 +322,11 @@ public class LiveActivity extends AppCompatActivity {
      *
      * Null on any other flight, and null on a build with no fire model in it, which is not
      * a fault: FireScan needs no model and is what this app did for fire before there was
-     * one. Both run in wildfire mode, because they fail differently. The model was measured
-     * finding 50 of 120 published fire pictures and marking none of 150 real drone frames
-     * (docs/metrics-wildfire.txt), so more than half the time it is the scan or nothing.
+     * one. Both run in wildfire mode, because they fail differently. At 640 and the shipped
+     * 0.25, the model was measured finding 78 of 179 burning pictures and marking 8 of 132
+     * clear ones, and on distant plumes specifically it finds 26 of 120
+     * (docs/metrics-wildfire.txt). So on more than half of what it is shown it is the scan
+     * or nothing, and it does mark clear ground: neither engine is trusted alone.
      */
     private volatile NativeDetector fireDetector;
 

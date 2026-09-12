@@ -1,3 +1,9 @@
+NOTE ON THE "the app runs at" LINES BELOW
+  evaluate_fire.py prints whatever confThreshold the spec carried at the time of the run.
+  The first two blocks were run while wildfire-640.json still said 0.15, so they print
+  0.15; the shipped threshold is 0.25 and has been since the 640 export landed. See the
+  SHIPPING block, which is the current one, and web/models/WILDFIRE-640.md for why 0.25.
+
 model      wildfire-640.onnx
 labels     ['smoke', 'fire']
 pictures   120 with fire or smoke, 150 without
