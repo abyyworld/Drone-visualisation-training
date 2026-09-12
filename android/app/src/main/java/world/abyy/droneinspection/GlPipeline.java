@@ -319,13 +319,43 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
     }
 
     void stopRecording() {
-        gl.post(() -> {
+        stopRecording(null);
+    }
+
+    /**
+     * Let go of the encoder's surface, and say when it is done.
+     *
+     * WHY THE CALLBACK EXISTS
+     *     Every caller of this then stops the recorder, which signals end of stream and
+     *     releases the encoder's input Surface. Both of those are posts to two different
+     *     threads, and posting to two threads is not ordering: the recorder could release
+     *     the Surface while this thread still held an EGLSurface wrapping it and was about
+     *     to swap a frame onto it. That is two threads pulling down opposite ends of one
+     *     buffer queue, which is the exact shape of the fault that used to leave a flight
+     *     on disk in a file no player would open.
+     *
+     *     So the caller passes what comes next, and it runs HERE, on this thread, once the
+     *     surface is actually gone. It runs whether or not there was a surface to release,
+     *     because a caller that is never called back is a recording that is never finished.
+     *
+     * @param afterDetached run on the GL thread once the encoder surface is released
+     */
+    void stopRecording(Runnable afterDetached) {
+        boolean posted = gl.post(() -> {
             onRecordedFrame = null;
             if (encoderSurface != EGL14.EGL_NO_SURFACE) {
                 EGL14.eglDestroySurface(eglDisplay, encoderSurface);
                 encoderSurface = EGL14.EGL_NO_SURFACE;
             }
+            if (afterDetached != null) {
+                afterDetached.run();
+            }
         });
+        // The thread is gone, so nothing is rendering into that surface either, and the
+        // caller's next step is safe to take right here.
+        if (!posted && afterDetached != null) {
+            afterDetached.run();
+        }
     }
 
     /**

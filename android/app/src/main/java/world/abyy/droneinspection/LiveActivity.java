@@ -2191,12 +2191,6 @@ public class LiveActivity extends AppCompatActivity {
         // flight on disk in a file no player will open. It is released in the callback
         // below instead, once the file is closed. Holding it a second longer is free.
         handler.removeCallbacks(recordTick);
-        GlPipeline pipeline = glPipeline;
-        if (pipeline != null) {
-            // Detach the encoder surface before the encoder is torn down, or the pipeline
-            // renders into a surface that has gone.
-            pipeline.stopRecording();
-        }
         FlightLog log = flightLog;
         flightLog = null;
         String tally = "";
@@ -2219,7 +2213,15 @@ public class LiveActivity extends AppCompatActivity {
             return;
         }
         File file = closing.output();
-        closing.stop(() -> handler.post(() -> {
+        // The detach comes FIRST, and the file is sealed from inside it.
+        //
+        // Both of these are posts, to two different threads, and posting to two threads is
+        // not ordering. Detaching and then immediately calling stop() let the recorder
+        // release the encoder's input Surface while the GL thread still had an EGLSurface
+        // on it and a frame to swap - two threads pulling down opposite ends of one buffer
+        // queue, which is how a flight ends up on disk in a file that will not open. See
+        // GlPipeline.stopRecording(Runnable).
+        Runnable seal = () -> closing.stop(() -> handler.post(() -> {
             // Asked AFTER the file is closed, not before.
             //
             // This used to read failure() on the line above stop() and test that snapshot
@@ -2261,6 +2263,12 @@ public class LiveActivity extends AppCompatActivity {
             }
             refreshStatus();
         }));
+        GlPipeline pipeline = glPipeline;
+        if (pipeline != null) {
+            pipeline.stopRecording(seal);
+        } else {
+            seal.run();
+        }
     }
 
     /**
@@ -2283,10 +2291,6 @@ public class LiveActivity extends AppCompatActivity {
         if (sealing == null) {
             return;
         }
-        GlPipeline pipeline = glPipeline;
-        if (pipeline != null) {
-            pipeline.stopRecording();
-        }
         FlightLog log = flightLog;
         flightLog = null;
         if (log != null) {
@@ -2295,7 +2299,15 @@ public class LiveActivity extends AppCompatActivity {
         }
         final java.util.concurrent.CountDownLatch closed =
                 new java.util.concurrent.CountDownLatch(1);
-        sealing.stop(closed::countDown);
+        // Sealed from inside the detach, for the reason in stopRecording: the two posts go
+        // to different threads and one of them releases the surface the other is drawing
+        // on. The wait below covers both steps.
+        GlPipeline pipeline = glPipeline;
+        if (pipeline != null) {
+            pipeline.stopRecording(() -> sealing.stop(closed::countDown));
+        } else {
+            sealing.stop(closed::countDown);
+        }
         try {
             // Long enough for the encoder's own two second deadline plus the muxer write.
             closed.await(4, java.util.concurrent.TimeUnit.SECONDS);
@@ -2330,9 +2342,23 @@ public class LiveActivity extends AppCompatActivity {
             }
             recorder = null;
             handler.removeCallbacks(recordTick);
+            // Detached, and then STOPPED, which this never did.
+            //
+            // die() closes the file and nothing else - deliberately, because the pipeline
+            // may still be rendering into the encoder's surface at that moment. Nothing
+            // afterwards ever released the encoder itself, so a recording that died left a
+            // hardware encoder instance, its input surface and a whole HandlerThread held
+            // for the life of the screen. A device has a small number of encoder instances,
+            // so the second failure of a flight could be the first one's leak: every later
+            // recording refused to open, with no reason an operator could see.
+            //
+            // stop() is safe on a dead recorder: running is already false, so it signals
+            // nothing, and closeFile() returns immediately on a muxer already closed.
             GlPipeline pipeline = glPipeline;
             if (pipeline != null) {
-                pipeline.stopRecording();
+                pipeline.stopRecording(() -> dead.stop(null));
+            } else {
+                dead.stop(null);
             }
             FlightLog log = flightLog;
             flightLog = null;
