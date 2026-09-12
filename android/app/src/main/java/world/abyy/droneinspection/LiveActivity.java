@@ -1057,11 +1057,34 @@ public class LiveActivity extends AppCompatActivity {
         // camera and gets "Drone Inspection isn't responding" before a frame has arrived.
         // See openPersonDetector.
 
-        // Built only when it will be used. A WebView is tens of megabytes of a
-        // two-gigabyte device, and in crowd mode with no key it does nothing whatsoever.
+        // Built only when it will be used, and built again if that changes. A WebView is
+        // tens of megabytes of a two-gigabyte device, and in crowd mode with no key it does
+        // nothing whatsoever. See refreshAnalyser, which is what applySettings calls.
+        refreshAnalyser();
+    }
+
+    /**
+     * Build or drop the provider pass, according to what the settings now say.
+     *
+     * This used to be decided once, in onCreate. So a flight that opened in crowd mode, or
+     * opened before a key was entered, had no analyser for the rest of its life: the
+     * operator could switch the subject to a turbine, come back, and watch the provider
+     * never run, with nothing on screen saying why. The reverse leaked the other way - a
+     * WebView held open for a crowd flight that would never ask it anything.
+     *
+     * Main thread only: a WebView may not be built anywhere else.
+     */
+    private void refreshAnalyser() {
         if (!providerWorthRunning()) {
-            analyser = null;
-        } else {
+            if (analyser != null) {
+                analyser.destroy();
+                analyser = null;
+            }
+            return;
+        }
+        if (analyser != null) {
+            return;
+        }
         analyser = new LiveAnalyser(this, new LiveAnalyser.Listener() {
             @Override
             public void onReady() {
@@ -1086,7 +1109,6 @@ public class LiveActivity extends AppCompatActivity {
                 refreshStatus();
             }
         });
-        }
     }
 
     @Override
@@ -1181,6 +1203,7 @@ public class LiveActivity extends AppCompatActivity {
         scansForFire = "wildfire".equals(Settings.domain(this));
         openPersonDetector();
         openFireDetector();
+        refreshAnalyser();
 
         // Crowd mode counts people, so it looks for people. A car in a crowd shot is
         // another box, another track, and another chance to be wrong about whoever is
