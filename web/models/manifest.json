@@ -113,9 +113,9 @@
     "zeroDetectionNote": "No figure in this frame passed the threshold. That is a null result about one frame at one moment, not a reading about the place: at altitude a person can be too few pixels across to mark, and someone under a tree, a canopy or a vehicle cannot be seen from above at all."
   },
   "wildfire": {
-    "file": "wildfire-320.onnx",
+    "file": "wildfire-640.onnx",
     "task": "detect",
-    "imgsz": 320,
+    "imgsz": 640,
     "labels": [
       "smoke",
       "fire"
