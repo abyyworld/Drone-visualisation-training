@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 
@@ -28,16 +29,37 @@ import androidx.annotation.Nullable;
  *     be dismissed, which is the right price: an app quietly recording in the background
  *     with nothing on screen to say so is exactly what that rule exists to prevent.
  *
+ * AND WHY A FOREGROUND SERVICE ON ITS OWN WAS NOT ENOUGH
+ *     A foreground service stops the process being KILLED. It does not stop the CPU being
+ *     SUSPENDED when the screen goes off, and those are different promises from Android.
+ *     The activity's keep-awake flag is window-scoped, so it lapses the moment the window
+ *     stops being visible - which is the exact moment this service takes over.
+ *
+ *     So a pilot who started a recording, switched to the flight software and let the screen
+ *     time out had the encoder stop being fed while the notification still said it was
+ *     recording. The file kept whatever had been written and nothing after it. The manifest
+ *     has declared WAKE_LOCK the whole time and nothing ever took one.
+ *
  * WHAT IT DOES NOT DO
  *     No work happens in this class. The video pipeline, the encoder and the detector all
  *     stay where they are, in the activity, and carry on running because the process is now
- *     allowed to. This exists to hold the process up, and to put a line in the shade that
- *     says a recording is running and taps back into it.
+ *     allowed to. This exists to hold the process up, keep the CPU awake while it does, and
+ *     to put a line in the shade that says a recording is running and taps back into it.
  */
 public final class RecordingService extends Service {
 
     private static final String CHANNEL = "recording";
     private static final int NOTIFICATION = 1;
+
+    /**
+     * A hard stop on the wake lock, so a service that somehow outlives its recording cannot
+     * hold the CPU up for the rest of the day. Four hours is longer than any flight this
+     * flies and shorter than a forgotten tablet in a bag.
+     */
+    private static final long MAX_RECORDING_MS = 4 * 60 * 60 * 1000L;
+
+    @Nullable
+    private PowerManager.WakeLock held;
 
     static void start(Context context) {
         Intent intent = new Intent(context, RecordingService.class);
@@ -81,10 +103,39 @@ public final class RecordingService extends Service {
             startForeground(NOTIFICATION, notification);
         }
 
+        // A PARTIAL wake lock: the CPU stays up, the screen is free to go off. That is
+        // exactly the case this is for - the pilot is looking at the flight software or at
+        // the sky, and the tablet should not be burning its battery lighting a screen
+        // nobody is reading. Taken here rather than in the activity because this service's
+        // lifetime IS the recording's.
+        if (held == null) {
+            PowerManager power = getSystemService(PowerManager.class);
+            if (power != null) {
+                held = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                        "droneinspection:recording");
+                held.setReferenceCounted(false);
+                held.acquire(MAX_RECORDING_MS);
+            }
+        }
+
         // Not restarted if the system kills the process: by then the encoder and the
         // pipeline are gone with it, and a service that came back alone would hold a
         // notification over a recording that no longer exists.
         return START_NOT_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        release();
+        super.onDestroy();
+    }
+
+    private void release() {
+        PowerManager.WakeLock lock = held;
+        held = null;
+        if (lock != null && lock.isHeld()) {
+            lock.release();
+        }
     }
 
     @Nullable

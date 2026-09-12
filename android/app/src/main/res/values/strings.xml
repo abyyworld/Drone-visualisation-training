@@ -22,6 +22,7 @@
     <string name="start_recording">Record</string>
     <string name="stop_recording">Stop</string>
     <string name="take_photo">Photo</string>
+    <string name="still_saving">Still saving the last recording. Try again in a moment.</string>
     <string name="stop_recording_first">Stop the recording first, so the file is finished.</string>
     <string name="no_video_yet">No picture from the drone yet.</string>
     <string name="recording_saved">Saved %1$s\nin %2$s</string>

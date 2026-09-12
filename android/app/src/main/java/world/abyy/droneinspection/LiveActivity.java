@@ -378,6 +378,29 @@ public class LiveActivity extends AppCompatActivity {
      *     buying with rate for a slow thing, and it is not for a fast one.
      */
     private static final int FIRE_EVERY = 2;
+    /**
+     * Why the detector is not running, kept APART from lastError.
+     *
+     * lastError is shared with the stream, and the stream is on a radio link that drops
+     * packets as a matter of course. A model that failed to load wrote its reason there and
+     * the first RTSP hiccup overwrote it, leaving an operator with live video, no boxes, and
+     * a stale message about the stream - which reads as "nobody in frame", the one
+     * conclusion this application must never invite.
+     */
+    private volatile String detectorFailure = "";
+
+    /**
+     * Consecutive close looks that have thrown.
+     *
+     * One is a lost look and does not matter. Two in a row is a detector that is not working,
+     * and in crowd mode there is no other path that would ever notice. See onRegion.
+     */
+    private int tileFailures;
+    private static final int TILE_FAILURES_BEFORE_GIVING_UP = 2;
+
+    /** A previous recording is still writing its index. See stopRecording. */
+    private boolean finishing;
+
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
     /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */
@@ -588,8 +611,31 @@ public class LiveActivity extends AppCompatActivity {
                 try {
                     cycle.found = Tiles.merge(cycle.found,
                             current.detectRegion(tile, inFrame(region, frame)));
-                } catch (RuntimeException ignored) {
-                    // The other looks still stand; only this one is lost.
+                    tileFailures = 0;
+                } catch (RuntimeException | Error failure) {
+                    // NOT silent, and this catch is why.
+                    //
+                    // One lost look is nothing: the other tile still stands and the tracker
+                    // coasts through a gap of one cycle without noticing. A detector that
+                    // throws EVERY cycle is the opposite - it is this application's worst
+                    // failure, because an empty list is indistinguishable from a frame with
+                    // nobody in it.
+                    //
+                    // In crowd mode every inference comes through here. WIDE_EVERY is 0 and
+                    // tiling is on, so the wide pass never runs and safeDetect - the only
+                    // path that ever reported a dead interpreter - is never reached. A
+                    // delegate fault or a native allocation failure in the 640 graph would
+                    // have left the operator with live video, no boxes, a detection rate
+                    // still counting up and a millisecond figure frozen at the last good
+                    // value. Nothing on the screen would have changed.
+                    if (++tileFailures >= TILE_FAILURES_BEFORE_GIVING_UP) {
+                        detectorFailure = getString(R.string.detector_stopped,
+                                String.valueOf(failure.getMessage()));
+                        current.close();
+                        detector = null;
+                        tileFailures = 0;
+                        handler.post(this::refreshStatus);
+                    }
                 }
             }
             tile.recycle();
@@ -630,10 +676,12 @@ public class LiveActivity extends AppCompatActivity {
     private List<Finding> safeDetect(NativeDetector current, Bitmap frame) {
         try {
             return current.detect(frame);
-        } catch (RuntimeException failure) {
-            lastError = getString(R.string.detector_stopped, String.valueOf(failure.getMessage()));
+        } catch (RuntimeException | Error failure) {
+            detectorFailure = getString(R.string.detector_stopped,
+                    String.valueOf(failure.getMessage()));
             current.close();
             detector = null;
+            handler.post(this::refreshStatus);
             return new ArrayList<>();
         }
     }
@@ -990,9 +1038,7 @@ public class LiveActivity extends AppCompatActivity {
 
         StringBuilder failure = new StringBuilder();
         detector = NativeDetector.open(this, failure);
-        if (detector == null) {
-            lastError = failure.toString();
-        }
+        detectorFailure = detector == null ? failure.toString() : "";
 
         // Built only when it will be used. A WebView is tens of megabytes of a
         // two-gigabyte device, and in crowd mode with no key it does nothing whatsoever.
@@ -1058,9 +1104,27 @@ public class LiveActivity extends AppCompatActivity {
             openStream();
         }
 
-        workThread = new HandlerThread("live-work");
-        workThread.start();
-        work = new Handler(workThread.getLooper());
+        // ONE work thread, however many times this path is entered.
+        //
+        // onStop returns early while a pop-out is open, leaving the thread and the detect
+        // tick running, which is what keeps the boxes alive behind another app. onStart's
+        // early returns test different conditions, and the pair can diverge: close the
+        // floating window with its own X from inside the flight software and the listener
+        // sets popout = null while this activity is still stopped. Coming back then falls
+        // through to here with the first thread still running.
+        //
+        // Building a second one over it did three things. The first was never quit, so a
+        // thread leaked on every pop-out cycle for the life of the process. The new thread's
+        // first act is tracker.reset(), which clears the track list while the old thread may
+        // still be inside tracker.update() - the tracker's whole contract is that one thread
+        // touches it. And the running total silently restarted at zero on a stream that was
+        // never torn down, so a crowd counted for twenty minutes went back to nothing
+        // because somebody closed a window.
+        if (workThread == null) {
+            workThread = new HandlerThread("live-work");
+            workThread.start();
+            work = new Handler(workThread.getLooper());
+        }
         // Reset on the thread that owns them, not from here. Both carry state between
         // frames, and clearing that state underneath a detection still in flight is the
         // kind of race that shows up once a month and never in a test.
@@ -1077,6 +1141,11 @@ public class LiveActivity extends AppCompatActivity {
         detectBusy = false;
         detectionsRun = 0;
         detectStartedAt = System.currentTimeMillis();
+        // removeCallbacks first: the tick reposts itself, so entering here twice would leave
+        // two chains polling. The body is gated on detectBusy so it would not double the
+        // inference, but two chains that never end is not a thing to leave running.
+        handler.removeCallbacks(detectTick);
+        handler.removeCallbacks(analysisTick);
         handler.post(detectTick);
         // The provider still runs, on its slow interval, for what the on-device model
         // cannot see: fire, smoke, blade damage, soiling. None of those are COCO classes.
@@ -1143,12 +1212,12 @@ public class LiveActivity extends AppCompatActivity {
             // rather than being cut off mid-frame. Then wait for it, briefly: onDestroy
             // closes the detector, and closing it underneath a detection still using it is
             // a native crash rather than an exception.
-            HandlerThread finishing = workThread;
+            HandlerThread quitting = workThread;
             workThread = null;
             work = null;
-            finishing.quitSafely();
+            quitting.quitSafely();
             try {
-                finishing.join(1000);
+                quitting.join(1000);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
@@ -1185,10 +1254,32 @@ public class LiveActivity extends AppCompatActivity {
         // failed to load reads, on a fire screen, like a line about fire.
     }
 
+    /**
+     * Let the fire model go, ON THE THREAD THAT USES IT.
+     *
+     * WHY THIS IS NOT JUST closing.close()
+     *     This is called from applySettings, which runs on the main thread and runs on every
+     *     return to the screen - including while a detect cycle is in flight on the work
+     *     thread. Nulling the field first does not help: onWholeFrame reads it into a local
+     *     before calling detect, so the work thread can be inside Interpreter.run() on an
+     *     interpreter this thread then frees underneath it.
+     *
+     *     That is a use-after-free in native code. It does not throw, it takes the process
+     *     down, and it does so when the operator changes a setting mid-flight - which is
+     *     exactly when they are least able to afford it.
+     *
+     *     Posting the close to the work thread makes it wait its turn behind any cycle
+     *     already running, because that thread does one thing at a time. If there is no work
+     *     thread there is nothing running on it either, so closing here is safe.
+     */
     private void closeFireDetector() {
         NativeDetector closing = fireDetector;
         fireDetector = null;
-        if (closing != null) {
+        if (closing == null) {
+            return;
+        }
+        Handler worker = work;
+        if (worker == null || !worker.post(closing::close)) {
             closing.close();
         }
     }
@@ -1206,11 +1297,38 @@ public class LiveActivity extends AppCompatActivity {
             analyser = null;
         }
         closePipeline();
-        if (detector != null) {
-            detector.close();
-            detector = null;
+        // Both interpreters are freed on the work thread and this one WAITS for it, for the
+        // same reason closeFireDetector posts: the work thread can be inside Interpreter.run()
+        // right now, and freeing a TFLite interpreter under a running inference is a native
+        // use-after-free that takes the process down rather than throwing.
+        //
+        // onStop has usually quit the thread by the time onDestroy runs, in which case there
+        // is nothing to wait for. It has not when the activity is destroyed while a pop-out
+        // is open, which is the path that made this worth doing.
+        NativeDetector person = detector;
+        detector = null;
+        Handler worker = work;
+        java.util.concurrent.CountDownLatch freed = new java.util.concurrent.CountDownLatch(1);
+        boolean posted = worker != null && worker.post(() -> {
+            if (person != null) {
+                person.close();
+            }
+            freed.countDown();
+        });
+        if (!posted && person != null) {
+            person.close();
         }
         closeFireDetector();
+        if (posted) {
+            try {
+                // Bounded: a work thread wedged on a broken delegate must not stop the
+                // activity being destroyed. Leaking an interpreter is survivable; hanging
+                // teardown is not.
+                freed.await(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
         super.onDestroy();
     }
 
@@ -1600,11 +1718,11 @@ public class LiveActivity extends AppCompatActivity {
 
     private void closePipeline() {
         surfaceReady = false;
-        GlPipeline finishing = glPipeline;
+        GlPipeline releasing = glPipeline;
         glPipeline = null;
         usingGl = false;
-        if (finishing != null) {
-            finishing.release();
+        if (releasing != null) {
+            releasing.release();
         }
     }
 
@@ -1812,6 +1930,13 @@ public class LiveActivity extends AppCompatActivity {
             stopRecording();
             return;
         }
+        // A second encoder while the first is still writing its index is two encoders on one
+        // Snapdragon 660, and the file being finalised is the one that loses. Refused with a
+        // reason rather than queued: the operator pressed a button and is owed an answer.
+        if (finishing) {
+            Toast.makeText(this, R.string.still_saving, Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (usingGl && glPipeline != null) {
             startRecordingOnGpu();
         } else {
@@ -1917,16 +2042,18 @@ public class LiveActivity extends AppCompatActivity {
         }
         final String savedTally = tally;
 
-        BoxRecorder finishing = recorder;
+        BoxRecorder closing = recorder;
         recorder = null;
+        finishing = closing != null;
         recordButton.setText(R.string.start_recording);
         backButton.setVisibility(View.VISIBLE);
 
-        if (finishing == null) {
+        if (closing == null) {
+            finishing = false;
             return;
         }
-        File file = finishing.output();
-        finishing.stop(() -> handler.post(() -> {
+        File file = closing.output();
+        closing.stop(() -> handler.post(() -> {
             // Asked AFTER the file is closed, not before.
             //
             // This used to read failure() on the line above stop() and test that snapshot
@@ -1934,14 +2061,15 @@ public class LiveActivity extends AppCompatActivity {
             // the end-of-stream drain, and the muxer write that puts an index on the file.
             // So the snapshot was always null, and the app always said it had saved - while
             // handing the operator a file that would not open.
-            String problem = finishing.failure();
-            if (problem == null && !finishing.wroteAnything()) {
+            finishing = false;
+            String problem = closing.failure();
+            if (problem == null && !closing.wroteAnything()) {
                 problem = getString(R.string.nothing_recorded);
             }
             if (problem != null) {
                 lastError = getString(R.string.recording_failed, problem);
                 Toast.makeText(this, lastError, Toast.LENGTH_LONG).show();
-                if (!finishing.wroteAnything()) {
+                if (!closing.wroteAnything()) {
                     // An empty file is worse than none: it sits in the gallery looking like
                     // a flight nobody can open.
                     file.delete();
@@ -1954,7 +2082,15 @@ public class LiveActivity extends AppCompatActivity {
                                 + savedTally,
                         Toast.LENGTH_LONG).show();
             }
-            if (popout == null) {
+            // Only if nobody has started recording again in the meantime.
+            //
+            // This callback runs on the recorder's own thread and can be seconds late: the
+            // end-of-stream drain is bounded at two seconds and the muxer's index write
+            // follows it. An operator who stops and immediately restarts has a NEW recorder
+            // running by the time this fires, and this used to drop the foreground service
+            // out from under it - leaving the second recording killable, with a notification
+            // that had already gone.
+            if (recorder == null && popout == null) {
                 RecordingService.stop(this);
             }
             refreshStatus();
@@ -1976,9 +2112,9 @@ public class LiveActivity extends AppCompatActivity {
      * app is closing anyway and the recorder's own end-of-stream deadline has already run.
      */
     private void finishRecordingBeforeTeardown() {
-        BoxRecorder finishing = recorder;
+        BoxRecorder sealing = recorder;
         recorder = null;
-        if (finishing == null) {
+        if (sealing == null) {
             return;
         }
         GlPipeline pipeline = glPipeline;
@@ -1993,19 +2129,19 @@ public class LiveActivity extends AppCompatActivity {
         }
         final java.util.concurrent.CountDownLatch closed =
                 new java.util.concurrent.CountDownLatch(1);
-        finishing.stop(closed::countDown);
+        sealing.stop(closed::countDown);
         try {
             // Long enough for the encoder's own two second deadline plus the muxer write.
             closed.await(4, java.util.concurrent.TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }
-        if (finishing.wroteAnything()) {
+        if (sealing.wroteAnything()) {
             // Handed to the media scanner here too, which onDestroy never used to do, so a
             // flight ended by the app closing was invisible in the gallery and over USB.
-            publish(finishing.output());
+            publish(sealing.output());
         } else {
-            finishing.output().delete();
+            sealing.output().delete();
         }
         RecordingService.stop(this);
     }
@@ -2050,7 +2186,9 @@ public class LiveActivity extends AppCompatActivity {
             }
             lastError = getString(R.string.recording_failed, reason);
             Toast.makeText(this, lastError, Toast.LENGTH_LONG).show();
-            if (popout == null) {
+            // Same identity check as stopRecording: a recorder that died is not a reason
+            // to pull the service out from under one that has since been started.
+            if (recorder == null && popout == null) {
                 RecordingService.stop(this);
             }
             refreshStatus();
@@ -2148,6 +2286,13 @@ public class LiveActivity extends AppCompatActivity {
         // One local read of a field the work thread can null out at any moment. Reading it
         // twice is a null check that was true and a call that is not.
         NativeDetector current = detector;
+        // Said every time, not once. A detector that is not running is the most important
+        // thing on this screen, and it used to be announced through lastError - a field the
+        // stream shares, on a radio link that drops packets routinely. One reconnect message
+        // and the operator was left with live video, no boxes, and nothing saying why.
+        if (current == null && !detectorFailure.isEmpty()) {
+            line.append("  ·  ").append(detectorFailure);
+        }
         if (current != null) {
             float seconds = Math.max(1, System.currentTimeMillis() - detectStartedAt) / 1000f;
             line.append("  ·  ").append(String.format(java.util.Locale.UK, "%.1f", detectionsRun / seconds))

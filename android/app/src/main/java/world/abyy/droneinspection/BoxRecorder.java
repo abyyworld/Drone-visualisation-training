@@ -252,7 +252,11 @@ public final class BoxRecorder {
                 handler.postDelayed(drainSteadily, DRAIN_INTERVAL_MS);
             }
         } catch (Exception opening) {
-            failure = describe(opening);
+            // Through die(), not by setting the field. die() is the only thing that tells
+            // the listener, and without it a recorder that never opened was invisible: the
+            // CPU path calls start() and never reads failure(), so the button said "Stop
+            // recording", the notification appeared, and nothing was being written.
+            die(describe(opening));
             releaseQuietly();
         }
     }
