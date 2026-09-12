@@ -66,7 +66,14 @@ jobs:
           # was none, so the assumption is worth re-testing rather than inheriting.
           TERMS = ["aerial wildfire", "drone fire detection", "UAV fire smoke",
                    "FLAME wildfire", "forest fire aerial", "wildfire segmentation drone",
-                   "smoke detection aerial", "D-Fire"]
+                   "smoke detection aerial", "D-Fire",
+                   # Small ones specifically. The only usable aerial candidate found so far
+                   # was a MEDIUM model: better on distant smoke and rejected anyway, at
+                   # 20.4M parameters and 17 GFLOPs against a 25 ms budget. The thing worth
+                   # having is a nano or small trained on the same footage, so it is worth
+                   # searching for that rather than for fire models in general.
+                   "yolov8n fire", "yolo nano smoke detection", "fire smoke yolov8s",
+                   "wildfire nano detection", "smoke yolo11n", "fire detection yolov11n"]
 
           found = {}
           for kind in ("datasets", "models"):
@@ -86,8 +93,23 @@ jobs:
                           found[name] = (kind, term)
 
           print(f"\n{len(found)} candidates", flush=True)
+          # With the size of any checkpoint inside, because size is what rejected the last
+          # one. A model that cannot fit 25 ms is not a candidate however good it is.
           for name, (kind, term) in sorted(found.items()):
-              print(f"  {kind:8} {name}   (matched {term!r})", flush=True)
+              weights = ""
+              if kind == "models":
+                  try:
+                      url = f"https://huggingface.co/api/models/{name}?blobs=true"
+                      request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          for s in json.load(response).get("siblings", []):
+                              f = s.get("rfilename", "")
+                              if f.endswith(".pt"):
+                                  mb = (s.get("size") or 0) / 1e6
+                                  weights += f"  [{f} {mb:.0f} MB]" if mb else f"  [{f}]"
+                  except Exception:
+                      pass
+              print(f"  {kind:8} {name}   (matched {term!r}){weights}", flush=True)
           if not found:
               print("::warning::Still nothing aerial and reachable. That is a fact about "
                     "what is published, not a fault in the fetching.", flush=True)
