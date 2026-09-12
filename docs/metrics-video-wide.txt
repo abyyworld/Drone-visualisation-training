@@ -1,0 +1,84 @@
+Real VisDrone MOT sequences, flown at the tablet's cadence.
+Consecutive frames of real flights; every person carries a target id, so a
+second number issued to somebody is a measured identity switch.
+Detector: web/models/person-640.onnx
+Whole-frame pass alongside the tiles: 1
+Cycle: 250 ms, detector floor 0.15
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx, 40.1 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000117_02622_v     104       64       95       31     77          17%
+  TOTAL              104       64       95       31     77        16.6%
+  reached 62% of the people, and gave them 1.48 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx, 40 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000137_00458_v      77       56       92       36     34          43%
+  TOTAL               77       56       92       36     34        43.2%
+  reached 73% of the people, and gave them 1.64 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx, 40.5 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000086_00000_v      76       62       90       28     21          73%
+  TOTAL               76       62       90       28     21        72.7%
+  reached 82% of the people, and gave them 1.45 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx, 39.8 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000339_00001_v      34       21       44       23     17          37%
+  TOTAL               34       21       44       23     17        36.7%
+  reached 62% of the people, and gave them 2.10 numbers each
+
+2 tile/cycle, 2x1, 250 ms, person-640.onnx, 39.9 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000182_00000_v      23       13       17        4     69           5%
+  TOTAL               23       13       17        4     69         4.9%
+  reached 57% of the people, and gave them 1.31 numbers each
+
+
+  5 real sequences
+
+  setting                             reached         each          stray
+  as shipped                              69%    +0     1.56+0.00     218
+
+  minIou 0.1                              68%    -1     1.57+0.00     216
+  minIou 0.15                             68%    -1     1.54-0.02     215
+  minIou 0.2                              67%    -2     1.56-0.00     219
+  minIou 0.3                              67%    -2     1.58+0.01     212
+  maxCoastMs 800                          69%    +0     1.56+0.00     218
+  maxCoastMs 1200                         68%    -1     1.59+0.03     244
+  maxCoastMs 2000                         70%    +1     1.79+0.23     262
+  maxCoastMs 3000                         75%    +6     1.83+0.26     267
+  maxCoastMs 4000                         76%    +8     1.85+0.28     288
+  confirmAfter 2                          75%    +6     1.84+0.28     302
+  confirmAfter 3                          72%    +3     1.67+0.11     242
+  confirmAfter 4                          69%    +0     1.56+0.00     218
+  confirmAfter 5                          66%    -3     1.44-0.12     194
+  confirmAfter 6                          61%    -7     1.40-0.17     164
+  confirmAfter 8                          53%   -16     1.33-0.24     130
+  newTrackConfidence 0.2                  70%    +1     1.57+0.01     254
+  newTrackConfidence 0.25                 69%    +0     1.56+0.00     218
+  newTrackConfidence 0.3                  69%    +0     1.46-0.11     188
+  newTrackConfidence 0.35                 65%    -4     1.47-0.10     152
+  maxMisses 3                             69%    +0     1.56+0.00     218
+  maxMisses 5                             69%    +0     1.56+0.00     218
+  maxMisses 10                            69%    +0     1.56+0.00     218
+  maxMisses 20                            69%    +0     1.56+0.00     218
+
+  reidSimilarity 0.45                     68%    -1     1.55-0.01     207
+  reidSimilarity 0.55                     69%    +0     1.56+0.00     218
+  reidSimilarity 0.62                     70%    +1     1.57+0.00     228
+  reidSimilarity 0.7                      69%    +1     1.61+0.05     246
+  reidSimilarity 0.8                      71%    +2     1.70+0.13     262
+  reidWindowMs 30s                        69%    +0     1.56+0.00     218
+  reidWindowMs 120s                       69%    +0     1.56+0.00     218
+  reidWindowMs 300s                       69%    +0     1.56+0.00     218
+
+  coast 800 confirm 4 reid 0.55           69%    +0     1.56+0.00     218
+  coast 800 confirm 4 reid 0.62           70%    +1     1.57+0.00     228
+  coast 800 confirm 5 reid 0.55           66%    -3     1.44-0.12     194
+  coast 800 confirm 5 reid 0.62           65%    -4     1.47-0.09     199
+  coast 1200 confirm 4 reid 0.55          68%    -1     1.59+0.03     244
+  coast 1200 confirm 4 reid 0.62          68%    -1     1.64+0.07     248
+  coast 1200 confirm 5 reid 0.55          63%    -6     1.54-0.03     208
+  coast 1200 confirm 5 reid 0.62          64%    -5     1.54-0.02     209
