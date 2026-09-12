@@ -112,7 +112,11 @@ jobs:
                               "--sequence", str(sequence), "--annotations", str(path),
                               "--seconds", str(seconds), "--out", out], check=True)
               flown.append(out)
-          pathlib.Path("flown.txt").write_text("\n".join(flown))
+          # The trailing newline is load-bearing. `while read` returns false on a last line
+          # without one, so the loop body never runs for it: the busiest sequence of the
+          # three was flown, scored into the sweep, and left out of the per-flight table
+          # with nothing said about it.
+          pathlib.Path("flown.txt").write_text("".join(f"{f}\n" for f in flown))
           PY
 
       - name: What each sequence actually contains
@@ -168,9 +172,12 @@ jobs:
             echo "second number issued to somebody is a measured identity switch."
             echo
           } > docs/metrics-video.txt
-          while read -r f; do
+          # `|| [ -n "$f" ]` so a file list without a trailing newline still scores its last
+          # entry, and no pipe into tee, because a pipeline's status is tee's: score_flight
+          # could fail on a flight and the step would go green with that flight missing.
+          while read -r f || [ -n "$f" ]; do
             [ -z "$f" ] && continue
-            node tools/score_flight.mjs "$f" | tee -a docs/metrics-video.txt
+            node tools/score_flight.mjs "$f" >> docs/metrics-video.txt
             echo >> docs/metrics-video.txt
           done < flown.txt
           cat docs/metrics-video.txt
