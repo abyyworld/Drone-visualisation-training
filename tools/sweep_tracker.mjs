@@ -90,3 +90,26 @@ for (const v of [800, 1200, 2000, 3000, 4000]) show(`maxCoastMs ${v}`, score({ m
 for (const v of [2, 3, 4, 5, 6, 8]) show(`confirmAfter ${v}`, score({ confirmAfter: v }));
 for (const v of [0.20, 0.25, 0.30, 0.35]) show(`newTrackConfidence ${v}`, score({ newTrackConfidence: v }));
 for (const v of [3, 5, 10, 20]) show(`maxMisses ${v}`, score({ maxMisses: v }));
+
+// Re-identification: how alike two colour signatures must be to be the same person coming
+// back. Untestable until the harness started building signatures at all - with none, every
+// value scores the same because the comparison never runs.
+console.log();
+for (const v of [0.45, 0.55, 0.62, 0.70, 0.80]) {
+  show(`reidSimilarity ${v}`, score({ reidSimilarity: v }));
+}
+for (const v of [30_000, 120_000, 300_000]) {
+  show(`reidWindowMs ${v/1000}s`, score({ reidWindowMs: v }));
+}
+
+// Combinations, because the single-lever table hides the fact that the good ones are
+// independent. Anything here that beats `as shipped` on every column is a free win.
+console.log();
+for (const coast of [800, 1200]) {
+  for (const confirm of [4, 5]) {
+    for (const reid of [0.55, 0.62]) {
+      show(`coast ${coast} confirm ${confirm} reid ${reid}`,
+        score({ maxCoastMs: coast, confirmAfter: confirm, reidSimilarity: reid }));
+    }
+  }
+}
