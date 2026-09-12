@@ -47,7 +47,44 @@ with none, and the fire set's own 120 no-fire pictures. Full report in
 | 0.25 | 43 | 0 | 4 |
 | 0.50 | 28 | 0 | 4 |
 
-**It misses more than half.** That is the headline and it is not buried: at the threshold
+## The threshold, re-derived at 640
+
+**The old rule does not survive the resolution change, and that is the headline.** 0.15 was
+chosen at 320 as the last value with *zero* false alarms on real drone footage. At 640 there
+is no such value at all:
+
+| confidence | found, of 120 fires | marked, of 150 fire-free drone frames |
+|---|---|---|
+| 0.15 | 79 | 17 |
+| 0.20 | 72 | 11 |
+| **0.25** | **66** | **9** |
+| 0.35 | 55 | 5 |
+| 0.50 | 40 | 4 |
+
+At 320 the same table read 50 found and 0 marked at 0.15. So 640 finds far more fire and has
+lost the property that made the old number defensible. There is no setting that keeps both.
+
+**0.25 is where it ships**, and the reasoning is written down because it is a judgement and
+not a knee:
+
+- Against the old 50 of 120, it finds 66. Against the old 15 of 120 distant plumes, about 26.
+- It marks 9 of 150 fire-free frames, about one frame in seventeen, against zero before.
+- 0.15 would find 79 and mark 17 - one frame in nine, or a spurious box every few seconds at
+  the rate this runs. That is the point where an operator stops reading the boxes, and a
+  detector nobody reads is worth less than one that misses things.
+
+### The control set does not match the mission, and that matters both ways
+
+The 150 fire-free frames are VisDrone: streets, cars, rooftops. A wildfire flight is over
+wildland. On the aerial set's own fire-free pictures the same model at 0.15 marks 4 of 30
+rather than one in nine, so the urban number above is the pessimistic end of the range and
+the wildland one is milder.
+
+It is quoted anyway, because a wildfire near the urban interface is exactly the flight where
+this matters most and is the one the strict number describes.
+
+
+**It missed more than half at 320.** That is the headline and it is not buried: at the threshold
 this runs at, 70 of 120 pictures with fire in them come back empty.
 
 What it almost never does is cry wolf. Nothing at all on real drone footage, at every
