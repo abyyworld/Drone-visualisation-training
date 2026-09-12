@@ -442,21 +442,10 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         GLES20.glClearColor(0f, 0f, 0f, 1f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
-        // Letterboxed rather than stretched. A drone feed with the wrong aspect ratio is
-        // worse than black bars: distances and shapes on it are what the operator is
-        // judging, and a stretched picture quietly misrepresents both.
-        float videoAspect = videoWidth / (float) videoHeight;
-        float viewAspect = displayWidth / (float) displayHeight;
-        int width;
-        int height;
-        if (viewAspect > videoAspect) {
-            height = displayHeight;
-            width = Math.round(displayHeight * videoAspect);
-        } else {
-            width = displayWidth;
-            height = Math.round(displayWidth / videoAspect);
-        }
-        GLES20.glViewport((displayWidth - width) / 2, (displayHeight - height) / 2, width, height);
+        // Letterboxed rather than stretched, and worked out in ONE place because OverlayView
+        // draws the boxes against whatever this decides. See Letterbox.
+        int[] fitted = Letterbox.fit(displayWidth, displayHeight, videoWidth, videoHeight);
+        GLES20.glViewport(fitted[0], fitted[1], fitted[2], fitted[3]);
         drawExternal(quad, textureMatrix);
         EGL14.eglSwapBuffers(eglDisplay, displaySurface);
     }

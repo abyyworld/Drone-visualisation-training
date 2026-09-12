@@ -164,21 +164,11 @@ public class OverlayView extends View {
         // person by however wide the bars were - systematically, in the same direction, all
         // flight. The arithmetic below is drawToDisplay's, deliberately identical.
         if (trackFrameWidth > 0 && trackFrameHeight > 0 && width > 0 && height > 0) {
-            float videoAspect = trackFrameWidth / (float) trackFrameHeight;
-            float viewAspect = width / (float) height;
-            int fitWidth;
-            int fitHeight;
-            if (viewAspect > videoAspect) {
-                fitHeight = height;
-                fitWidth = Math.round(height * videoAspect);
-            } else {
-                fitWidth = width;
-                fitHeight = Math.round(width / videoAspect);
-            }
-            if (fitWidth != width || fitHeight != height) {
+            int[] fitted = Letterbox.fit(width, height, trackFrameWidth, trackFrameHeight);
+            if (fitted[2] != width || fitted[3] != height) {
                 int saved = canvas.save();
-                canvas.translate((width - fitWidth) / 2f, (height - fitHeight) / 2f);
-                render(canvas, fitWidth, fitHeight);
+                canvas.translate(fitted[0], fitted[1]);
+                render(canvas, fitted[2], fitted[3]);
                 canvas.restoreToCount(saved);
                 return;
             }

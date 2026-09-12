@@ -1,5 +1,6 @@
 import android.graphics.Bitmap;
 import world.abyy.droneinspection.Finding;
+import world.abyy.droneinspection.Letterbox;
 import world.abyy.droneinspection.Tracker;
 import world.abyy.droneinspection.Yolo;
 import java.lang.reflect.*;
@@ -170,6 +171,26 @@ public class Cross {
         System.out.println("track-number-" + people + "-" + steps + ": drawn " + drawn.size()
             + " numbered " + issued + " [" + joined + "]");
       }
+    }
+
+    // Where the video sits inside the view. GlPipeline places the picture with this and
+    // OverlayView places the boxes with it, and when those two disagreed every box on screen
+    // sat off its person by the width of the black bars, all flight. They are one function
+    // now; these are the shapes that function meets on the tablet. See Letterbox.
+    int[][] screens = {
+        {1920, 1080, 1920, 1080},   // the MK15, full screen, feed matching it exactly
+        {1920, 1200, 1920, 1080},   // a 16:10 panel showing a 16:9 feed: bars top and bottom
+        {1280, 720, 1920, 1080},    // smaller view, same shape: no bars at all
+        {800, 600, 1920, 1080},     // 4:3 view, wide feed
+        {400, 900, 1920, 1080},     // the pop-out window, dragged tall and narrow
+        {1080, 1920, 1920, 1080},   // held in portrait
+        {640, 480, 640, 480},       // a square-ish feed in its own shape
+        {0, 0, 1920, 1080},         // before layout has happened
+    };
+    for (int[] s : screens) {
+      int[] fit = Letterbox.fit(s[0], s[1], s[2], s[3]);
+      System.out.println("letterbox-" + s[0] + "x" + s[1] + "-in-" + s[2] + "x" + s[3]
+          + ": " + fit[0] + " " + fit[1] + " " + fit[2] + " " + fit[3]);
     }
 
     // Faint detections: drawn, and not counted until something confident agrees. Every

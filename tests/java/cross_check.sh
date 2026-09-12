@@ -34,6 +34,7 @@ javac -nowarn -d "$out" \
   "$here/androidx/annotation/NonNull.java" \
   "$root/android/app/src/main/java/world/abyy/droneinspection/Reid.java" \
   "$root/android/app/src/main/java/world/abyy/droneinspection/Tracker.java" \
+  "$root/android/app/src/main/java/world/abyy/droneinspection/Letterbox.java" \
   "$here/Cross.java"
 
 java -cp "$out" Cross > "$out/java.txt"

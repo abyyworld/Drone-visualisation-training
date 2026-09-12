@@ -144,6 +144,29 @@ run('still',1,(x,y)=>{ if(!inside(x,y,FIRE)) return ground(x,y);
     }
   }
 
+  // Where the video sits inside the view. Written out here rather than imported, because
+  // the point is to check the Java against the contract rather than against itself. See
+  // Letterbox.java.
+  const fit = (viewW, viewH, vidW, vidH) => {
+    if (viewW <= 0 || viewH <= 0 || vidW <= 0 || vidH <= 0) {
+      return [0, 0, Math.max(0, viewW), Math.max(0, viewH)];
+    }
+    const videoAspect = vidW / vidH;
+    const viewAspect = viewW / viewH;
+    let w;
+    let h;
+    if (viewAspect > videoAspect) { h = viewH; w = Math.round(viewH * videoAspect); }
+    else { w = viewW; h = Math.round(viewW / videoAspect); }
+    // Java's integer division truncates toward zero; these are never negative here.
+    return [Math.trunc((viewW - w) / 2), Math.trunc((viewH - h) / 2), w, h];
+  };
+  for (const s of [[1920,1080,1920,1080],[1920,1200,1920,1080],[1280,720,1920,1080],
+                   [800,600,1920,1080],[400,900,1920,1080],[1080,1920,1920,1080],
+                   [640,480,640,480],[0,0,1920,1080]]) {
+    const f = fit(s[0], s[1], s[2], s[3]);
+    console.log(`letterbox-${s[0]}x${s[1]}-in-${s[2]}x${s[3]}: ${f[0]} ${f[1]} ${f[2]} ${f[3]}`);
+  }
+
   // Faint detections: drawn, and not counted until something confident agrees. Every other
   // case here hands the tracker boxes at 0.8, so nothing else would notice the two languages
   // disagreeing about the provisional path. See Tracker.provisional.
