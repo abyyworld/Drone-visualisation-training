@@ -67,8 +67,8 @@ public final class NativeDetector {
     /** The models, and the facts about each, all written by .github/workflows/model.yml. */
     private static final String PERSON_MODEL = "www/models/person-640-float.tflite";
     private static final String PERSON_META = "www/models/person-640.json";
-    private static final String FIRE_MODEL = "www/models/wildfire-320-float.tflite";
-    private static final String FIRE_META = "www/models/wildfire-320.json";
+    private static final String FIRE_MODEL = "www/models/wildfire-640-float.tflite";
+    private static final String FIRE_META = "www/models/wildfire-640.json";
 
     /** Ultralytics' letterbox grey. The model was trained against padding this colour. */
     private static final int PAD = Color.rgb(114, 114, 114);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score a fire model against labelled pictures, kept apart by where the camera was.
 
-    python3 tools/score_fire_dataset.py --model web/models/wildfire-320.onnx
+    python3 tools/score_fire_dataset.py --model web/models/wildfire-640.onnx
 
 WHY THE SOURCE COLUMN IS NOT COLLAPSED
     Because it is the whole question. Measured on the model that ships, at the threshold it

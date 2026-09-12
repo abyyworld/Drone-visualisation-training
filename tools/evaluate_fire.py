@@ -151,7 +151,7 @@ def suppress(found, threshold):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", default=str(ROOT / "web/models/wildfire-320.onnx"))
+    parser.add_argument("--model", default=str(ROOT / "web/models/wildfire-640.onnx"))
     parser.add_argument("--manifest", default=str(ROOT / "web/models/manifest.json"))
     parser.add_argument("--subject", default="wildfire")
     parser.add_argument("--fire", help="a directory of pictures that DO contain fire or smoke")

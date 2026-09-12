@@ -120,7 +120,7 @@ jobs:
           python - <<'PY'
           import json, urllib.request
 
-          # Both blockers this project recorded as unreachable now answer. WILDFIRE-320.md
+          # Both blockers this project recorded as unreachable now answer. WILDFIRE-640.md
           # says "FLAME and FLAME2 are behind an IEEE DataPort account, and D-Fire is a
           # Google Drive link"; both are mirrored here. And there are fire models trained on
           # UAV footage, where the one shipping is generic ground level - which is the same
@@ -223,8 +223,8 @@ jobs:
           pip install --quiet --extra-index-url https://download.pytorch.org/whl/cpu torch
           pip install --quiet ultralytics onnx onnxslim
           python tools/score_fire_dataset.py \
-            --model web/models/wildfire-320.onnx \
-            --label "SHIPPING: wildfire-320, generic ground-level weights" \
+            --model web/models/wildfire-640.onnx --imgsz 640 \
+            --label "SHIPPING: wildfire-640" \
             --report docs/metrics-wildfire.txt
 
       # The same pictures, against weights trained on drone footage. This is the swap that
@@ -303,7 +303,7 @@ jobs:
           # answer is to find a smaller model trained on the same footage rather than to
           # accept the cost.
           for label, path, size in [
-                  ("shipping  wildfire-320", "web/models/wildfire-320.onnx", 320),
+                  ("shipping  wildfire-640", "web/models/wildfire-640.onnx", 640),
                   ("same weights at 640   ", "fire-640.onnx", 640),
                   ("candidate UAV fire    ", "uav-fire.onnx", 320)]:
               path = pathlib.Path(path)

@@ -356,8 +356,28 @@ public class LiveActivity extends AppCompatActivity {
      *     Memory was the other half of the old argument and it is not a constraint either.
      *     Both models held open at once measured 124 MB of a two gigabyte device: 85 MB for
      *     the person model and 39 MB for the fire one.
+     *
+     * AND BACK TO EVERY OTHER ONE, ON BETTER INFORMATION
+     *     That change was right about the cost and wrong about what to spend it on. Moving
+     *     the fire model to 640 turned out to be worth far more than looking twice as often,
+     *     and it costs four times as much per look, so both together do not fit:
+     *
+     *         320, every cycle          25 ms a cycle
+     *         640, every other cycle    50 ms a cycle
+     *         640, every cycle         100 ms a cycle, on a person pass of 153
+     *
+     *     Measured on 311 labelled pictures, the same weights at 640 find 36 of 120 distant
+     *     plumes where 320 finds 27, at the same false alarm rate, and beat the shipped
+     *     setting on every source at once. See docs/metrics-wildfire.txt.
+     *
+     *     Halving the rate costs almost nothing HERE, and that is the part worth writing
+     *     down, because it is not true of people. A person crosses a frame in a couple of
+     *     seconds and a box that is a cycle late is a box in the wrong place. A plume stands
+     *     in the same valley for minutes: looking every 500 ms instead of every 250 ms does
+     *     not miss a fire, it notices it a quarter of a second later. Resolution is worth
+     *     buying with rate for a slow thing, and it is not for a fast one.
      */
-    private static final int FIRE_EVERY = 1;
+    private static final int FIRE_EVERY = 2;
     private volatile boolean detectBusy;
     private volatile long detectRequestedAt;
     /** When the current cycle began, and the earliest the next one may. See TARGET_PERIOD_MS. */

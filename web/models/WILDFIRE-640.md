@@ -1,11 +1,11 @@
-# `wildfire-320-float.tflite` and `wildfire-320.onnx`
+# `wildfire-640-float.tflite` and `wildfire-640.onnx`
 
 YOLOv8n finetuned on fire and smoke, 320x320, exported as plain float for the tablet and to ONNX for
 the browser. **AGPL-3.0**, from the weights below.
 
     https://huggingface.co/rabahdev/fire-smoke-yolov8n/resolve/main/best.pt
 
-Both files, and `wildfire-320.json` beside them, are produced by
+Both files, and `wildfire-640.json` beside them, are produced by
 [`.github/workflows/model.yml`](../../.github/workflows/model.yml) and committed by it.
 Nothing here is trained. Two classes, `smoke` and `fire`, in that order, so a box says which
 of the two it is rather than hedging between them.
