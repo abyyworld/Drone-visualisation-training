@@ -784,6 +784,12 @@ public class LiveActivity extends AppCompatActivity {
         detectionsRun++;
 
         List<FireScan.Region> fire = new ArrayList<>();
+        // Whether anything actually looked for fire this cycle, which is not the same as
+        // whether it found any. The model runs every FIRE_EVERY cycles, so on the cycles
+        // between, an empty list means "nobody looked" and publishing it would blink the
+        // boxes off and on at half the cycle rate. That used to be hidden by the scan
+        // running every cycle underneath; with the scan demoted to the fallback it is not.
+        boolean lookedForFire = false;
         if (scansForFire && frame != null) {
             NativeDetector fireModel = fireDetector;
             // THE SCAN RUNS ONLY WHEN THERE IS NO MODEL, AND THAT IS A MEASURED DECISION
@@ -827,6 +833,7 @@ public class LiveActivity extends AppCompatActivity {
                 } catch (RuntimeException | OutOfMemoryError ignored) {
                     fire = new ArrayList<>();
                 }
+                lookedForFire = true;
             }
 
             // The trained model, on the cycles it gets. This is the engine, and the scan
@@ -837,8 +844,10 @@ public class LiveActivity extends AppCompatActivity {
                         fire.add(new FireScan.Region(marked.label, marked.confidence,
                                 marked.x0, marked.y0, marked.x1, marked.y1, false));
                     }
+                    lookedForFire = true;
                 } catch (RuntimeException | OutOfMemoryError ignored) {
-                    // The scan's regions still stand; only this cycle's model pass is lost.
+                    // Whatever was on screen stays there rather than being replaced by a
+                    // half-finished list. Only this cycle's pass is lost.
                 }
             }
         }
@@ -848,7 +857,13 @@ public class LiveActivity extends AppCompatActivity {
 
         peopleInView = tracker.countOf("person");
         peopleSeen = tracker.countSeen("person");
-        fireRegions = fire;
+        if (lookedForFire) {
+            fireRegions = fire;
+        } else if (!scansForFire) {
+            // Not a wildfire flight any more, so whatever is on screen is about a flight
+            // that is over.
+            fireRegions = new ArrayList<>();
+        }
 
         // Written from this thread on purpose. It is file I/O, and the main thread is the
         // one drawing the video.
