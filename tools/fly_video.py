@@ -201,6 +201,14 @@ def main():
     ap.add_argument("--period", type=int, default=250, help="ms per detect cycle")
     ap.add_argument("--seconds", type=float, default=20.0)
     ap.add_argument("--tiles-per-cycle", type=int, default=2)
+    # The whole-frame pass the device runs alongside the tiles. Off by default, because
+    # every harness number this project has quoted was measured without it, and turning it
+    # on silently would make old numbers and new ones incomparable. Two tiles already cover
+    # the whole frame every cycle, so what this measures is whether a second look at a third
+    # of the magnification finds anybody the close looks did not - and on this tablet it
+    # costs about a quarter of the cycle to ask.
+    ap.add_argument("--wide", type=int, default=0,
+                    help="1 to add a whole-frame pass per cycle, as LiveActivity does")
     ap.add_argument("--grid", default="2x1")
     ap.add_argument("--conf", type=float, default=0.15)
     ap.add_argument("--model", default=str(MODELS / "person-640.onnx"))
@@ -250,6 +258,8 @@ def main():
             Image.BILINEAR)
         pixels = np.asarray(sign_view, dtype=np.uint8)
         found = []
+        if args.wide:
+            found += detect(view, args.conf)
         for _ in range(args.tiles_per_cycle):
             x, y, w, h = region(turn, columns, rows, width, height)
             turn += 1

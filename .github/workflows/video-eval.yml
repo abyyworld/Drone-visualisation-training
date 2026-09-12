@@ -30,6 +30,10 @@ on:
         description: 'Detector to fly (a path in the repo). A candidate from web/models/experiments/ is written to its own report and does not touch the shipped one.'
         required: false
         default: 'web/models/person-640.onnx'
+      wide:
+        description: '1 to add the whole-frame pass the device runs alongside the tiles, so its marginal contribution can be measured against the quarter of a cycle it costs'
+        required: false
+        default: '0'
 
 permissions:
   contents: write
@@ -108,6 +112,7 @@ jobs:
           SEQUENCES: ${{ inputs.sequences }}
           SECONDS: ${{ inputs.seconds }}
           MODEL: ${{ inputs.model }}
+          WIDE: ${{ inputs.wide }}
         run: |
           python - <<'PY'
           import os, pathlib, subprocess, sys
@@ -133,6 +138,7 @@ jobs:
           wanted = int(os.environ.get("SEQUENCES") or 3)
           seconds = float(os.environ.get("SECONDS") or 20)
           model = os.environ.get("MODEL") or "web/models/person-640.onnx"
+          wide = os.environ.get("WIDE") or "0"
           if not pathlib.Path(model).exists():
               raise SystemExit(f"no such model in the repo: {model}")
           print(f"flying {model}", flush=True)
@@ -145,7 +151,7 @@ jobs:
               out = f"flight-{path.stem}.json"
               subprocess.run([sys.executable, "tools/fly_video.py",
                               "--sequence", str(sequence), "--annotations", str(path),
-                              "--model", model,
+                              "--model", model, "--wide", wide,
                               "--seconds", str(seconds), "--out", out], check=True)
               flown.append(out)
           # The trailing newline is load-bearing. `while read` returns false on a last line
@@ -203,6 +209,7 @@ jobs:
       - name: Score them
         env:
           MODEL: ${{ inputs.model }}
+          WIDE: ${{ inputs.wide }}
         run: |
           # A candidate writes its own report. Overwriting the shipped one with a model
           # the app does not load would leave the repo claiming numbers for a detector
@@ -213,12 +220,19 @@ jobs:
             web/models/person-640.onnx) REPORT=docs/metrics-video.txt ;;
             *) REPORT="docs/metrics-video-$(basename "$MODEL" .onnx).txt" ;;
           esac
+          # The whole-frame pass is a different shape of flight, not a better or worse run
+          # of the same one, so it gets its own report rather than overwriting the one the
+          # tracker was tuned against.
+          if [ "${WIDE:-0}" = "1" ]; then
+            REPORT="${REPORT%.txt}-wide.txt"
+          fi
           echo "REPORT=$REPORT" >> "$GITHUB_ENV"
           {
             echo "Real VisDrone MOT sequences, flown at the tablet's cadence."
             echo "Consecutive frames of real flights; every person carries a target id, so a"
             echo "second number issued to somebody is a measured identity switch."
             echo "Detector: $MODEL"
+            echo "Whole-frame pass alongside the tiles: ${WIDE:-0}"
             echo
           } > "$REPORT"
           # `|| [ -n "$f" ]` so a file list without a trailing newline still scores its last
@@ -271,7 +285,7 @@ jobs:
       # in this project can reach - but the half that decides whether it is usable can be:
       # how often it marks flame or smoke on real drone video with nothing burning in it.
       - name: What the flame scanner does with no fire in the picture
-        if: inputs.model == '' || inputs.model == 'web/models/person-640.onnx'
+        if: (inputs.model == '' || inputs.model == 'web/models/person-640.onnx') && inputs.wide != '1'
         run: |
           python - <<'PY'
           import pathlib
