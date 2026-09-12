@@ -95,17 +95,17 @@ Where the pictures came from:
 
 ==============================================================================
 AERIAL AND LONG RANGE, from baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire
-600 pictures, scored with the model that ships
+311 pictures, scored with the model that ships
 
-  every source together  (186 burning, 414 not)
+  every source together  (179 burning, 132 not)
       conf     found, of burning    marked, of clear
-      0.05               167/186              22/414
-      0.10               165/186              14/414
-      0.15               164/186               7/414
-      0.20               159/186               5/414
-      0.25               155/186               4/414
-      0.35               148/186               4/414
-      0.50               134/186               3/414
+      0.05                74/179              14/132
+      0.10                65/179              10/132
+      0.15                60/179               6/132
+      0.20                54/179               5/132
+      0.25                52/179               4/132
+      0.35                46/179               3/132
+      0.50                39/179               2/132
 
   aiformankind  (11 burning, 0 not)
       conf     found, of burning    marked, of clear
@@ -117,15 +117,25 @@ AERIAL AND LONG RANGE, from baizhanquan/FireDetectionDataset-flame-forest-flamey
       0.35                  2/11                   -
       0.50                  2/11                   -
 
-  dfire  (175 burning, 414 not)
+  dfire  (48 burning, 102 not)
       conf     found, of burning    marked, of clear
-      0.05               161/175              22/414
-      0.10               160/175              14/414
-      0.15               160/175               7/414
-      0.20               156/175               5/414
-      0.25               153/175               4/414
-      0.35               146/175               4/414
-      0.50               132/175               3/414
+      0.05                 41/48              10/102
+      0.10                 41/48               7/102
+      0.15                 41/48               4/102
+      0.20                 39/48               3/102
+      0.25                 38/48               2/102
+      0.35                 35/48               2/102
+      0.50                 32/48               1/102
+
+  pyro  (120 burning, 30 not)
+      conf     found, of burning    marked, of clear
+      0.05                27/120                4/30
+      0.10                19/120                3/30
+      0.15                15/120                2/30
+      0.20                12/120                2/30
+      0.25                12/120                2/30
+      0.35                 9/120                1/30
+      0.50                 5/120                1/30
 
   The app runs at 0.15, a threshold chosen on photographs taken from the
   ground. Neither column is coverage: a picture with nothing marked has not
