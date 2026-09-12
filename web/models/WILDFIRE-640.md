@@ -106,14 +106,34 @@ this flies are not reachable: FLAME and FLAME2 are behind an IEEE DataPort accou
 is a Google Drive link. Fire seen from 100 metres up is a different problem from fire seen
 across a room, and nothing here has measured the first one.
 
-## Why the colour scan stays
+## Why the colour scan is now the fallback and not a second opinion
 
-[`web/js/firescan.js`](../js/firescan.js) and `FireScan.java` still run, on alternate cycles
-with this model in a wildfire flight, and neither replaces the other. They fail differently.
-The model knows what fire looks like in a single frame and misses more than half of it. The
-scan knows what fire *does* over time - it burns in place and churns inside its own outline -
-and cannot tell a plume from a painted wall someone walks past. Two engines marking the same
-fire twice is a smaller problem than one of them missing it.
+[`web/js/firescan.js`](../js/firescan.js) and `FireScan.java` used to run beside this model
+on every wildfire flight, on the argument that the two fail differently: the model knows
+what fire looks like in one frame and misses half of it, the scan knows what fire *does*
+over time. The second half of that had never been measured.
 
-The scan also needs no model, so it is what runs on a build with no fire model in it, which
-is what the tablet did for fire until this one landed.
+Measured, on five real VisDrone flights with nothing burning in any of them, fed
+consecutive frames at the cycle the device achieves - which is the input the scan is written
+for, not stills:
+
+| sequence | frames | marked | worst confidence |
+|---|---|---|---|
+| `uav0000086_00000_v` | 58 | 1 flame | 0.32 |
+| `uav0000117_02622_v` | 44 | 44 flame | 0.94 |
+| `uav0000137_00458_v` | 30 | 24 smoke | 1.00 |
+| `uav0000182_00000_v` | 46 | 17 smoke | 1.00 |
+| `uav0000339_00001_v` | 35 | 27 smoke | 1.00 |
+
+113 of 213 frames, and three sequences of it at full confidence, against this model's 9
+frames in 150 on the same family of footage. The time evidence the scan rests on does not
+survive a moving camera: a drone's own motion changes every cell between looks, and that is
+what it reads as flicker and as texture being veiled.
+
+A marker that fires on half the frames of an empty field is not a second opinion, it is what
+stops an operator reading any of the boxes. So on the tablet the scan now runs only when no
+fire model is loaded, which is the job its own header always gave it. The browser's live
+view still runs it alone, because the engine there is a COCO detector with no fire class.
+
+Method in [`tools/scan_fire_video.mjs`](../../tools/scan_fire_video.mjs), numbers in
+[`docs/metrics-video.txt`](../../docs/metrics-video.txt).

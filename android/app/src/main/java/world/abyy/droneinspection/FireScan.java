@@ -15,15 +15,27 @@ import java.util.List;
  * an operator one thing and a report another. The constants below are therefore copied
  * exactly, and the test suite that pins the behaviour lives at tests/test_firescan.mjs.
  *
- * The reasoning, in short - the long version is in the JavaScript. The detector this ships
- * with is trained on COCO, which has no fire class. Every pretrained model for flame that
- * is reachable and accurate is AGPL, which this project cannot take. So flame and smoke are
- * computed from the published colour rules plus the part that actually decides it: fire
+ * The reasoning, in short - the long version is in the JavaScript. Flame and smoke are
+ * computed from the published colour rules plus the part that was meant to decide it: fire
  * burns in place and churns inside its own outline, so the flame fraction of a cell changes
  * on nearly every frame. A red vehicle driving past changes it further, but only twice, and
  * holds perfectly still in between. The measure is therefore how often a cell changes, not
  * how far. What comes out is a region worth looking at, never a verdict, and never a
  * statement about a frame that has nothing marked on it.
+ *
+ * WHAT IT IS WORTH, MEASURED, AND WHY IT IS NOW THE FALLBACK
+ *     On five real VisDrone flights with nothing burning in any of them, fed consecutive
+ *     frames at the cycle this device achieves, it marked 113 of 213 frames - three of the
+ *     five sequences at confidence 1.00. The trained model on the same family of footage
+ *     marks 9 frames in 150.
+ *
+ *     The reason is the thing the method rests on. A drone is always moving, so every cell
+ *     changes between looks whatever is in it, and that is what this reads as flicker and
+ *     as texture being veiled. The licence sentence that used to be here was wrong as well:
+ *     this project takes AGPL-3.0 deliberately and a fire model ships now.
+ *
+ *     So LiveActivity runs this only when no fire model is loaded. See
+ *     docs/metrics-video.txt and tools/scan_fire_video.mjs.
  */
 final class FireScan {
 

@@ -99,8 +99,15 @@ cleared of anything. And it is not aerial. The pictures are ground level, becaus
 that would match how this flies (FLAME, FLAME2) are behind an IEEE DataPort account no
 machine here can reach.
 
-The computed scan stays, because it is the only fire capability on the tablet and needs no
-model. Colour finds the candidates; time decides. Fire burns in place and
+The computed scan is now the fallback rather than a second opinion, and that is measured
+too. On five real VisDrone flights with nothing burning in any of them it marked 113 of 213
+frames, three of the five sequences at confidence 1.00, against the model's 9 frames in 150
+on the same family of footage: a drone is always moving, so every patch changes between
+looks whatever is in it, and that is exactly what the scan reads as fire. The tablet runs it
+only when no fire model loaded. The browser's live view still runs it alone, because the
+engine there has no fire class at all.
+
+How it works, for where it does run. Colour finds the candidates; time decides. Fire burns in place and
 churns inside its own outline, so the flame fraction of a patch changes on nearly every
 frame, while a red van crossing the shot changes it further but only twice and holds
 perfectly still in between. The test is how often a patch changes, not how far, which is

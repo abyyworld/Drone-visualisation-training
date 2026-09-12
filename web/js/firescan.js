@@ -14,9 +14,21 @@
  *     world, which is why tests/test_model_contract.py now measures that before anything
  *     can ship.
  *
- *     So this still runs, and on the tablet it is currently the only thing that looks for
- *     fire at all. What it is worth is measured rather than assumed: see
- *     tools/evaluate_fire.py.
+ *     A model ships now, and this has been measured against real flights rather than
+ *     assumed. On five VisDrone sequences with nothing burning in any of them, fed
+ *     consecutive frames at the cycle the device achieves, it marked 113 of 213 frames as
+ *     flame or smoke, three of the five sequences at confidence 1.00. The model on the same
+ *     family of footage marks 9 frames in 150. The time evidence this whole method rests on
+ *     does not survive a moving camera: the drone's own motion changes every cell between
+ *     looks, which is read as flicker and as texture being veiled.
+ *
+ *     So on the tablet it is now the FALLBACK - what runs when no fire model loaded - and
+ *     not a second opinion running beside one. See LiveActivity, docs/metrics-video.txt,
+ *     tools/scan_fire_video.mjs, and tools/evaluate_fire.py for the model's own numbers.
+ *
+ *     In this browser's live view it is still the only thing looking for fire, because the
+ *     live engine here is a COCO detector with no fire class. Read its regions with the
+ *     false-alarm rate above in mind.
  *
  *     So it is computed. Flame and smoke are two of the few things in vision that have a
  *     genuine physical signature rather than a learned shape, and the rules below are the

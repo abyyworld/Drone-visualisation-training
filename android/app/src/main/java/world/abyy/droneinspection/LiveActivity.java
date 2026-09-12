@@ -784,30 +784,53 @@ public class LiveActivity extends AppCompatActivity {
         detectionsRun++;
 
         List<FireScan.Region> fire = new ArrayList<>();
-        // Only when the operator says they are looking for fire. The scan looks for a flat,
-        // desaturated region that loses its texture as things move across it: outdoors that
-        // is smoke, indoors it is a painted wall with someone walking past. The pixels
-        // cannot tell those apart; the person holding the controller can.
         if (scansForFire && frame != null) {
-            try {
-                List<float[]> occluders = new ArrayList<>();
-                for (Tracker.Track track : tracks) {
-                    occluders.add(new float[]{
-                            track.box[0] / frameWidth, track.box[1] / frameHeight,
-                            track.box[2] / frameWidth, track.box[3] / frameHeight,
-                    });
+            NativeDetector fireModel = fireDetector;
+            // THE SCAN RUNS ONLY WHEN THERE IS NO MODEL, AND THAT IS A MEASURED DECISION
+            //
+            // Both used to run together, on the argument that they fail differently: the
+            // model knows what fire looks like in one frame and misses half of it, the scan
+            // knows what fire does over time. The second half of that was never measured.
+            //
+            // Measured now, on five real VisDrone flights with nothing burning in any of
+            // them, fed consecutive frames at the cycle the device achieves - the input the
+            // scan is written for, not stills:
+            //
+            //     sequence            frames   marked            worst confidence
+            //     uav0000086_00000_v      58        1 flame                  0.32
+            //     uav0000117_02622_v      44       44 flame                  0.94
+            //     uav0000137_00458_v      30       24 smoke                  1.00
+            //     uav0000182_00000_v      46       17 smoke                  1.00
+            //     uav0000339_00001_v      35       27 smoke                  1.00
+            //
+            // 113 of 213 frames: better than every other frame of ordinary drone footage
+            // marked as fire or smoke, three sequences of it at full confidence. The model
+            // on the same family of footage marks 9 frames in 150. The time evidence the
+            // whole method rests on does not survive a moving camera - a drone's own motion
+            // changes every cell between looks, which is what the scan reads as flicker and
+            // as texture being veiled.
+            //
+            // A marker that fires on half the frames of an empty field is not a second
+            // opinion, it is the thing that stops an operator reading any of the boxes. So
+            // it keeps the job its own header gives it: what runs when no model is loaded.
+            // See docs/metrics-video.txt, and tools/scan_fire_video.mjs for how.
+            if (fireModel == null) {
+                try {
+                    List<float[]> occluders = new ArrayList<>();
+                    for (Tracker.Track track : tracks) {
+                        occluders.add(new float[]{
+                                track.box[0] / frameWidth, track.box[1] / frameHeight,
+                                track.box[2] / frameWidth, track.box[3] / frameHeight,
+                        });
+                    }
+                    fire = fireScan.scan(frame, occluders);
+                } catch (RuntimeException | OutOfMemoryError ignored) {
+                    fire = new ArrayList<>();
                 }
-                fire = fireScan.scan(frame, occluders);
-            } catch (RuntimeException | OutOfMemoryError ignored) {
-                fire = new ArrayList<>();
             }
 
-            // And the trained model, on the cycles it gets, added to what the scan found
-            // rather than replacing it. Neither is a superset of the other: the model knows
-            // what fire looks like and misses more than half of it, the scan knows what
-            // fire does over time and cannot tell a plume from a painted wall. Two engines
-            // marking the same fire twice is a smaller problem than one of them missing it.
-            NativeDetector fireModel = fireDetector;
+            // The trained model, on the cycles it gets. This is the engine, and the scan
+            // above is the fallback for a build or a device that has not got it.
             if (fireModel != null && detectionsRun % FIRE_EVERY == 0) {
                 try {
                     for (Finding marked : fireModel.detect(frame)) {
