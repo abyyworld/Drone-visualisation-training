@@ -272,8 +272,7 @@ jobs:
         run: |
           git config user.name abyyworld
           git config user.email annolieberto@gmail.com
-          git add docs/metrics-wildfire.txt
-          if git diff --cached --quiet; then
+          if git diff --quiet docs/metrics-wildfire.txt; then
             echo "the numbers have not changed"
             exit 0
           fi
@@ -281,6 +280,11 @@ jobs:
           # rejected for being behind. The only file it touches is the report, so there is
           # nothing for a rebase to conflict with.
           git pull --rebase --autostash origin main || true
+          # Added AFTER the rebase, not before it. The autostash puts the change back
+          # UNSTAGED, so a git add before the pull is undone and the commit then finds
+          # nothing staged and fails - which is how a run that had already measured
+          # everything threw the numbers away at the last step.
+          git add docs/metrics-wildfire.txt
           git commit -m "Measure the fire model against published fire pictures
 
           Run on a runner, which can reach the picture hosts this project's own

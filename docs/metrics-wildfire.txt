@@ -142,3 +142,60 @@ AERIAL AND LONG RANGE, from baizhanquan/FireDetectionDataset-flame-forest-flamey
   been cleared, it failed to meet a threshold.
 ==============================================================================
 
+
+==============================================================================
+HEAD TO HEAD: THE SHIPPED MODEL AGAINST WEIGHTS TRAINED ON DRONE FOOTAGE
+Candidate: sanqierere/yolo26m-UAV-fire-smoke-detection, classes {fire, smoke}
+311 pictures, same pictures through identical code (tools/score_fire_dataset.py)
+
+VERDICT: rejected. It is better on distant smoke and worse overall, and it
+cannot be afforded either way.
+
+WHY THE OBVIOUS COMPARISON IS WRONG
+  At the same threshold the candidate looks like a clear win:
+
+                        found of burning        marked of clear
+    shipping  at 0.15        60/179                  6/132
+    candidate at 0.15        80/179                 39/132
+
+  Twenty more fires found. But it also marks six times as many pictures that
+  have nothing burning in them, and a threshold is not a shared unit: two
+  models put their scores in different places, so reading both at 0.15 compares
+  nothing. The fair question is what each finds when each is tuned to cry wolf
+  equally often.
+
+AT MATCHED FALSE-ALARM RATE, THE SHIPPED MODEL WINS
+  Around 11-12% of clear pictures marked:
+
+    shipping  at 0.05     74/179 found     14/132 marked
+    candidate at 0.50     49/179 found     16/132 marked
+
+  The candidate never reaches the shipped model's false-alarm rate at all: at
+  0.50, its most conservative setting tested, it still marks 12% of clear
+  pictures where the shipped model marks 4.5% at 0.15.
+
+  On the pyro row alone - wildfire smoke at distance, the row that matters -
+  the candidate is genuinely ahead at matched false alarms, 33/120 against
+  27/120 at about 13%. A real advantage, and not one that survives the cost.
+
+AND IT CANNOT BE AFFORDED
+    yolo26m   20.4M parameters, 17.0 GFLOPs, 77.8 MB as ONNX
+    shipping   yolov8n, about a tenth of that, 12.1 MB
+
+  The fire model gets about 25 ms of a tablet cycle. This is roughly eight
+  times the arithmetic, and 78 MB on an APK that is already 117 MB.
+
+WHAT THE EXERCISE ACTUALLY FOUND, WHICH STANDS
+  The shipped model is weak where this flies, and lowering its threshold is
+  the lever, not replacing it. On pyro:
+
+    0.15      15/120 found      2/30 marked clear
+    0.10      19/120            3/30
+    0.05      27/120            4/30
+
+  Nearly double the distant smoke at 0.05. The cost is on real fire-free drone
+  footage, where 0.15 marks nothing at all and 0.05 marks 10 of 150 frames.
+  That zero is why 0.15 was chosen. It is an operator's trade rather than a
+  fact: one in eight distant plumes with no false alarms, against one in four
+  with a false alarm every fifteen frames.
+==============================================================================
