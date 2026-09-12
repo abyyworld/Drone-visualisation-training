@@ -95,6 +95,21 @@ fifteen that came from stopping starving the nano of pixels. It is in
 [`.github/workflows/model-experiment.yml`](../../.github/workflows/model-experiment.yml) if
 anyone wants to re-run it.
 
+Two more have been measured since, on real video rather than panned stills, and both were
+rejected on the same arithmetic:
+
+| detector | time per look | cycle it implies | reached | numbers each |
+|---|---|---|---|---|
+| **`person-640`, shipped** | 1.00x | 250 ms | **66%** | 1.43 |
+| `enot-x3-640`, a NAS-selected yolov8s | 1.93x | 500 ms | 52% | 1.32 |
+| `mshamrai-n-640`, another VisDrone nano | 1.27x | 300 ms | 64% | 1.44 |
+
+The middle row is the one worth remembering. Flown at the shipped model's cycle, which it
+cannot have on this tablet, it reaches 70% and looks like a clear win. Flown at the cycle it
+would actually achieve, it loses fourteen points. On a handheld the cadence is part of the
+model, and a detector that halves it is a worse detector however good its weights are.
+[`web/models/experiments/README.md`](experiments/README.md) has both in full.
+
 ## What one frame looks like
 
 Over the twelve most crowded validation frames, 1562 labelled people, at the 320 export:
