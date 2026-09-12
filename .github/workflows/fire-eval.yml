@@ -196,124 +196,45 @@ jobs:
           path: fire-predictions.jsonl
           if-no-files-found: warn
 
-      - name: Score it on AERIAL fire, which has never been done
+      - name: Score it where the camera actually is
+        run: |
+          pip install --quiet --extra-index-url https://download.pytorch.org/whl/cpu torch
+          pip install --quiet ultralytics onnx onnxslim
+          python tools/score_fire_dataset.py \
+            --model web/models/wildfire-320.onnx \
+            --label "SHIPPING: wildfire-320, generic ground-level weights" \
+            --report docs/metrics-wildfire.txt
+
+      # The same pictures, against weights trained on drone footage. This is the swap that
+      # fixed the people side: not a bigger model, the right model for the angle the camera
+      # looks from. Exported into a scratch file rather than into web/models, because a
+      # candidate is measured before anything depends on it.
+      - name: And against weights trained on drone footage
         run: |
           python - <<'PY'
-          import collections
-          import numpy as np, onnxruntime as ort
-          from PIL import Image
-          from datasets import load_dataset
+          import pathlib, urllib.request
+          from ultralytics import YOLO
 
-          # WILDFIRE-320.md says the threshold is "not aerial", because the sets matching how
-          # this flies were behind an account no machine here has. FLAME is mirrored on the
-          # model host the runner already talks to, so the number deciding whether an
-          # operator is told about a fire can be measured against the angle it looks from.
-          #
-          # The schema is has_fire / has_smoke / annotations / source, which the first
-          # version of this step did not know: it looked for a column called "label", found
-          # none, printed the schema and refused to invent one. That refusal is why this is
-          # written against the real columns rather than against a guess that scored.
-          NAME = "baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire"
-          PER_SOURCE = 150
+          URL = ("https://huggingface.co/sanqierere/yolo26m-UAV-fire-smoke-detection/"
+                 "resolve/main/weights/best.pt")
+          request = urllib.request.Request(URL, headers={"User-Agent": "curl/8"})
+          with urllib.request.urlopen(request, timeout=600) as response:
+              pathlib.Path("uav-fire.pt").write_bytes(response.read())
+          size = pathlib.Path("uav-fire.pt").stat().st_size
+          print(f"got {size/1e6:.1f} MB", flush=True)
+          if size < 1_000_000:
+              raise SystemExit("too small to be weights")
 
-          # Downloaded rather than streamed, and this is the whole point of the exercise.
-          # Streaming the first 600 rows reached only two of the corpora in it - dfire and
-          # aiformankind, both taken from the ground - and reported a confident table under
-          # the heading AERIAL without a single aerial picture in it. The flame and forest
-          # sets, which are the drone footage this was fetched for, were further down a
-          # stream that was never read that far.
-          #
-          # A sample that stops early is not a sample, it is the beginning of the file.
-          try:
-              data = load_dataset(NAME, split="validation")
-          except Exception as problem:
-              print(f"::warning::could not load {NAME}: {problem}")
-              raise SystemExit(0)
-
-          # Evenly across sources, so a corpus that happens to be large cannot drown the one
-          # that actually matches how this flies.
-          taken = collections.Counter()
-          rows = []
-          for row in data:
-              src = row.get("source")
-              if taken[src] >= PER_SOURCE:
-                  continue
-              taken[src] += 1
-              rows.append(row)
-          if not rows:
-              print("::warning::no rows came back")
-              raise SystemExit(0)
-
-          missing = [k for k in ("image", "has_fire", "has_smoke", "source") if k not in rows[0]]
-          if missing:
-              print(f"::warning::the schema has changed, missing {missing}", flush=True)
-              print({k: str(v)[:120] for k, v in rows[0].items()}, flush=True)
-              raise SystemExit(0)
-
-          by_source = collections.Counter(r["source"] for r in rows)
-          print("sources:", dict(by_source), flush=True)
-
-          session = ort.InferenceSession("web/models/wildfire-320.onnx",
-                                         providers=["CPUExecutionProvider"])
-          name = session.get_inputs()[0].name
-          SIZE = 320
-
-          def top(img):
-              img = img.convert("RGB")
-              scale = min(SIZE / img.width, SIZE / img.height)
-              dw, dh = round(img.width * scale), round(img.height * scale)
-              c = Image.new("RGB", (SIZE, SIZE), (114, 114, 114))
-              c.paste(img.resize((dw, dh), Image.BILINEAR), ((SIZE - dw) // 2, (SIZE - dh) // 2))
-              x = np.asarray(c, np.float32).transpose(2, 0, 1)[None] / 255
-              return float(session.run(None, {name: x})[0][0][4:6].max())
-
-          # Kept per source as well as overall. These corpora were shot from different places
-          # and the whole point of the exercise is that where the camera is changes the
-          # answer, so one averaged number would hide exactly what is being asked.
-          scored = []
-          for r in rows:
-              try:
-                  burning = bool(r["has_fire"]) or bool(r["has_smoke"])
-                  scored.append((r["source"], burning, top(r["image"])))
-              except Exception:
-                  continue
-          if not scored:
-              print("::warning::nothing could be scored", flush=True)
-              raise SystemExit(0)
-
-          lines = ["", "=" * 78,
-                   "AERIAL AND LONG RANGE, from " + NAME,
-                   f"{len(scored)} pictures, scored with the model that ships", ""]
-
-          def table(rows_in, title):
-              fire = [s for _, b, s in rows_in if b]
-              clear = [s for _, b, s in rows_in if not b]
-              out = [f"  {title}  ({len(fire)} burning, {len(clear)} not)"]
-              if not fire and not clear:
-                  return out + ["    nothing here", ""]
-              out.append(f"    {'conf':>6}{'found, of burning':>22}{'marked, of clear':>20}")
-              for conf in (0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50):
-                  f = sum(1 for s in fire if s >= conf)
-                  c = sum(1 for s in clear if s >= conf)
-                  out.append(f"    {conf:>6.2f}"
-                             + f"{f'{f}/{len(fire)}' if fire else '-':>22}"
-                             + f"{f'{c}/{len(clear)}' if clear else '-':>20}")
-              out.append("")
-              return out
-
-          lines += table(scored, "every source together")
-          for src in sorted(by_source):
-              lines += table([r for r in scored if r[0] == src], src)
-          lines += [
-              "  The app runs at 0.15, a threshold chosen on photographs taken from the",
-              "  ground. Neither column is coverage: a picture with nothing marked has not",
-              "  been cleared, it failed to meet a threshold.",
-              "=" * 78, ""]
-          text = "\n".join(lines)
-          print(text, flush=True)
-          with open("docs/metrics-wildfire.txt", "a") as out:
-              out.write(text + "\n")
+          model = YOLO("uav-fire.pt")
+          print("classes:", model.names, flush=True)
+          out = model.export(format="onnx", imgsz=320, simplify=True, opset=12)
+          pathlib.Path("uav-fire.onnx").write_bytes(pathlib.Path(out).read_bytes())
+          print("exported", flush=True)
           PY
+          python tools/score_fire_dataset.py \
+            --model uav-fire.onnx \
+            --label "CANDIDATE: yolo26m-UAV-fire-smoke-detection, trained on drone footage" \
+            --report docs/metrics-wildfire.txt
 
       - name: Commit the report
         run: |
