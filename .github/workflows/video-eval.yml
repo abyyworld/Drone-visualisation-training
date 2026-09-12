@@ -91,5 +91,28 @@ jobs:
               out.write(f"count={len(found)}\n")
           PY
 
-      - name: What was found
-        run: cat candidates.json
+      - name: What is inside them
+        run: |
+          python - <<'PY'
+          import json, pathlib, urllib.request
+
+          # What the files are called decides the whole scorer: MOT annotations are one text
+          # file per sequence with a target id per row, and that id is the only reason this
+          # is worth flying at all. A layout guessed wrong here would be discovered halfway
+          # through a scoring run.
+          for name in json.loads(pathlib.Path("candidates.json").read_text()):
+              url = f"https://huggingface.co/api/datasets/{name}"
+              try:
+                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      detail = json.load(response)
+              except Exception as problem:
+                  print(f"{name}: could not read ({problem})", flush=True)
+                  continue
+              files = [s.get("rfilename", "") for s in detail.get("siblings", [])]
+              print(f"\n{name}: {len(files)} files", flush=True)
+              for f in sorted(files)[:40]:
+                  print(f"    {f}", flush=True)
+              if len(files) > 40:
+                  print(f"    ... and {len(files) - 40} more", flush=True)
+          PY
