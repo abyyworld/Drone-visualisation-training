@@ -37,7 +37,17 @@ function score(options) {
   for (const file of files) {
     const data = JSON.parse(readFileSync(file, 'utf8'));
     for (const run of data.runs) {
+      // The device does not keep the desktop's windows at whatever cycle it achieves: it feeds
+      // the cycle it is managing to the tracker, which counts coast and in-view in LOOKS. A
+      // harness that skips that judges a slow model with a fast model's windows, and coasting
+      // 800 ms at a 500 ms cycle is 1.6 looks where the tablet would give it three. See
+      // Tracker.setCadence and LiveActivity.
       const tracker = new Tracker(options);
+      // ...and then whatever the sweep is asking about wins over it, so a row that names a
+      // coast means that coast.
+      tracker.setCadence(data.period);
+      if (options.maxCoastMs) tracker.maxCoastMs = options.maxCoastMs;
+      if (options.inViewMs) tracker.inViewMs = options.inViewMs;
       // Which real person each number spent the most frames on. `who` is the dataset's own
       // target id here, so this is a measured identity switch and not an estimate of one.
       const hits = new Map();

@@ -26,7 +26,13 @@ function iou(a, b) {
 let P = 0, R = 0, N = 0, X = 0, B = 0, ON = 0;
 const rows = [];
 for (const run of data.runs) {
+  // The device does not keep the desktop's windows at whatever cycle it achieves: it feeds
+  // the cycle it is managing to the tracker, which counts coast and in-view in LOOKS. A
+  // harness that skips that judges a slow model with a fast model's windows, and coasting
+  // 800 ms at a 500 ms cycle is 1.6 looks where the tablet would give it three. See
+  // Tracker.setCadence and LiveActivity.
   const tracker = new Tracker();
+  tracker.setCadence(data.period);
   // A number belongs to the person it spent the most frames on. In a crowd this matters:
   // 175 people in one frame means a box that has drifted a little sits on SOMEBODY at
   // IoU 0.3, so crediting a number to everyone it ever brushed counts drift as if it were
