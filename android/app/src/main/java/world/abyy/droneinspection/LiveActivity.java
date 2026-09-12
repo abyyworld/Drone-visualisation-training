@@ -233,6 +233,15 @@ public class LiveActivity extends AppCompatActivity {
      * start a track; it can only keep one alive. Costs about a millisecond and a half of
      * decoding against a cycle of two hundred, which is the price of the people who are only
      * ever seen faintly.
+     *
+     * LOWER WAS TRIED, ON REAL FOOTAGE, AND IS NOT BETTER
+     *     0.10 over the same five VisDrone flights: 67% of the people reached against 66%,
+     *     for 1.49 numbers each against 1.43 and 248 numbers on nobody against 197. One
+     *     point of people for fifty-one more numbers issued to nothing, and a number on
+     *     nobody inflates the total, which is the one direction this count must not go.
+     *     Raising what a new identity needs to 0.30 alongside it gets the strays back to
+     *     202 and gives the point of people straight back. See
+     *     docs/metrics-video-conf0.10.txt.
      */
     private static final float DETECT_FLOOR = 0.15f;
 
