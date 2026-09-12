@@ -236,6 +236,38 @@ jobs:
             --label "CANDIDATE: yolo26m-UAV-fire-smoke-detection, trained on drone footage" \
             --report docs/metrics-wildfire.txt
 
+      - name: What the candidate would cost
+        if: hashFiles('uav-fire.onnx') != ''
+        run: |
+          python - <<'PY'
+          import pathlib, time
+          import numpy as np, onnxruntime as ort
+
+          # Accuracy is only half of a shipping decision. The fire model gets about 25 ms of
+          # a cycle on the tablet, measured, and the candidate is a MEDIUM model where the
+          # one shipping is a nano. On the people side a bigger model lost exactly this
+          # argument: two points of recall for 2.3x the time. If this one cannot fit, the
+          # answer is to find a smaller model trained on the same footage rather than to
+          # accept the cost.
+          for label, path in [("shipping  wildfire-320", "web/models/wildfire-320.onnx"),
+                              ("candidate UAV fire   ", "uav-fire.onnx")]:
+              path = pathlib.Path(path)
+              if not path.exists():
+                  print(f"{label}: absent", flush=True)
+                  continue
+              session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+              name = session.get_inputs()[0].name
+              x = np.zeros((1, 3, 320, 320), dtype=np.float32)
+              session.run(None, {name: x})
+              times = []
+              for _ in range(15):
+                  start = time.perf_counter()
+                  session.run(None, {name: x})
+                  times.append((time.perf_counter() - start) * 1000)
+              print(f"{label}: {path.stat().st_size/1e6:>6.1f} MB, "
+                    f"{np.median(times):>6.1f} ms a look", flush=True)
+          PY
+
       - name: Commit the report
         run: |
           git config user.name abyyworld
