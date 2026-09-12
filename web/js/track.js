@@ -149,14 +149,16 @@ const CONFIRM_AFTER = 4;
  *     This was 4000, then 1200, and both were reasoned from "how long might somebody be out of
  *     sight". That is the wrong question once re-identification works.
  *
- *     Measured on five real VisDrone MOT sequences with colour signatures switched on - which
- *     is the first time they have been measured with the tracker's gallery actually running:
+ *     Measured on five real VisDrone MOT sequences with colour signatures switched on, and
+ *     re-measured after the harness was found to be describing people on the native frame
+ *     where the device describes them on its 640 readback. These are the second numbers,
+ *     taken with the harness signing at the size the tablet signs at:
  *
  *         coast   people reached   numbers each   numbers on nobody
- *         4000         74%            1.88              232
- *         2000         72%            1.71              215
- *         1200         68%            1.63              176
- *          800         68%            1.57              155
+ *         4000         73%            1.80              244
+ *         2000         70%            1.64              236
+ *         1200         65%            1.53              216
+ *          800         66%            1.43              197
  *
  *     Holding a box longer buys people and costs numbering, which is the trade the old values
  *     were picked on. But the gallery changes what a release costs: a track let go is
@@ -213,23 +215,25 @@ const IN_VIEW_MS = 500;
  * it does not.
  */
 // Measured, at last. 0.62 was reasoned and never measured: with no signatures in any
-// harness the comparison never ran, so every value scored identically. On five real
-// VisDrone MOT sequences, with the gallery actually running:
+// harness the comparison never ran, so every value scored identically. These are the
+// numbers from the SECOND pass, with the harness describing people at the 640 the device
+// describes them at rather than on the native frame, on five real VisDrone MOT sequences
+// with the gallery actually running:
 //
 //     similarity   people reached   numbers each   numbers on nobody
-//     0.80              70%             1.70              215
-//     0.70              69%             1.67              184
-//     0.62              68%             1.63              176
-//     0.55              67%             1.62              169
-//     0.45              67%             1.60              165
+//     0.80              69%             1.55              232
+//     0.70              68%             1.50              218
+//     0.62              67%             1.47              201
+//     0.55              66%             1.43              197
+//     0.45              66%             1.41              184
 //
-// Alone it is marginal. With the shorter coast it is not: together they give 1.55 numbers
-// per person and 144 on nobody, against 1.63 and 176, at the same people reached. A shorter
-// coast releases tracks sooner, which asks the gallery more questions, which makes how
-// readily it says yes matter more than it used to.
+// A shorter coast releases tracks sooner, which asks the gallery more questions, which
+// makes how readily it says yes matter more than it used to.
 //
-// Lower is not free. 0.45 keeps improving the count because it starts merging people, and a
-// crowd counted as fewer than are in it is a worse answer than one counted twice.
+// Lower is not free, and that is why this is not 0.45. Below about 0.55 the count keeps
+// improving because the tracker starts merging people: reached falls while the other two
+// columns improve, which is what merging looks like from the outside. A crowd counted as
+// fewer than are in it is a worse answer than one counted twice.
 const REID_SIMILARITY = 0.55;
 
 /**
