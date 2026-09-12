@@ -190,3 +190,52 @@ CANDIDATE: yolo26m-UAV-fire-smoke-detection, trained on drone footage, at 320
   cleared of anything; it failed to meet a threshold.
 ==============================================================================
 
+
+==============================================================================
+SAME WEIGHTS AT 640: the shipped fire model, not starved, at 640
+311 pictures from baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire
+
+  every source together  (179 burning, 132 not)
+      conf     found, of burning    marked, of clear
+      0.05               103/179              19/132
+      0.10                96/179              15/132
+      0.15                90/179              12/132
+      0.20                82/179              10/132
+      0.25                78/179               8/132
+      0.35                65/179               4/132
+      0.50                52/179               2/132
+
+  aiformankind  (11 burning, 0 not)
+      conf     found, of burning    marked, of clear
+      0.05                  8/11                   -
+      0.10                  7/11                   -
+      0.15                  7/11                   -
+      0.20                  6/11                   -
+      0.25                  6/11                   -
+      0.35                  5/11                   -
+      0.50                  3/11                   -
+
+  dfire  (48 burning, 102 not)
+      conf     found, of burning    marked, of clear
+      0.05                 47/48              13/102
+      0.10                 47/48              10/102
+      0.15                 47/48               8/102
+      0.20                 46/48               6/102
+      0.25                 46/48               4/102
+      0.35                 44/48               2/102
+      0.50                 39/48               1/102
+
+  pyro  (120 burning, 30 not)
+      conf     found, of burning    marked, of clear
+      0.05                48/120                6/30
+      0.10                42/120                5/30
+      0.15                36/120                4/30
+      0.20                30/120                4/30
+      0.25                26/120                4/30
+      0.35                16/120                2/30
+      0.50                10/120                1/30
+
+  Neither column is coverage. A picture with nothing marked has not been
+  cleared of anything; it failed to meet a threshold.
+==============================================================================
+
