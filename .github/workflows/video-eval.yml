@@ -239,6 +239,57 @@ jobs:
                     f"median height {statistics.median(unmatched) if unmatched else 0:.0f} px", flush=True)
           PY
 
+      # The flame scanner, on the same footage. It runs on every wildfire flight whether a
+      # model loads or not and had never been scored against anything. Its recall cannot be
+      # measured here - that needs video of real fire, which is behind an account no machine
+      # in this project can reach - but the half that decides whether it is usable can be:
+      # how often it marks flame or smoke on real drone video with nothing burning in it.
+      - name: What the flame scanner does with no fire in the picture
+        if: inputs.model == '' || inputs.model == 'web/models/person-640.onnx'
+        run: |
+          python - <<'PY'
+          import pathlib
+          from PIL import Image
+
+          # The frames the device would actually scan: every eighth frame of 30 fps
+          # footage, which is the 250 ms cycle, downscaled to the 640 long edge the whole
+          # frame is read back at. FireScan works at 160 internally either way; feeding it
+          # the native frame would be feeding it something the tablet never sees.
+          root = next(p for p in pathlib.Path("mot").rglob("annotations") if p.is_dir()).parent
+          out = pathlib.Path("firescan"); out.mkdir(exist_ok=True)
+          sizes = []
+          for flight in sorted(pathlib.Path(".").glob("flight-*.json")):
+              stem = flight.stem[len("flight-"):]
+              frames = sorted((root / "sequences" / stem).glob("*.jpg"))[::8][:60]
+              if not frames:
+                  continue
+              here = out / stem
+              here.mkdir(exist_ok=True)
+              first = Image.open(frames[0])
+              scale = min(1.0, 640 / max(first.size))
+              w, h = max(1, round(first.size[0] * scale)), max(1, round(first.size[1] * scale))
+              for i, f in enumerate(frames):
+                  picture = Image.open(f).convert("RGBA").resize((w, h), Image.BILINEAR)
+                  (here / f"{i:04d}.rgba").write_bytes(picture.tobytes())
+              sizes.append(f"{here} {w} {h}")
+          pathlib.Path("firescan.txt").write_text("".join(s + chr(10) for s in sizes))
+          PY
+          {
+            echo
+            echo "  The flame scanner on the same footage, none of which is on fire."
+            echo "  Marked is frames where it drew anything at all; worst is the highest"
+            echo "  confidence it reached. Recall is NOT measured here: that needs video of"
+            echo "  real fire, which no machine in this project can reach."
+            echo
+            printf "  %-22s%14s%15s%14s%14s\n" "sequence" "frames" "marked" "flame" "smoke"
+          } >> "$REPORT"
+          while read -r line || [ -n "$line" ]; do
+            [ -z "$line" ] && continue
+            # shellcheck disable=SC2086
+            node tools/scan_fire_video.mjs $line >> "$REPORT"
+          done < firescan.txt
+          tail -20 "$REPORT"
+
       - name: What settings do best on this footage
         run: |
           node tools/sweep_tracker.mjs flight-*.json | tee -a "$REPORT"
