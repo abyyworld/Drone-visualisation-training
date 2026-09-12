@@ -173,6 +173,19 @@ def main():
         if n % 10 == 0:
             print(f"  {n}/{wanted} cycles", file=sys.stderr, flush=True)
 
+    # A truth lookup that matches nothing reads exactly like a flight over an empty field:
+    # every cycle reports nobody present, the scorer divides by zero people and prints
+    # tidy-looking zeroes, and the run goes green. That is how a fire model once shipped
+    # that answered the same score for every picture. If the frame numbering in the
+    # annotations does not line up with the file names, say so here.
+    matched = sum(len(f["who"]) for f in out_frames)
+    if not matched:
+        raise SystemExit(
+            f"no annotation row matched any frame of {args.sequence}. The .txt has "
+            f"{len(truth)} annotated frame indices ({sorted(truth)[:5]}...) and the files "
+            f"are named {[p.stem for p in frames[:5]]}; the two do not line up, so this "
+            f"would have reported an empty field rather than a failure.")
+
     name = pathlib.Path(args.sequence).name
     pathlib.Path(args.out).write_text(json.dumps({
         "period": args.period,
