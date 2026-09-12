@@ -1,0 +1,22 @@
+{
+  "imgsz": 640,
+  "labels": [
+    "pedestrian",
+    "people",
+    "bicycle",
+    "car",
+    "van",
+    "truck",
+    "tricycle",
+    "awning-tricycle",
+    "bus",
+    "motor"
+  ],
+  "keepClasses": [
+    0,
+    1
+  ],
+  "confThreshold": 0.15,
+  "iouThreshold": 0.45,
+  "source": "https://huggingface.co/mshamrai/yolov8n-visdrone/resolve/main/best.pt"
+}
