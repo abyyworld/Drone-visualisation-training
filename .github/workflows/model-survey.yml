@@ -1,0 +1,151 @@
+name: Survey what weights exist
+
+# WHY THIS EXISTS
+#     The person detector this ships was not chosen competitively. It came from a hardcoded
+#     fallback list in model.yml that tries four addresses and takes the first that converts,
+#     and exactly two alternatives have ever been measured against it. "The best model for
+#     this job" has therefore never been established, only assumed.
+#
+#     The same is true of solar, and turbine's absence was established three runs ago and may
+#     no longer hold - published weights appear over time, and two things this project had
+#     recorded as permanently unreachable turned out to be reachable within an hour of being
+#     re-tested.
+#
+#     This surveys rather than converts. It reports every candidate with the size of its
+#     checkpoint, because size is what has rejected every candidate so far and finding it out
+#     after an export is a wasted run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Results per search term'
+        required: false
+        default: '10'
+
+permissions:
+  contents: write
+
+jobs:
+  survey:
+    name: Survey
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Search
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, urllib.parse, urllib.request
+
+          LIMIT = int(os.environ.get("LIMIT") or 10)
+
+          # Broad on purpose. The narrow searches are what produced a shortlist of one.
+          TERMS = {
+              "person from the air": [
+                  "visdrone", "visdrone yolo", "aerial person detection", "drone pedestrian",
+                  "UAV person detection", "aerial people counting", "crowd counting aerial",
+                  "small object detection aerial", "drone human detection",
+                  "uav small object yolo", "aerial pedestrian yolov8", "visdrone yolov11",
+                  "visdrone yolo11", "drone crowd detection", "overhead person detection",
+              ],
+              "fire from the air": [
+                  "UAV fire smoke", "aerial wildfire detection", "drone smoke detection",
+                  "wildfire yolo aerial", "forest fire uav", "FLAME fire drone",
+              ],
+              "solar panel defects": [
+                  "solar panel defect detection", "photovoltaic fault yolo",
+                  "solar panel thermal defect", "pv module defect detection",
+                  "solar panel crack detection", "aerial solar inspection",
+              ],
+              "turbine blade damage": [
+                  "wind turbine blade damage", "turbine blade crack", "wind turbine defect",
+                  "blade erosion detection", "wind turbine inspection yolo",
+                  "turbine blade segmentation",
+              ],
+          }
+
+          def sizes(name):
+              """The checkpoints inside a model repository, with their sizes."""
+              try:
+                  url = f"https://huggingface.co/api/models/{name}?blobs=true"
+                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      detail = json.load(response)
+              except Exception:
+                  return []
+              out = []
+              for s in detail.get("siblings", []):
+                  f = s.get("rfilename", "")
+                  if f.endswith((".pt", ".onnx", ".tflite")):
+                      out.append((f, (s.get("size") or 0) / 1e6))
+              return out
+
+          survey = {}
+          for subject, terms in TERMS.items():
+              found = {}
+              for term in terms:
+                  url = ("https://huggingface.co/api/models?search="
+                         + urllib.parse.quote(term) + f"&limit={LIMIT}")
+                  try:
+                      request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                      with urllib.request.urlopen(request, timeout=45) as response:
+                          listing = json.load(response)
+                  except Exception as problem:
+                      print(f"  {subject}: could not search {term!r}: {problem}", flush=True)
+                      continue
+                  for entry in listing:
+                      name = entry.get("modelId") or entry.get("id")
+                      if name and name not in found:
+                          found[name] = {"matched": term,
+                                         "downloads": entry.get("downloads", 0),
+                                         "likes": entry.get("likes", 0)}
+              print(f"\n{'=' * 78}\n{subject}: {len(found)} repositories\n", flush=True)
+              # Only those that actually carry weights are candidates; the rest are noise.
+              carrying = {}
+              for name, meta in sorted(found.items()):
+                  weights = sizes(name)
+                  if not weights:
+                      continue
+                  carrying[name] = {**meta, "weights": weights}
+                  smallest = min(mb for _, mb in weights if mb) if any(mb for _, mb in weights) else 0
+                  print(f"  {name}", flush=True)
+                  print(f"      matched {meta['matched']!r}, {meta['downloads']} downloads, "
+                        f"smallest checkpoint {smallest:.0f} MB", flush=True)
+                  for f, mb in weights[:4]:
+                      print(f"        {f}  {mb:.0f} MB", flush=True)
+              print(f"\n  {len(carrying)} of {len(found)} carry weights", flush=True)
+              survey[subject] = carrying
+
+          pathlib.Path("docs").mkdir(exist_ok=True)
+          pathlib.Path("docs/model-survey.json").write_text(json.dumps(survey, indent=2) + "\n")
+          PY
+
+      - name: Commit the survey
+        run: |
+          git config user.name abyyworld
+          git config user.email annolieberto@gmail.com
+          if git diff --quiet docs/model-survey.json 2>/dev/null && \
+             [ -z "$(git status --porcelain docs/model-survey.json)" ]; then
+            echo "the survey has not changed"
+            exit 0
+          fi
+          git pull --rebase --autostash origin main || true
+          git add docs/model-survey.json
+          git commit -m "Survey the weights that exist for each subject
+
+          Reported with checkpoint sizes, because size is what has rejected every
+          candidate so far and finding it out after an export is a wasted run."
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase --autostash origin main || true
+            git add docs/model-survey.json
+            sleep $((attempt * 5))
+          done
+          exit 1
