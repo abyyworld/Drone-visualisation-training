@@ -40,6 +40,49 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Is there aerial fire footage now
+        run: |
+          python - <<'PY'
+          import json, urllib.parse, urllib.request
+
+          # The threshold this ships at, 0.15, was measured on GROUND LEVEL photographs,
+          # because that is what was reachable. Fire seen from 100 metres up is a different
+          # problem from fire seen across a room: a plume from above is texture and colour
+          # with no flame edge at all. So the number that decides whether the tablet marks
+          # something has never been measured against how this actually flies.
+          #
+          # Searching rather than assuming it is still unreachable. The same search found
+          # real annotated drone video for the people side after months of assuming there
+          # was none, so the assumption is worth re-testing rather than inheriting.
+          TERMS = ["aerial wildfire", "drone fire detection", "UAV fire smoke",
+                   "FLAME wildfire", "forest fire aerial", "wildfire segmentation drone",
+                   "smoke detection aerial", "D-Fire"]
+
+          found = {}
+          for kind in ("datasets", "models"):
+              for term in TERMS:
+                  url = (f"https://huggingface.co/api/{kind}?search="
+                         + urllib.parse.quote(term) + "&limit=8")
+                  try:
+                      request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                      with urllib.request.urlopen(request, timeout=60) as response:
+                          listing = json.load(response)
+                  except Exception as problem:
+                      print(f"  could not search {kind} for {term!r}: {problem}", flush=True)
+                      continue
+                  for entry in listing:
+                      name = entry.get("id") or entry.get("modelId")
+                      if name and name not in found:
+                          found[name] = (kind, term)
+
+          print(f"\n{len(found)} candidates", flush=True)
+          for name, (kind, term) in sorted(found.items()):
+              print(f"  {kind:8} {name}   (matched {term!r})", flush=True)
+          if not found:
+              print("::warning::Still nothing aerial and reachable. That is a fact about "
+                    "what is published, not a fault in the fetching.", flush=True)
+          PY
+
       - name: Install
         run: |
           python -m pip install --upgrade pip
