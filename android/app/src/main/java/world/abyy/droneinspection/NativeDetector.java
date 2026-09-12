@@ -89,6 +89,21 @@ public final class NativeDetector {
     /** And be at least this much faster, or the risk buys nothing. */
     private static final float PROBE_SPEEDUP = 1.3f;
 
+    /**
+     * How many frames the trial may spend WAITING for somebody to appear.
+     *
+     * The trial only counts frames the CPU found somebody in, which is right - two engines
+     * agreeing on an empty field prove nothing - but it meant the trial could never end
+     * over empty ground. Every frame of it runs both interpreters, so a flight over a bare
+     * hillside, or a wildfire flight where the person model is running and there are no
+     * people, paid double for the model on every cycle for the whole flight.
+     *
+     * 120 looks is about half a minute at the cadence this manages. Past it the accelerator
+     * is closed unheard: an accelerator that has not been shown one person cannot be
+     * trusted with the job, and it does not get to keep charging for the trial either.
+     */
+    private static final int PROBE_ATTEMPTS = 120;
+
     private final Interpreter cpu;
 
     /**
@@ -118,6 +133,7 @@ public final class NativeDetector {
 
     private boolean adopted;
     private int probedFrames;
+    private int probeAttempts;
     private int cpuFoundTotal;
     private int acceleratedFoundTotal;
     private long cpuNanosTotal;
@@ -730,6 +746,18 @@ public final class NativeDetector {
             return;
         }
 
+        // Counted whether or not there was anybody in it, so a trial that never sees a
+        // person still ends. See PROBE_ATTEMPTS.
+        if (++probeAttempts >= PROBE_ATTEMPTS) {
+            if (probedFrames > 0) {
+                // Some evidence, just not eight frames of it. Judged on what there is
+                // rather than left running both engines for the rest of the flight.
+                decide();
+            } else {
+                closeAccelerated("CPU (" + acceleratedName + " untested: nobody in frame)");
+            }
+            return;
+        }
         int found = decodeHead().size();
         if (found == 0) {
             // Proves nothing either way. Both agreeing on an empty frame is exactly what a
