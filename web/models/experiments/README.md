@@ -17,6 +17,7 @@ carrying; re-run the workflow with the `source` from the JSON to get them back.
 | `visdrone-s-320` | yolov11s, a size up from the shipped nano, at the same 320 | Reached 47% of the people where the nano reached 45%, for 2.3x the time per look and 4x the file. Two points. Rejected. |
 | `visdrone-n-640` | the SAME shipped nano weights, exported at 640 instead | Reached 60% where 320 reached 45%, at the same milliseconds and the same file size. **Adopted**, and it is what `person-640.*` now is. |
 | `enot-x3-640` | a NAS-selected yolov8s trained on VisDrone: the strongest aerial-person checkpoint published anywhere reachable | Rejected on speed, and the way it was rejected is the point. See below. |
+| `mshamrai-n-640` | another yolov8n trained on VisDrone, to see whether the weights rather than the size were the limit | 1.27x the time per look, so a 300 ms cycle. Reached **64%** against the shipped 66%, 1.44 numbers each against 1.43. Slower and no better. Rejected. |
 
 ## The candidate that looked better until it was flown at its own speed
 
@@ -41,7 +42,11 @@ people who are eleven pixels tall. **Rejected**, and the reports are kept at
 [`docs/metrics-video-enot-x3-640-500ms.txt`](../../../docs/metrics-video-enot-x3-640-500ms.txt).
 
 That is also the rule for the next candidate: a model is flown at the cycle it would achieve
-on the tablet, not at the cycle the shipped one achieves.
+on the tablet, not at the cycle the shipped one achieves. And the two are timed alternately
+in one process on one machine ([`tools/time_models.py`](../../../tools/time_models.py)),
+because the per-look figure printed in a flight report is comparable only inside that run -
+the same weights measured 20.9 ms on one CI runner and 45.1 ms on another machine the same
+day, which is enough to reverse a verdict.
 
 The second row is the whole lesson. The model was never the weak part; it was being shown a
 sixth of the frame squeezed into 320 pixels and then asked to remember what it had seen for

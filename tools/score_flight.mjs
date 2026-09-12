@@ -68,9 +68,10 @@ for (const run of data.runs) {
   P += run.peoplePresent; R += reached; N += numbers; X += stray; B += boxes; ON += on;
 }
 const c = data.config;
-// The median time inside the model, per look, on whatever machine flew this. Meaningless
-// on its own - a runner is not the tablet - and the only honest way to compare two models
-// on speed, because it is the same machine and the same frames for both.
+// The median time inside the model, per look, on whatever machine flew this. Comparable
+// only WITHIN one run: the same weights measured 20.9 ms on one CI runner and 45.1 ms on
+// another machine the same day. Two models are compared with tools/time_models.py, which
+// times them alternately in one process on one machine.
 const speed = data.msPerLook ? `, ${data.msPerLook} ms a look` : '';
 console.log(`${c.tiles_per_cycle} tile/cycle, ${c.grid}, ${data.period} ms, ${c.model.split('/').pop()}${speed}`);
 console.log(`  ${'flight'.padEnd(14)}${'present'.padStart(8)}${'reached'.padStart(9)}${'numbers'.padStart(9)}${'repeats'.padStart(9)}${'stray'.padStart(7)}${'on a person'.padStart(13)}`);

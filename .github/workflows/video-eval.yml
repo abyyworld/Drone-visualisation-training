@@ -352,6 +352,20 @@ jobs:
           done < firescan.txt
           tail -20 "$REPORT"
 
+      # Both detectors on ONE runner, alternating, because the per-look figure in the
+      # tables above is only comparable inside a single run. The same weights measured
+      # 20.9 ms on one runner and 45.1 ms on another machine the same day, which is enough
+      # to reverse a verdict - and did, until this step existed.
+      - name: Time the candidate against the shipped one, on this runner
+        if: inputs.model != '' && inputs.model != 'web/models/person-640.onnx'
+        run: |
+          {
+            echo
+            echo "  Speed, both on this runner, alternating:"
+            echo
+          } >> "$REPORT"
+          python tools/time_models.py web/models/person-640.onnx "${{ inputs.model }}"             | tee -a "$REPORT"
+
       - name: What settings do best on this footage
         run: |
           node tools/sweep_tracker.mjs flight-*.json | tee -a "$REPORT"
