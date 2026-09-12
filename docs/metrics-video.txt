@@ -4,72 +4,72 @@ second number issued to somebody is a measured identity switch.
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000117_02622_v     104       61       99       38     60          16%
-  TOTAL              104       61       99       38     60        15.6%
-  reached 59% of the people, and gave them 1.62 numbers each
+  uav0000117_02622_v     104       60       95       35     55          16%
+  TOTAL              104       60       95       35     55        16.2%
+  reached 58% of the people, and gave them 1.58 numbers each
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000137_00458_v      77       52       94       42     28          42%
-  TOTAL               77       52       94       42     28        41.8%
-  reached 68% of the people, and gave them 1.81 numbers each
+  uav0000137_00458_v      77       58       93       35     19          46%
+  TOTAL               77       58       93       35     19        46.3%
+  reached 75% of the people, and gave them 1.60 numbers each
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000086_00000_v      76       66       98       32     16          73%
-  TOTAL               76       66       98       32     16        73.4%
-  reached 87% of the people, and gave them 1.48 numbers each
+  uav0000086_00000_v      76       62       88       26     12          76%
+  TOTAL               76       62       88       26     12        75.6%
+  reached 82% of the people, and gave them 1.42 numbers each
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000339_00001_v      34       21       39       18     11          41%
-  TOTAL               34       21       39       18     11        40.7%
-  reached 62% of the people, and gave them 1.86 numbers each
+  uav0000339_00001_v      34       20       37       17     11          45%
+  TOTAL               34       20       37       17     11        45.3%
+  reached 59% of the people, and gave them 1.85 numbers each
 
 
   5 real sequences
 
   setting                             reached         each          stray
-  as shipped                              68%    +0     1.63+0.00     176
+  as shipped                              68%    +0     1.55+0.00     144
 
-  minIou 0.1                              68%    -1     1.62-0.01     184
-  minIou 0.15                             68%    +0     1.63-0.00     175
-  minIou 0.2                              69%    +1     1.62-0.01     169
-  minIou 0.3                              68%    +0     1.64+0.01     170
-  maxCoastMs 800                          68%    -0     1.57-0.06     155
-  maxCoastMs 1200                         68%    +0     1.63+0.00     176
-  maxCoastMs 2000                         72%    +4     1.71+0.08     215
-  maxCoastMs 3000                         72%    +4     1.83+0.20     227
-  maxCoastMs 4000                         74%    +5     1.88+0.25     232
-  confirmAfter 2                          77%    +9     1.92+0.29     209
-  confirmAfter 3                          74%    +5     1.74+0.11     185
-  confirmAfter 4                          68%    +0     1.63+0.00     176
-  confirmAfter 5                          65%    -3     1.50-0.13     162
-  confirmAfter 6                          62%    -6     1.42-0.21     149
-  confirmAfter 8                          55%   -13     1.35-0.28     131
-  newTrackConfidence 0.2                  70%    +2     1.68+0.05     192
-  newTrackConfidence 0.25                 68%    +0     1.63+0.00     176
-  newTrackConfidence 0.3                  66%    -2     1.54-0.09     163
-  newTrackConfidence 0.35                 65%    -3     1.53-0.10     133
-  maxMisses 3                             68%    -0     1.57-0.06     155
-  maxMisses 5                             68%    +0     1.63+0.00     176
-  maxMisses 10                            68%    +0     1.63+0.00     176
-  maxMisses 20                            68%    +0     1.63+0.00     176
+  minIou 0.1                              68%    +0     1.56+0.01     137
+  minIou 0.15                             68%    +1     1.53-0.02     141
+  minIou 0.2                              67%    -1     1.57+0.02     142
+  minIou 0.3                              68%    -0     1.51-0.04     146
+  maxCoastMs 800                          68%    +0     1.55+0.00     144
+  maxCoastMs 1200                         67%    -1     1.62+0.07     169
+  maxCoastMs 2000                         72%    +4     1.69+0.14     211
+  maxCoastMs 3000                         72%    +4     1.82+0.27     224
+  maxCoastMs 4000                         74%    +6     1.86+0.31     232
+  confirmAfter 2                          75%    +7     1.83+0.28     156
+  confirmAfter 3                          71%    +3     1.67+0.12     152
+  confirmAfter 4                          68%    +0     1.55+0.00     144
+  confirmAfter 5                          64%    -4     1.49-0.06     135
+  confirmAfter 6                          61%    -7     1.40-0.15     133
+  confirmAfter 8                          55%   -12     1.30-0.24     111
+  newTrackConfidence 0.2                  70%    +2     1.54-0.01     171
+  newTrackConfidence 0.25                 68%    +0     1.55+0.00     144
+  newTrackConfidence 0.3                  65%    -3     1.49-0.06     135
+  newTrackConfidence 0.35                 64%    -4     1.45-0.10     119
+  maxMisses 3                             68%    +0     1.55+0.00     144
+  maxMisses 5                             68%    +0     1.55+0.00     144
+  maxMisses 10                            68%    +0     1.55+0.00     144
+  maxMisses 20                            68%    +0     1.55+0.00     144
 
-  reidSimilarity 0.45                     67%    -2     1.60-0.03     165
-  reidSimilarity 0.55                     67%    -1     1.62-0.01     169
-  reidSimilarity 0.62                     68%    +0     1.63+0.00     176
-  reidSimilarity 0.7                      69%    +1     1.67+0.04     184
-  reidSimilarity 0.8                      70%    +2     1.70+0.07     215
-  reidWindowMs 30s                        68%    +0     1.63+0.00     176
-  reidWindowMs 120s                       68%    +0     1.63+0.00     176
-  reidWindowMs 300s                       68%    +0     1.63+0.00     176
+  reidSimilarity 0.45                     67%    -1     1.52-0.03     137
+  reidSimilarity 0.55                     68%    +0     1.55+0.00     144
+  reidSimilarity 0.62                     68%    +0     1.57+0.02     155
+  reidSimilarity 0.7                      69%    +1     1.60+0.05     167
+  reidSimilarity 0.8                      71%    +3     1.64+0.09     203
+  reidWindowMs 30s                        68%    +0     1.55+0.00     144
+  reidWindowMs 120s                       68%    +0     1.55+0.00     144
+  reidWindowMs 300s                       68%    +0     1.55+0.00     144
 
-  coast 800 confirm 4 reid 0.55           68%    -0     1.55-0.08     144
-  coast 800 confirm 4 reid 0.62           68%    -0     1.57-0.06     155
-  coast 800 confirm 5 reid 0.55           64%    -4     1.49-0.14     135
-  coast 800 confirm 5 reid 0.62           65%    -4     1.48-0.15     145
-  coast 1200 confirm 4 reid 0.55          67%    -1     1.62-0.01     169
-  coast 1200 confirm 4 reid 0.62          68%    +0     1.63+0.00     176
-  coast 1200 confirm 5 reid 0.55          64%    -4     1.50-0.13     157
-  coast 1200 confirm 5 reid 0.62          65%    -3     1.50-0.13     162
+  coast 800 confirm 4 reid 0.55           68%    +0     1.55+0.00     144
+  coast 800 confirm 4 reid 0.62           68%    +0     1.57+0.02     155
+  coast 800 confirm 5 reid 0.55           64%    -4     1.49-0.06     135
+  coast 800 confirm 5 reid 0.62           65%    -3     1.48-0.07     145
+  coast 1200 confirm 4 reid 0.55          67%    -1     1.62+0.07     169
+  coast 1200 confirm 4 reid 0.62          68%    +0     1.63+0.08     176
+  coast 1200 confirm 5 reid 0.55          64%    -4     1.50-0.05     157
+  coast 1200 confirm 5 reid 0.62          65%    -3     1.50-0.04     162
