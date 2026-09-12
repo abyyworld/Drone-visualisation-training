@@ -12,16 +12,15 @@ pictures   120 with fire or smoke, 150 without
   0.35             39/120                  0/150
   0.50             28/120                  0/150
 
-the app runs at 0.25
+the app runs at 0.15
 
-said nothing about 77 of 120 pictures with fire in them:
+said nothing about 70 of 120 pictures with fire in them:
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0000.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0002.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0003.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0006.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0008.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0011.jpg
-  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0012.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0013.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0014.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0016.jpg
@@ -30,7 +29,8 @@ said nothing about 77 of 120 pictures with fire in them:
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0023.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0024.jpg
   datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0025.jpg
-  ... and 62 more
+  datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0026.jpg
+  ... and 55 more
 
 Neither column is coverage. A picture with nothing marked has not been cleared
 of anything; it failed to meet a threshold. Thin smoke on a bright sky, fire
@@ -53,16 +53,15 @@ Against the fire dataset's own no-fire pictures rather than drone footage:
       0.35             39/120                  4/120
       0.50             28/120                  4/120
     
-    the app runs at 0.25
+    the app runs at 0.15
     
-    said nothing about 77 of 120 pictures with fire in them:
+    said nothing about 70 of 120 pictures with fire in them:
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0000.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0002.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0003.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0006.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0008.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0011.jpg
-      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0012.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0013.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0014.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0016.jpg
@@ -71,7 +70,8 @@ Against the fire dataset's own no-fire pictures rather than drone footage:
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0023.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0024.jpg
       datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0025.jpg
-      ... and 62 more
+      datasets/fire/fire/fireviewer_fire-smoke-detection-corpus-v1_0026.jpg
+      ... and 55 more
     
     Neither column is coverage. A picture with nothing marked has not been cleared
     of anything; it failed to meet a threshold. Thin smoke on a bright sky, fire
