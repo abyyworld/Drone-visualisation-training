@@ -199,21 +199,28 @@ jobs:
       - name: Score it on AERIAL fire, which has never been done
         run: |
           python - <<'PY'
+          import collections
           import numpy as np, onnxruntime as ort
           from PIL import Image
           from datasets import load_dataset
 
-          # WILDFIRE-320.md says the threshold is "not aerial", because the sets that match
-          # how this flies were behind an account no machine here has. One of them is now
-          # mirrored on the model host, so the number that decides whether the tablet marks
-          # something can finally be measured against the angle it looks from.
+          # WILDFIRE-320.md says the threshold is "not aerial", because the sets matching how
+          # this flies were behind an account no machine here has. FLAME is mirrored on the
+          # model host the runner already talks to, so the number deciding whether an
+          # operator is told about a fire can be measured against the angle it looks from.
+          #
+          # The schema is has_fire / has_smoke / annotations / source, which the first
+          # version of this step did not know: it looked for a column called "label", found
+          # none, printed the schema and refused to invent one. That refusal is why this is
+          # written against the real columns rather than against a guess that scored.
           NAME = "baizhanquan/FireDetectionDataset-flame-forest-flameye-wildfire"
+          WANT = 600
           try:
               data = load_dataset(NAME, split="validation", streaming=True)
               rows = []
               for row in data:
                   rows.append(row)
-                  if len(rows) >= 400:
+                  if len(rows) >= WANT:
                       break
           except Exception as problem:
               print(f"::warning::could not load {NAME}: {problem}")
@@ -222,23 +229,14 @@ jobs:
               print("::warning::no rows came back")
               raise SystemExit(0)
 
-          print("columns:", {k: type(v).__name__ for k, v in rows[0].items()}, flush=True)
-          label_key = next((k for k in rows[0]
-                            if k.lower() in ("label", "labels", "class", "target")), None)
-          image_key = next((k for k in rows[0]
-                            if k.lower() in ("image", "img", "picture")), None)
-          print("label column:", label_key, " image column:", image_key, flush=True)
-          if label_key is None or image_key is None:
-              # Printed rather than guessed. A run that picks the wrong column produces a
-              # tidy table about nothing, which is worse than no table.
-              print("::warning::cannot tell which column is the label or the picture", flush=True)
-              print({k: str(v)[:160] for k, v in rows[0].items()}, flush=True)
+          missing = [k for k in ("image", "has_fire", "has_smoke", "source") if k not in rows[0]]
+          if missing:
+              print(f"::warning::the schema has changed, missing {missing}", flush=True)
+              print({k: str(v)[:120] for k, v in rows[0].items()}, flush=True)
               raise SystemExit(0)
 
-          counts = {}
-          for r in rows:
-              counts[str(r[label_key])] = counts.get(str(r[label_key]), 0) + 1
-          print("labels present:", counts, flush=True)
+          by_source = collections.Counter(r["source"] for r in rows)
+          print("sources:", dict(by_source), flush=True)
 
           session = ort.InferenceSession("web/models/wildfire-320.onnx",
                                          providers=["CPUExecutionProvider"])
@@ -254,29 +252,48 @@ jobs:
               x = np.asarray(c, np.float32).transpose(2, 0, 1)[None] / 255
               return float(session.run(None, {name: x})[0][0][4:6].max())
 
-          scores = {}
+          # Kept per source as well as overall. These corpora were shot from different places
+          # and the whole point of the exercise is that where the camera is changes the
+          # answer, so one averaged number would hide exactly what is being asked.
+          scored = []
           for r in rows:
               try:
-                  scores.setdefault(str(r[label_key]), []).append(top(r[image_key]))
+                  burning = bool(r["has_fire"]) or bool(r["has_smoke"])
+                  scored.append((r["source"], burning, top(r["image"])))
               except Exception:
                   continue
-          if not scores:
+          if not scored:
               print("::warning::nothing could be scored", flush=True)
               raise SystemExit(0)
 
-          keys = sorted(scores)
-          lines = ["", "AERIAL, from " + NAME,
-                   f"{sum(len(v) for v in scores.values())} pictures", ""]
-          lines.append(f"  {'conf':>6}" + "".join(f"{k:>18}" for k in keys))
-          for conf in (0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50):
-              line = f"  {conf:>6.2f}"
-              for k in keys:
-                  hit = sum(1 for s in scores[k] if s >= conf)
-                  line += f"{f'{hit}/{len(scores[k])}':>18}"
-              lines.append(line)
-          lines += ["",
-                    "  The app runs at 0.15, a threshold chosen on ground level photographs.",
-                    "  Which label means fire is in the column headings above.", ""]
+          lines = ["", "=" * 78,
+                   "AERIAL AND LONG RANGE, from " + NAME,
+                   f"{len(scored)} pictures, scored with the model that ships", ""]
+
+          def table(rows_in, title):
+              fire = [s for _, b, s in rows_in if b]
+              clear = [s for _, b, s in rows_in if not b]
+              out = [f"  {title}  ({len(fire)} burning, {len(clear)} not)"]
+              if not fire and not clear:
+                  return out + ["    nothing here", ""]
+              out.append(f"    {'conf':>6}{'found, of burning':>22}{'marked, of clear':>20}")
+              for conf in (0.05, 0.10, 0.15, 0.20, 0.25, 0.35, 0.50):
+                  f = sum(1 for s in fire if s >= conf)
+                  c = sum(1 for s in clear if s >= conf)
+                  out.append(f"    {conf:>6.2f}"
+                             + f"{f'{f}/{len(fire)}' if fire else '-':>22}"
+                             + f"{f'{c}/{len(clear)}' if clear else '-':>20}")
+              out.append("")
+              return out
+
+          lines += table(scored, "every source together")
+          for src in sorted(by_source):
+              lines += table([r for r in scored if r[0] == src], src)
+          lines += [
+              "  The app runs at 0.15, a threshold chosen on photographs taken from the",
+              "  ground. Neither column is coverage: a picture with nothing marked has not",
+              "  been cleared, it failed to meet a threshold.",
+              "=" * 78, ""]
           text = "\n".join(lines)
           print(text, flush=True)
           with open("docs/metrics-wildfire.txt", "a") as out:
