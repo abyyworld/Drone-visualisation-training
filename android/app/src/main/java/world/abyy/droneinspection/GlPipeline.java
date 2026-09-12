@@ -187,6 +187,8 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
 
     private int frameBuffer;
     private int frameTexture;
+    /** What the offscreen buffer is ALLOCATED at, which is the largest shape asked for so
+     * far rather than the shape being read right now. See ensureFrameBuffer. */
     private int frameWidth;
     private int frameHeight;
     private ByteBuffer readback;
@@ -771,13 +773,37 @@ final class GlPipeline implements SurfaceTexture.OnFrameAvailableListener {
         videoInput = new Surface(videoTexture);
     }
 
+    /**
+     * An offscreen buffer at least this big, reused rather than rebuilt.
+     *
+     * GROW-ONLY, AND WHY THAT IS NOT A LEAK
+     *     A cycle asks for the whole frame at 640 and then each tile at 640, and on a 1080p
+     *     stream those come back different shapes: 640x360 for the frame, 640x610 for a
+     *     tile. Rebuilding on every size change meant generating a framebuffer, allocating
+     *     a texture and allocating a direct byte buffer two or three times a cycle, five
+     *     times a second, for the whole flight - and throwing the previous set at the
+     *     garbage collector each time, which on this tablet is a pause in the middle of the
+     *     video.
+     *
+     *     Nothing asks for more than 640 on either edge, so keeping the largest shape seen
+     *     converges within the first cycle and stops there, at 640x640: 1.6 MB of texture
+     *     and the same again of readback, once, rather than a megabyte and a half of churn
+     *     every 200 ms.
+     *
+     *     The render is placed at the bottom-left corner by glViewport and read from the
+     *     same corner by glReadPixels, which packs tightly into the buffer, so a buffer
+     *     larger than the picture costs memory and changes nothing about the bytes that
+     *     come out. Whatever sits outside the viewport is never read.
+     */
     private void ensureFrameBuffer(int width, int height) {
-        if (frameBuffer != 0 && width == frameWidth && height == frameHeight) {
+        if (frameBuffer != 0 && width <= frameWidth && height <= frameHeight) {
             return;
         }
         // Never while a read is in progress: the strips would come from two different
         // buffers and the frame would be half of one moment and half of another.
         pending = null;
+        width = Math.max(width, frameWidth);
+        height = Math.max(height, frameHeight);
         deleteFrameBuffer();
 
         int[] handles = new int[1];
