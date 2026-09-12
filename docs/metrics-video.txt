@@ -4,48 +4,48 @@ second number issued to somebody is a measured identity switch.
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000117_02622_v     104       66      125       59    134          16%
-  TOTAL              104       66      125       59    134        15.6%
-  reached 63% of the people, and gave them 1.89 numbers each
+  uav0000117_02622_v     104       61       99       38     60          16%
+  TOTAL              104       61       99       38     60        15.6%
+  reached 59% of the people, and gave them 1.62 numbers each
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000137_00458_v      77       56      106       50     37          42%
-  TOTAL               77       56      106       50     37        41.8%
-  reached 73% of the people, and gave them 1.89 numbers each
+  uav0000137_00458_v      77       52       94       42     28          42%
+  TOTAL               77       52       94       42     28        41.8%
+  reached 68% of the people, and gave them 1.81 numbers each
 
 2 tile/cycle, 2x1, 250 ms, person-640.onnx
   flight         present  reached  numbers  repeats  stray  on a person
-  uav0000086_00000_v      76       68      121       53     24          73%
-  TOTAL               76       68      121       53     24        73.4%
-  reached 89% of the people, and gave them 1.78 numbers each
+  uav0000086_00000_v      76       66       98       32     16          73%
+  TOTAL               76       66       98       32     16        73.4%
+  reached 87% of the people, and gave them 1.48 numbers each
 
 
   4 real sequences
 
   setting                             reached         each          stray
-  as shipped                              73%    +0     1.85+0.00     211
+  as shipped                              69%    +0     1.65+0.00     115
 
-  minIou 0.1                              73%    +0     1.84-0.01     212
-  minIou 0.15                             74%    +1     1.85-0.00     212
-  minIou 0.2                              74%    +2     1.82-0.03     217
-  minIou 0.3                              74%    +2     1.83-0.02     208
-  maxCoastMs 800                          73%    +1     1.80-0.05     219
-  maxCoastMs 1200                         73%    +0     1.85+0.00     211
-  maxCoastMs 2000                         74%    +2     1.88+0.02     197
-  maxCoastMs 3000                         74%    +1     1.94+0.09     194
-  maxCoastMs 4000                         75%    +2     1.94+0.09     191
-  confirmAfter 2                          82%   +10     2.47+0.61     335
-  confirmAfter 3                          77%    +4     2.12+0.27     253
-  confirmAfter 4                          73%    +0     1.85+0.00     211
-  confirmAfter 5                          70%    -2     1.67-0.18     178
-  confirmAfter 6                          67%    -5     1.55-0.30     162
-  confirmAfter 8                          60%   -12     1.43-0.42     124
-  newTrackConfidence 0.2                  75%    +2     1.87+0.02     245
-  newTrackConfidence 0.25                 73%    +0     1.85+0.00     211
-  newTrackConfidence 0.3                  71%    -1     1.75-0.10     193
-  newTrackConfidence 0.35                 71%    -1     1.71-0.15     159
-  maxMisses 3                             73%    +1     1.80-0.05     219
-  maxMisses 5                             73%    +0     1.85+0.00     211
-  maxMisses 10                            73%    +0     1.85+0.00     211
-  maxMisses 20                            73%    +0     1.85+0.00     211
+  minIou 0.1                              68%    -1     1.64-0.01     123
+  minIou 0.15                             69%    +0     1.65+0.00     116
+  minIou 0.2                              69%    +0     1.65-0.00     113
+  minIou 0.3                              69%    +0     1.66+0.01     112
+  maxCoastMs 800                          69%    +0     1.58-0.06     109
+  maxCoastMs 1200                         69%    +0     1.65+0.00     115
+  maxCoastMs 2000                         72%    +3     1.74+0.09     142
+  maxCoastMs 3000                         73%    +4     1.86+0.21     153
+  maxCoastMs 4000                         74%    +5     1.91+0.26     161
+  confirmAfter 2                          77%    +8     1.95+0.30     117
+  confirmAfter 3                          74%    +5     1.77+0.12     115
+  confirmAfter 4                          69%    +0     1.65+0.00     115
+  confirmAfter 5                          67%    -2     1.52-0.13     111
+  confirmAfter 6                          65%    -4     1.44-0.21     112
+  confirmAfter 8                          59%   -10     1.35-0.30     104
+  newTrackConfidence 0.2                  70%    +2     1.71+0.06     133
+  newTrackConfidence 0.25                 69%    +0     1.65+0.00     115
+  newTrackConfidence 0.3                  67%    -2     1.55-0.10     110
+  newTrackConfidence 0.35                 66%    -3     1.54-0.11      85
+  maxMisses 3                             69%    +0     1.58-0.06     109
+  maxMisses 5                             69%    +0     1.65+0.00     115
+  maxMisses 10                            69%    +0     1.65+0.00     115
+  maxMisses 20                            69%    +0     1.65+0.00     115
