@@ -115,6 +115,51 @@ jobs:
           pathlib.Path("flown.txt").write_text("\n".join(flown))
           PY
 
+      - name: What each sequence actually contains
+        run: |
+          python - <<'PY'
+          import pathlib, statistics
+          from PIL import Image
+
+          # One sequence came back with 16% of boxes on a labelled person and another with
+          # 73%, on the same pipeline. Before either number is quoted, this asks what is
+          # different about them. VisDrone marks IGNORED REGIONS as category 0: areas the
+          # dataset declines to annotate. A real person standing in one is invisible to the
+          # scoring and a correct box on them is counted as a box on nobody, so a sequence
+          # with large ignored regions will report a false-positive rate it has not got.
+          root = next(p for p in pathlib.Path("mot").rglob("annotations") if p.is_dir()).parent
+          for flight in sorted(pathlib.Path(".").glob("flight-*.json")):
+              stem = flight.stem[len("flight-"):]
+              text = (root / "annotations" / f"{stem}.txt").read_text()
+              frames = sorted((root / "sequences" / stem).glob("*.jpg"))
+              width, height = Image.open(frames[0]).size
+
+              heights, ignored_area, people_rows, ignored_rows = [], 0, 0, 0
+              per_frame_ignored = {}
+              for line in text.splitlines():
+                  parts = [v for v in line.replace(",", " ").split() if v]
+                  if len(parts) < 8:
+                      continue
+                  f, target, x, y, w, h, score, category = (int(float(v)) for v in parts[:8])
+                  if category == 0:
+                      ignored_rows += 1
+                      per_frame_ignored.setdefault(f, 0)
+                      per_frame_ignored[f] += w * h
+                  elif score != 0 and category in (1, 2):
+                      people_rows += 1
+                      heights.append(h)
+
+              share = (statistics.mean(per_frame_ignored.values()) / (width * height)
+                       if per_frame_ignored else 0.0)
+              print(f"{stem}: {width}x{height}, {len(frames)} frames", flush=True)
+              print(f"    labelled people rows {people_rows}, median height "
+                    f"{statistics.median(heights) if heights else 0:.0f} px "
+                    f"({(statistics.median(heights) if heights else 0) * 640/1306:.1f} px to the model)",
+                    flush=True)
+              print(f"    ignored-region rows {ignored_rows}, covering {share:.0%} of the "
+                    f"frame on average", flush=True)
+          PY
+
       - name: Score them
         run: |
           {
