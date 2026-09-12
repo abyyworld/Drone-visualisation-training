@@ -45,6 +45,7 @@
     <string name="save">Save</string>
     <string name="camera_granted">Camera allowed. Press Start camera again.</string>
     <string name="camera_denied">Without the camera, live tracking cannot run. Uploads still work.</string>
+    <string name="detector_loading">starting the detector</string>
     <string name="detector_stopped">On-device detection stopped: %1$s. The provider still runs on its interval.</string>
     <!-- Two numbers, because they answer different questions: who is in view now, and how
          many distinct people have gone past since the screen opened. -->

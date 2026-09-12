@@ -393,6 +393,16 @@ public class LiveActivity extends AppCompatActivity {
     private volatile String detectorFailure = "";
 
     /**
+     * An open is in flight on the work thread. Main thread only.
+     *
+     * Not the same question as "is there a detector". Between the two the screen has no
+     * model and no failure to report, and something has to stop every pass through
+     * applySettings queueing another load of the same file.
+     */
+    private boolean detectorOpening;
+    private boolean fireOpening;
+
+    /**
      * Consecutive close looks that have thrown.
      *
      * One is a lost look and does not matter. Two in a row is a detector that is not working,
@@ -1039,9 +1049,13 @@ public class LiveActivity extends AppCompatActivity {
             storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
 
-        StringBuilder failure = new StringBuilder();
-        detector = NativeDetector.open(this, failure);
-        detectorFailure = detector == null ? failure.toString() : "";
+        // Opened on the work thread, from onStart, and NOT here. Loading a TFLite model
+        // maps the file, builds the interpreter and, on a device that takes the NNAPI
+        // path, compiles the graph for the accelerator - seconds of work on an MK15, all
+        // of it on whichever thread asks. Asking here is asking on the UI thread while the
+        // screen is being built, which is the definition of an ANR: the operator taps the
+        // camera and gets "Drone Inspection isn't responding" before a frame has arrived.
+        // See openPersonDetector.
 
         // Built only when it will be used. A WebView is tens of megabytes of a
         // two-gigabyte device, and in crowd mode with no key it does nothing whatsoever.
@@ -1082,6 +1096,28 @@ public class LiveActivity extends AppCompatActivity {
         // that is not known until the SurfaceView has one. Whichever happens second starts
         // it; see openPipeline().
         wantStream = true;
+        // ONE work thread, however many times this path is entered, and BEFORE
+        // applySettings, which opens both models on it.
+        //
+        // onStop returns early while a pop-out is open, leaving the thread and the detect
+        // tick running, which is what keeps the boxes alive behind another app. onStart's
+        // early returns test different conditions, and the pair can diverge: close the
+        // floating window with its own X from inside the flight software and the listener
+        // sets popout = null while this activity is still stopped. Coming back then falls
+        // through to here with the first thread still running.
+        //
+        // Building a second one over it did three things. The first was never quit, so a
+        // thread leaked on every pop-out cycle for the life of the process. The new thread's
+        // first act is tracker.reset(), which clears the track list while the old thread may
+        // still be inside tracker.update() - the tracker's whole contract is that one thread
+        // touches it. And the running total silently restarted at zero on a stream that was
+        // never torn down, so a crowd counted for twenty minutes went back to nothing
+        // because somebody closed a window.
+        if (workThread == null) {
+            workThread = new HandlerThread("live-work");
+            workThread.start();
+            work = new Handler(workThread.getLooper());
+        }
         // Before any of the early returns below.
         //
         // This block used to sit at the bottom of onStart, after the return for a running
@@ -1107,27 +1143,6 @@ public class LiveActivity extends AppCompatActivity {
             openStream();
         }
 
-        // ONE work thread, however many times this path is entered.
-        //
-        // onStop returns early while a pop-out is open, leaving the thread and the detect
-        // tick running, which is what keeps the boxes alive behind another app. onStart's
-        // early returns test different conditions, and the pair can diverge: close the
-        // floating window with its own X from inside the flight software and the listener
-        // sets popout = null while this activity is still stopped. Coming back then falls
-        // through to here with the first thread still running.
-        //
-        // Building a second one over it did three things. The first was never quit, so a
-        // thread leaked on every pop-out cycle for the life of the process. The new thread's
-        // first act is tracker.reset(), which clears the track list while the old thread may
-        // still be inside tracker.update() - the tracker's whole contract is that one thread
-        // touches it. And the running total silently restarted at zero on a stream that was
-        // never torn down, so a crowd counted for twenty minutes went back to nothing
-        // because somebody closed a window.
-        if (workThread == null) {
-            workThread = new HandlerThread("live-work");
-            workThread.start();
-            work = new Handler(workThread.getLooper());
-        }
         // Reset on the thread that owns them, not from here. Both carry state between
         // frames, and clearing that state underneath a detection still in flight is the
         // kind of race that shows up once a month and never in a test.
@@ -1164,6 +1179,7 @@ public class LiveActivity extends AppCompatActivity {
      */
     private void applySettings() {
         scansForFire = "wildfire".equals(Settings.domain(this));
+        openPersonDetector();
         openFireDetector();
 
         // Crowd mode counts people, so it looks for people. A car in a crowd shot is
@@ -1243,18 +1259,77 @@ public class LiveActivity extends AppCompatActivity {
      * in 2 GB of RAM, and a wildfire flight that started life as a crowd one has to be able
      * to pick it up without restarting the stream.
      */
+    /**
+     * Open the people model, ON THE WORK THREAD.
+     *
+     * Loading it is not a field assignment. The file is mapped, an interpreter is built
+     * over it, and where the accelerator wins the trial the graph is compiled for that
+     * accelerator - seconds of work on this tablet. Done from onCreate, as it was, that is
+     * seconds of a UI thread that is supposed to be drawing the screen, and Android's
+     * answer to a UI thread busy that long is to offer to kill the app.
+     *
+     * Idempotent, and safe to call from anywhere on the main thread: it does nothing when
+     * the model is open and nothing when an open is already in flight. Whatever depends on
+     * the model - the people-only switch, the confidence floor - is applied when it lands,
+     * by calling back into applySettings from the main thread.
+     */
+    private void openPersonDetector() {
+        // A failure that has already been reported is not retried. Without that test this
+        // would loop: the callback below calls applySettings, applySettings calls back in
+        // here, and on a device with no usable model that is a load attempt per pass for
+        // the life of the screen.
+        if (detector != null || detectorOpening || !detectorFailure.isEmpty()) {
+            return;
+        }
+        Handler worker = work;
+        if (worker == null) {
+            // No thread yet. onStart brings one up and calls straight back through here.
+            return;
+        }
+        detectorOpening = true;
+        if (!worker.post(() -> {
+            StringBuilder failure = new StringBuilder();
+            NativeDetector opened = NativeDetector.open(this, failure);
+            String why = opened == null ? failure.toString() : "";
+            detector = opened;
+            detectorFailure = why;
+            handler.post(() -> {
+                detectorOpening = false;
+                // Now that there is something to apply them to.
+                applySettings();
+                refreshStatus();
+            });
+        })) {
+            detectorOpening = false;
+        }
+        refreshStatus();
+    }
+
     private void openFireDetector() {
         if (!scansForFire) {
             closeFireDetector();
             return;
         }
-        if (fireDetector != null) {
+        if (fireDetector != null || fireOpening) {
             return;
         }
-        StringBuilder why = new StringBuilder();
-        fireDetector = NativeDetector.openFire(this, why);
-        // No message when it is absent. The scan runs either way, and a line saying a model
-        // failed to load reads, on a fire screen, like a line about fire.
+        Handler worker = work;
+        if (worker == null) {
+            return;
+        }
+        // On the work thread, for the same reason the people model is. This one is opened
+        // from applySettings, which runs on every return to the screen, so a settings
+        // change mid-flight used to stall the UI thread for as long as the load took.
+        fireOpening = true;
+        if (!worker.post(() -> {
+            StringBuilder why = new StringBuilder();
+            fireDetector = NativeDetector.openFire(this, why);
+            handler.post(() -> fireOpening = false);
+            // No message when it is absent. The scan runs either way, and a line saying a
+            // model failed to load reads, on a fire screen, like a line about fire.
+        })) {
+            fireOpening = false;
+        }
     }
 
     /**
@@ -1276,14 +1351,32 @@ public class LiveActivity extends AppCompatActivity {
      *     thread there is nothing running on it either, so closing here is safe.
      */
     private void closeFireDetector() {
-        NativeDetector closing = fireDetector;
-        fireDetector = null;
-        if (closing == null) {
+        fireOpening = false;
+        Handler worker = work;
+        if (worker == null) {
+            NativeDetector closing = fireDetector;
+            fireDetector = null;
+            if (closing != null) {
+                closing.close();
+            }
             return;
         }
-        Handler worker = work;
-        if (worker == null || !worker.post(closing::close)) {
-            closing.close();
+        // The field is read THERE rather than here, because an open may still be sitting in
+        // that queue: reading it here would capture null, the open would then land, and a
+        // wildfire model nobody wanted would stay in memory for the rest of the flight.
+        // One thread, one queue, so a close posted after an open runs after it.
+        if (!worker.post(() -> {
+            NativeDetector closing = fireDetector;
+            fireDetector = null;
+            if (closing != null) {
+                closing.close();
+            }
+        })) {
+            NativeDetector closing = fireDetector;
+            fireDetector = null;
+            if (closing != null) {
+                closing.close();
+            }
         }
     }
 
@@ -2295,6 +2388,11 @@ public class LiveActivity extends AppCompatActivity {
         // and the operator was left with live video, no boxes, and nothing saying why.
         if (current == null && !detectorFailure.isEmpty()) {
             line.append("  ·  ").append(detectorFailure);
+        } else if (current == null && detectorOpening) {
+            // Said out loud. The model now loads off the UI thread, so there is a second or
+            // two with live video and no boxes, and silence there reads as a detector that
+            // has decided there is nobody in the field.
+            line.append("  ·  ").append(getString(R.string.detector_loading));
         }
         if (current != null) {
             float seconds = Math.max(1, System.currentTimeMillis() - detectStartedAt) / 1000f;
