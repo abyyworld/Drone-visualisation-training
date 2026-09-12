@@ -49,70 +49,101 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy pillow onnxruntime
 
-      - name: Find real annotated drone video
-        id: fetch
+      - name: Fetch VisDrone MOT val
         run: |
           python - <<'PY'
-          import io, json, os, pathlib, sys, urllib.parse, urllib.request, zipfile
+          import pathlib, urllib.request, zipfile
 
-          # Searched rather than hard-coded, so a dead address is REPORTED instead of
-          # silently skipped. The same mistake once let a fire model ship that answered the
-          # same score for every picture.
-          TERMS = ["VisDrone MOT", "VisDrone VID", "visdrone tracking",
-                   "drone multi object tracking", "UAV pedestrian tracking"]
-
-          def candidates():
-              out = []
-              for term in TERMS:
-                  url = ("https://huggingface.co/api/datasets?search="
-                         + urllib.parse.quote(term) + "&limit=10")
-                  try:
-                      request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
-                      with urllib.request.urlopen(request, timeout=60) as response:
-                          listing = json.load(response)
-                  except Exception as problem:
-                      print(f"  could not search {term!r}: {problem}", flush=True)
-                      continue
-                  for entry in listing:
-                      name = entry.get("id")
-                      if name and name not in out:
-                          out.append(name)
-                          print(f"  {term!r} -> {name}", flush=True)
-              return out
-
-          found = candidates()
-          print(f"\n{len(found)} dataset candidates", flush=True)
-          pathlib.Path("candidates.json").write_text(json.dumps(found, indent=2))
-          if not found:
-              print("::warning::No annotated drone video datasets were reachable. "
-                    "This is a fact about what is published and searchable, not a failure "
-                    "of the pipeline being tested.", flush=True)
-          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-              out.write(f"count={len(found)}\n")
+          # Found by searching the dataset index (see git history for the search step that
+          # turned this up). Real consecutive frames of real flights, with a target id per
+          # person per frame, which is the only reason this is worth flying: it makes an
+          # identity switch a measurement rather than an inference.
+          URL = ("https://huggingface.co/datasets/rayavarapuhemanthkumar/"
+                 "visdrone-detection-tracking/resolve/main/VisDrone2019-MOT-val.zip")
+          request = urllib.request.Request(URL, headers={"User-Agent": "curl/8"})
+          with urllib.request.urlopen(request, timeout=900) as response:
+              pathlib.Path("mot.zip").write_bytes(response.read())
+          size = pathlib.Path("mot.zip").stat().st_size
+          print(f"got {size/1e6:.0f} MB", flush=True)
+          if size < 10_000_000:
+              raise SystemExit("too small to be the dataset")
+          with zipfile.ZipFile("mot.zip") as z:
+              z.extractall("mot")
+          for p in sorted(pathlib.Path("mot").rglob("*"))[:12]:
+              print("   ", p, flush=True)
           PY
 
-      - name: What is inside them
+      - name: Fly the sequences
+        env:
+          SEQUENCES: ${{ inputs.sequences }}
+          SECONDS: ${{ inputs.seconds }}
         run: |
           python - <<'PY'
-          import json, pathlib, urllib.request
+          import os, pathlib, subprocess, sys
 
-          # What the files are called decides the whole scorer: MOT annotations are one text
-          # file per sequence with a target id per row, and that id is the only reason this
-          # is worth flying at all. A layout guessed wrong here would be discovered halfway
-          # through a scoring run.
-          for name in json.loads(pathlib.Path("candidates.json").read_text()):
-              url = f"https://huggingface.co/api/datasets/{name}"
-              try:
-                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
-                  with urllib.request.urlopen(request, timeout=60) as response:
-                      detail = json.load(response)
-              except Exception as problem:
-                  print(f"{name}: could not read ({problem})", flush=True)
+          root = next(p for p in pathlib.Path("mot").rglob("annotations") if p.is_dir()).parent
+          annotations = sorted((root / "annotations").glob("*.txt"))
+          print(f"{len(annotations)} sequences in {root}", flush=True)
+
+          # The busiest sequences, because that is where numbering goes wrong, and a
+          # sequence with four people in it would say nothing about it either way.
+          def people(path):
+              n = set()
+              for line in path.read_text().splitlines():
+                  parts = [v for v in line.replace(",", " ").split() if v]
+                  if len(parts) >= 8 and int(float(parts[6])) != 0 and int(float(parts[7])) in (1, 2):
+                      n.add(parts[1])
+              return len(n)
+
+          ranked = sorted(((people(a), a) for a in annotations), reverse=True)
+          for count, path in ranked[:8]:
+              print(f"  {path.stem}: {count} distinct people", flush=True)
+
+          wanted = int(os.environ.get("SEQUENCES") or 3)
+          seconds = float(os.environ.get("SECONDS") or 20)
+          flown = []
+          for count, path in ranked[:wanted]:
+              sequence = root / "sequences" / path.stem
+              if not sequence.is_dir():
+                  print(f"  no frames for {path.stem}", flush=True)
                   continue
-              files = [s.get("rfilename", "") for s in detail.get("siblings", [])]
-              print(f"\n{name}: {len(files)} files", flush=True)
-              for f in sorted(files)[:40]:
-                  print(f"    {f}", flush=True)
-              if len(files) > 40:
-                  print(f"    ... and {len(files) - 40} more", flush=True)
+              out = f"flight-{path.stem}.json"
+              subprocess.run([sys.executable, "tools/fly_video.py",
+                              "--sequence", str(sequence), "--annotations", str(path),
+                              "--seconds", str(seconds), "--out", out], check=True)
+              flown.append(out)
+          pathlib.Path("flown.txt").write_text("\n".join(flown))
           PY
+
+      - name: Score them
+        run: |
+          {
+            echo "Real VisDrone MOT sequences, flown at the tablet's cadence."
+            echo "Consecutive frames of real flights; every person carries a target id, so a"
+            echo "second number issued to somebody is a measured identity switch."
+            echo
+          } > docs/metrics-video.txt
+          while read -r f; do
+            [ -z "$f" ] && continue
+            node tools/score_flight.mjs "$f" | tee -a docs/metrics-video.txt
+            echo >> docs/metrics-video.txt
+          done < flown.txt
+          cat docs/metrics-video.txt
+
+      - name: Commit the report
+        run: |
+          git config user.name abyyworld
+          git config user.email annolieberto@gmail.com
+          git add docs/metrics-video.txt
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git pull --rebase --autostash origin main || true
+          git commit -m "Fly real video sequences and record what they say
+
+          VisDrone MOT val, consecutive frames of real flights, with a target id per
+          person so an identity switch is measured rather than inferred."
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase --autostash origin main || true
+            sleep $((attempt * 5))
+          done
+          exit 1
