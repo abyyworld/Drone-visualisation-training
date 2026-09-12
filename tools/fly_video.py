@@ -136,7 +136,12 @@ def main():
     # The detector does not see every frame. At 30 fps and a 250 ms cycle it sees every
     # seventh or eighth, which is the actual relationship on the tablet.
     step = max(1, round(args.fps * args.period / 1000))
-    wanted = min(len(frames), int(args.seconds * args.fps / step))
+    # Bounded by how many cycles the footage HOLDS, not by how many frames it has. Every
+    # cycle consumes `step` frames, so a 500-frame sequence at every eighth frame is 62
+    # cycles and asking for more walks off the end.
+    wanted = min(len(frames) // step, int(args.seconds * args.fps / step))
+    if wanted < 2:
+        raise SystemExit(f"{len(frames)} frames at every {step} is too short to fly")
     first = Image.open(frames[0])
     width, height = first.size
 
