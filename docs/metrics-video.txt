@@ -20,3 +20,32 @@ second number issued to somebody is a measured identity switch.
   TOTAL               76       68      121       53     24        73.4%
   reached 89% of the people, and gave them 1.78 numbers each
 
+
+  4 real sequences
+
+  setting                             reached         each          stray
+  as shipped                              73%    +0     1.85+0.00     211
+
+  minIou 0.1                              73%    +0     1.84-0.01     212
+  minIou 0.15                             74%    +1     1.85-0.00     212
+  minIou 0.2                              74%    +2     1.82-0.03     217
+  minIou 0.3                              74%    +2     1.83-0.02     208
+  maxCoastMs 800                          73%    +1     1.80-0.05     219
+  maxCoastMs 1200                         73%    +0     1.85+0.00     211
+  maxCoastMs 2000                         74%    +2     1.88+0.02     197
+  maxCoastMs 3000                         74%    +1     1.94+0.09     194
+  maxCoastMs 4000                         75%    +2     1.94+0.09     191
+  confirmAfter 2                          82%   +10     2.47+0.61     335
+  confirmAfter 3                          77%    +4     2.12+0.27     253
+  confirmAfter 4                          73%    +0     1.85+0.00     211
+  confirmAfter 5                          70%    -2     1.67-0.18     178
+  confirmAfter 6                          67%    -5     1.55-0.30     162
+  confirmAfter 8                          60%   -12     1.43-0.42     124
+  newTrackConfidence 0.2                  75%    +2     1.87+0.02     245
+  newTrackConfidence 0.25                 73%    +0     1.85+0.00     211
+  newTrackConfidence 0.3                  71%    -1     1.75-0.10     193
+  newTrackConfidence 0.35                 71%    -1     1.71-0.15     159
+  maxMisses 3                             73%    +1     1.80-0.05     219
+  maxMisses 5                             73%    +0     1.85+0.00     211
+  maxMisses 10                            73%    +0     1.85+0.00     211
+  maxMisses 20                            73%    +0     1.85+0.00     211
