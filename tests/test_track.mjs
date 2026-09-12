@@ -195,20 +195,37 @@ console.log('\nCoasting is bounded by time, not by frames');
     `${tracker.tracks.length} still held`);
 }
 
-console.log('\nA fast machine still gets its full coast');
+console.log('\nThe coast budget is time, not frames');
 {
-  const tracker = new Tracker({ confirmAfter: 2 });
+  // The SAME number of missed looks, on a fast machine and a slow one. Under a frame count
+  // both would behave identically, which is the bug: twenty missed frames is two and a half
+  // seconds on a laptop and fourteen on a tablet, and a spurious box sat on screen dashed
+  // and drifting for a quarter of a minute after everyone agreed it was nothing.
+  //
+  // Written against the shipped budget rather than a fixed number of frames, so that
+  // retuning the coast does not silently turn this into a test of nothing.
+  const budget = new Tracker().maxCoastMs;
+  const MISSES = 6;
+
+  const fast = new Tracker({ confirmAfter: 2 });
+  const fastGap = Math.floor(budget / (MISSES + 2));   // well inside the budget
   let clock = 2000000;
-  tracker.update([person(50, 50)], clock);
-  clock += 120;
-  tracker.update([person(52, 50)], clock);
-  // Eight detections a second: ten missed frames is well inside the time budget, where the
-  // old frame count would have held it too. Both units agree here, which is the point.
-  for (let i = 0; i < 10; i += 1) {
-    clock += 120;
-    tracker.update([], clock);
-  }
-  check('ten missed frames at 8fps still holds the box', tracker.open().length === 1);
+  fast.update([person(50, 50)], clock);
+  clock += fastGap;
+  fast.update([person(52, 50)], clock);
+  for (let i = 0; i < MISSES; i += 1) { clock += fastGap; fast.update([], clock); }
+  check(`${MISSES} missed looks inside the budget still holds the box`,
+    fast.open().length === 1, `${fast.open().length} held at ${fastGap} ms a look`);
+
+  const slow = new Tracker({ confirmAfter: 2 });
+  const slowGap = budget;                              // one look IS the whole budget
+  clock = 3000000;
+  slow.update([person(50, 50)], clock);
+  clock += slowGap;
+  slow.update([person(52, 50)], clock);
+  for (let i = 0; i < MISSES; i += 1) { clock += slowGap; slow.update([], clock); }
+  check('the same number of misses on a slow machine does not',
+    slow.open().length === 0, `${slow.open().length} held at ${slowGap} ms a look`);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -397,13 +414,25 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
   //
   //     So the budget has to clear one full round of tiles at the slowest rate the tablet
   //     actually manages, not at the rate the target period asks for.
-  const { TILE_COLUMNS, TILE_ROWS } = await import('../web/js/tiles.js');
+  //
+  //     What a round costs has changed twice since. The tablet now looks at EVERY tile each
+  //     cycle (LiveActivity.TILES_PER_CYCLE), so a round trip there is one cycle rather than
+  //     a rotation. The browser worker still takes one tile per cycle, and runs faster. The
+  //     binding case is the tablet at its slowest, and the budget has to clear it with
+  //     enough margin that one bad cycle does not drop everybody at once.
   const SLOWEST_CYCLE_MS = 500;
-  const roundTrip = TILE_COLUMNS * TILE_ROWS * SLOWEST_CYCLE_MS;
-
   const shipped = new Tracker().maxCoastMs;
-  check('a track survives one full pass over the tiles', shipped >= roundTrip,
-    `coast ${shipped} ms against a ${roundTrip} ms round of tiles`);
+  check('a track survives the slowest cycle the tablet manages',
+    shipped > SLOWEST_CYCLE_MS,
+    `coast ${shipped} ms against a ${SLOWEST_CYCLE_MS} ms worst-case cycle`);
+
+  // And the browser, which does rotate. It runs its cycles far faster than the tablet, so
+  // this is about the shape of the arithmetic rather than a close call.
+  const { TILE_COLUMNS, TILE_ROWS } = await import('../web/js/tiles.js');
+  const BROWSER_CYCLE_MS = 125;
+  const rotation = TILE_COLUMNS * TILE_ROWS * BROWSER_CYCLE_MS;
+  check('and a full rotation of tiles in the browser', shipped >= rotation,
+    `coast ${shipped} ms against a ${rotation} ms rotation`);
 
   // And the other half of the same fix: holding an identity is not the same as being on
   // screen, so the readout must not report a coasting track as present. That needs a gap
@@ -411,8 +440,10 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
   // came down to 1200 ms the two were briefly equal, which left no interval at all in which
   // somebody is held without being counted as present.
   const held = new Tracker();
+  const IN_VIEW_MS = 500;   // track.js
   check('a track is held for longer than it is called present',
-    held.maxCoastMs > 750, `coast ${held.maxCoastMs} ms against a 750 ms in-view window`);
+    held.maxCoastMs > IN_VIEW_MS,
+    `coast ${held.maxCoastMs} ms against a ${IN_VIEW_MS} ms in-view window`);
 
   const tracker = new Tracker({ confirmAfter: 2 });
   let clock = 1000;
@@ -421,9 +452,9 @@ console.log('\nThe shipped coast outlasts a full round of close looks');
   tracker.update([person(52, 50)], clock);
   check('someone just seen is in view', tracker.countOf('person') === 1);
 
-  clock += 900;
+  clock += 600;
   tracker.update([], clock);
-  check('someone not seen for most of a second is not in view',
+  check('someone not seen for over half a second is not in view',
     tracker.countOf('person') === 0, `${tracker.countOf('person')} reported`);
   check('but is still held, so they keep their number',
     tracker.tracks.length === 1, `${tracker.tracks.length} held`);

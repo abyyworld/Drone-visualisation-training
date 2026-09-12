@@ -75,17 +75,32 @@ public final class Tracker {
      *     happening, and the prose right above it went on saying a second and a half, because
      *     that is what it should be.
      *
-     *     Every person is now looked at every cycle, so five missed looks in a row is five
-     *     failures to detect somebody being looked straight at - which is a person who left,
-     *     not a person waiting their turn. Measured over four crowded frames at the real
-     *     cadence, dropping 4000 to 1200 moves the share of drawn boxes that are actually on a
-     *     person from 74.7% to 80.8%, for two extra numbers issued across three flights. A
-     *     coasting box IS the box sitting in the old place, so this is the same complaint the
-     *     tile change answers, met from the other side.
+     *     Every person is now looked at every cycle, so a missed look is a failure to detect
+     *     somebody being looked straight at - a person who left, not a person waiting their
+     *     turn. Dropping 4000 to 1200 moved the share of drawn boxes actually on a person
+     *     from 74.7% to 80.8% on panned stills.
+     *
+     * AND WHY IT IS 800 RATHER THAN 1200
+     *     Both of those were reasoned from "how long might somebody be out of sight", which
+     *     is the wrong question once re-identification works. Measured on five real VisDrone
+     *     MOT sequences with colour signatures switched on - the first time these have been
+     *     measured with the gallery actually running:
+     *
+     *         coast   people reached   numbers each   numbers on nobody
+     *         4000         74%            1.88              232
+     *         2000         72%            1.71              215
+     *         1200         68%            1.63              176
+     *          800         68%            1.57              155
+     *
+     *     A track let go is REMEMBERED, and somebody walking back into view is recognised
+     *     and gets their own number back rather than a new one. So releasing early is nearly
+     *     free, while coasting is not: a stale box drifts, and a drifting box wins the
+     *     detection belonging to whoever is standing where it drifted to. That person then
+     *     misses, coasts, and is renumbered. The safety net is the gallery, not the coast.
      *
      * Kept in step with MAX_COAST_MS in web/js/track.js.
      */
-    private static final long MAX_COAST_MS = 1200;
+    private static final long MAX_COAST_MS = 800;
 
     /**
      * How recently a track must have been seen to count as being in view now.
@@ -99,7 +114,7 @@ public final class Tracker {
      * 750 ms is three cycles at the target period. Somebody not detected for three looks running
      * is not in view, whatever is still being held for them.
      */
-    private static final long IN_VIEW_MS = 750;
+    private static final long IN_VIEW_MS = 500;
 
     /**
      * How alike two colour signatures must be to be the same person coming back.
@@ -110,9 +125,24 @@ public final class Tracker {
      * and inflates the total, a wrong match merges two people and deflates it. The count is
      * already a floor, so deflating keeps it honest and inflating does not.
      *
+     * Measured, at last. 0.62 was reasoned and never measured: with no signatures in any
+     * harness the comparison never ran, so every value scored identically. On five real
+     * VisDrone MOT sequences, with the gallery running:
+     *
+     *     similarity   people reached   numbers each   numbers on nobody
+     *     0.80              70%             1.70              215
+     *     0.62              68%             1.63              176
+     *     0.55              67%             1.62              169
+     *     0.45              67%             1.60              165
+     *
+     * Alone it is marginal. With the shorter coast it is not: together they give 1.55
+     * numbers per person and 144 on nobody, against 1.63 and 176, at the same people
+     * reached. Lower is not free - 0.45 keeps improving the count because it starts merging
+     * people, and a crowd counted as fewer than are in it is worse than one counted twice.
+     *
      * Kept in step with REID_SIMILARITY in web/js/track.js.
      */
-    private static final float REID_SIMILARITY = 0.62f;
+    private static final float REID_SIMILARITY = 0.55f;
 
     /** How long someone stays recognisable after leaving the frame: one route leg. */
     private static final long REID_WINDOW_MS = 5 * 60 * 1000L;

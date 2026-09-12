@@ -145,6 +145,28 @@ const CONFIRM_AFTER = 4;
  * A second and a half is a person walking behind something and out the other side. Anything
  * longer is a box describing the past.
  *
+ * WHY A SHORT COAST IS NOW THE BETTER POLICY
+ *     This was 4000, then 1200, and both were reasoned from "how long might somebody be out of
+ *     sight". That is the wrong question once re-identification works.
+ *
+ *     Measured on five real VisDrone MOT sequences with colour signatures switched on - which
+ *     is the first time they have been measured with the tracker's gallery actually running:
+ *
+ *         coast   people reached   numbers each   numbers on nobody
+ *         4000         74%            1.88              232
+ *         2000         72%            1.71              215
+ *         1200         68%            1.63              176
+ *          800         68%            1.57              155
+ *
+ *     Holding a box longer buys people and costs numbering, which is the trade the old values
+ *     were picked on. But the gallery changes what a release costs: a track let go is
+ *     REMEMBERED, and somebody who walks back into view is recognised and gets their own number
+ *     back rather than a new one. So letting go early is nearly free, while coasting is not -
+ *     a stale box drifts, and a drifting box wins the detection belonging to whoever is
+ *     standing where it drifted to. That person then misses, coasts, and is renumbered.
+ *
+ *     Three missed looks at the target period. The safety net is the gallery, not the coast.
+ *
  * WHY IT IS 1200 AND WAS 4000
  *     4000 was not chosen, it was forced. Under the old shape the detector looked at one
  *     sixth of the frame per cycle, so a person outside the current tile was not observed
@@ -161,7 +183,7 @@ const CONFIRM_AFTER = 4;
  *     coasting box IS the box sitting in the old place, so this is the same complaint the
  *     tile change answers, met from the other side.
  */
-const MAX_COAST_MS = 1200;
+const MAX_COAST_MS = 800;
 
 /**
  * How recently a track must have been seen to count as being in view now.
@@ -172,10 +194,12 @@ const MAX_COAST_MS = 1200;
  * and the window where somebody is held without being counted as present - the window that
  * lets them keep their number through a couple of missed looks - would be empty.
  *
- * 750 ms is three cycles at the target period. Somebody not detected for three looks running
- * is not in view, whatever is still being held for them.
+ * 500 ms is two cycles at the target period. Somebody not detected for two looks running is
+ * not in view, whatever is still being held for them. It came down with the coast window: at
+ * 750 against a coast of 800 the gap was smaller than a single cycle, which is the collapse
+ * this note warns about, arriving by the back door.
  */
-const IN_VIEW_MS = 750;
+const IN_VIEW_MS = 500;
 
 /**
  * How alike two colour signatures must be to be the same person coming back.
@@ -188,7 +212,25 @@ const IN_VIEW_MS = 750;
  * deflates it. The count is already a floor, so deflating it keeps it honest and inflating
  * it does not.
  */
-const REID_SIMILARITY = 0.62;
+// Measured, at last. 0.62 was reasoned and never measured: with no signatures in any
+// harness the comparison never ran, so every value scored identically. On five real
+// VisDrone MOT sequences, with the gallery actually running:
+//
+//     similarity   people reached   numbers each   numbers on nobody
+//     0.80              70%             1.70              215
+//     0.70              69%             1.67              184
+//     0.62              68%             1.63              176
+//     0.55              67%             1.62              169
+//     0.45              67%             1.60              165
+//
+// Alone it is marginal. With the shorter coast it is not: together they give 1.55 numbers
+// per person and 144 on nobody, against 1.63 and 176, at the same people reached. A shorter
+// coast releases tracks sooner, which asks the gallery more questions, which makes how
+// readily it says yes matter more than it used to.
+//
+// Lower is not free. 0.45 keeps improving the count because it starts merging people, and a
+// crowd counted as fewer than are in it is a worse answer than one counted twice.
+const REID_SIMILARITY = 0.55;
 
 /**
  * How long someone stays recognisable after leaving the frame.
