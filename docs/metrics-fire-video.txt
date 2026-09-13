@@ -1,0 +1,47 @@
+==============================================================================
+THE FIRE MODEL ON VIDEO OF REAL FIRE
+Clips from zwanderer/smolvlm2-fire-videos, cut at 4 frames a second, which
+is the cycle the tablet detects at, and 640 on the long edge, which is what
+it reads back. Scored per clip AND per frame: the clip figure says whether
+an operator is ever told, the frame figure says how steady the box is.
+
+    model      wildfire-640.onnx
+    threshold  0.25, as shipped
+    clips      9
+
+    clip                               frames  marked   best  found at
+    0c49baf8-38e711ad                      15      15   0.92      0.10
+    13283125_2160_3840_24fps               40      38   0.73      0.10
+    14296772_3840_2160_24fps               40      40   0.89      0.10
+    16714831-hd_1080_1920_30fps            15      13   0.85      0.10
+    1838133792                             40      40   0.84      0.10
+    2202322837                             40      22   0.79      0.10
+    2392279700                             40      10   0.40      0.10
+    240_F_1243984490_0VnKlJGRR1o1RUgn      31      31   0.90      0.10
+    700_F_176038377_s1HshVJIOtjwAFuDj      40      40   0.77      0.10
+
+     threshold   clips found   frames marked
+          0.10           9/9               -
+          0.15           9/9               -
+          0.20           9/9               -
+          0.25           9/9             249
+          0.35           9/9               -
+          0.50           8/9               -
+
+    At the shipped 0.25: 9 of 9 clips ever marked, and 249 of 301 frames.
+    A clip with nothing marked has not been cleared of anything; it failed to
+    meet a threshold.
+
+  The flame scanner on the same clips. Consecutive frames, which is the
+  input its method needs and the input it has never been scored on.
+
+  clip                          frames         marked         flame         smoke
+  0c49baf8-38e711ad           15 frames       15 marked      15 flame       6 smoke     0.95 worst
+  13283125_2160_3840_24fps      40 frames       40 marked      40 flame       0 smoke     0.97 worst
+  14296772_3840_2160_24fps      40 frames        3 marked       3 flame       3 smoke     0.59 worst
+  16714831-hd_1080_1920_30fps      15 frames       14 marked      14 flame       0 smoke     0.95 worst
+  1838133792                  40 frames       39 marked       0 flame      39 smoke     0.99 worst
+  2202322837                  40 frames       40 marked      40 flame       0 smoke     0.95 worst
+  2392279700                  40 frames        4 marked       3 flame       1 smoke     0.79 worst
+  240_F_1243984490_0VnKlJGRR1o1RUgnFdQmENnp8xIPEMgT_ST      31 frames       31 marked      31 flame       1 smoke     1.00 worst
+  700_F_176038377_s1HshVJIOtjwAFuDjVE3ugv7EKSY84pq_ST      40 frames       40 marked      40 flame       0 smoke     1.00 worst
