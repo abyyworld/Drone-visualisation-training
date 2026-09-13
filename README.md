@@ -21,6 +21,13 @@ so both can be on the controller at once and compared on the same flight. The on
 changed from that commit are its application id, its name and its icon colour, which is what
 Android needs to treat it as a separate app; the code is exactly what it was.
 
+**As .zip instead**, for anything between here and the controller that refuses a .apk -
+a proxy, a mail attachment, a browser's download filter. Same files, plus a note saying
+which is which:
+[latest](https://github.com/abyyworld/Drone-visualisation-training/releases/download/latest/drone-inspection.zip) ·
+[previous](https://github.com/abyyworld/Drone-visualisation-training/releases/download/old/drone-inspection-old.zip) ·
+[both in one](https://github.com/abyyworld/Drone-visualisation-training/releases/download/latest/drone-inspection-both-builds.zip)
+
 Copy the file to the tablet, open it with the file manager, and allow installs from that
 source when Android asks. Full instructions, and the reasons to prefer one route over the
 other, are in [`docs/INSTALL-tablet.md`](docs/INSTALL-tablet.md).

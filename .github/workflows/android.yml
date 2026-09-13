@@ -296,6 +296,59 @@ jobs:
       # The asset is a stable name rather than a versioned one, because the URL above is
       # built from the file name: a version in it would change the address every build,
       # which is the problem being solved. The version is in the release notes instead.
+      # A .zip beside every .apk.
+      #
+      # Not for compression - an APK is already a zip and packing it again saves nothing,
+      # which is why these are stored rather than deflated. It is because a .apk link is
+      # refused or rewritten by plenty of things between here and a controller: corporate
+      # proxies, mail attachments, some browsers' download filters. A .zip goes through
+      # where the .apk does not, and the README inside says which build is which and how to
+      # get both onto the tablet at once.
+      - name: Package the build as a zip as well
+        run: |
+          set -e
+          cat > README.txt <<'TXT'
+          Drone Inspection
+
+          INSTALLING BOTH BUILDS SIDE BY SIDE
+            The latest build and the previous one are separate apps and do not replace each
+            other. The previous one carries the application id
+            world.abyy.droneinspection.old, the name "Drone Inspection OLD" and a red
+            launcher icon; everything else in it is exactly the code its commit had.
+
+            Copy the .apk to the tablet, open it with the file manager, and allow installs
+            from that source when Android asks. Neither build needs the other uninstalled.
+
+          ON THE LAUNCHER
+            Drone Inspection        - the latest build
+            Drone Inspection OLD    - the previous one, red icon
+
+          Both downloads, always current:
+            https://github.com/abyyworld/Drone-visualisation-training/releases
+          TXT
+          NAME="${{ inputs.oldRef != '' && 'drone-inspection-old' || 'drone-inspection' }}"
+          cp "${{ steps.apk.outputs.path }}" "$NAME.apk"
+          zip -q -0 "$NAME.zip" "$NAME.apk" README.txt
+          ls -lh "$NAME.zip"
+
+      # And one holding both, for moving them onto a controller in a single transfer. Built
+      # on the normal path rather than the old one, because that is the side that changes:
+      # the old APK is fixed, so a zip made here is current whenever the latest build is.
+      - name: Package both builds together
+        if: github.ref == 'refs/heads/main' && inputs.oldRef == ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if gh release download old --pattern 'drone-inspection-old.apk' --clobber; then
+            zip -q -0 drone-inspection-both-builds.zip \
+              drone-inspection.apk drone-inspection-old.apk README.txt
+            ls -lh drone-inspection-both-builds.zip
+          else
+            echo "::notice::No previous build published yet, so there is no combined zip."
+          fi
+
       - name: Publish it as the old download
         if: inputs.oldRef != ''
         env:
@@ -326,7 +379,7 @@ jobs:
 
           Download **drone-inspection-old.apk** below." || true
 
-          gh release upload old drone-inspection-old.apk --clobber
+          gh release upload old drone-inspection-old.apk drone-inspection-old.zip --clobber
 
       - name: Publish it as the latest download
         if: github.ref == 'refs/heads/main' && inputs.oldRef == ''
@@ -353,7 +406,11 @@ jobs:
           Download **drone-inspection.apk** below. Copy it to the tablet, open it with the
           file manager, and allow installs from that source when Android asks." || true
 
-          gh release upload latest drone-inspection.apk --clobber
+          gh release upload latest drone-inspection.apk drone-inspection.zip --clobber
+          # Only when the previous build exists to be packed with it.
+          if [ -f drone-inspection-both-builds.zip ]; then
+            gh release upload latest drone-inspection-both-builds.zip --clobber
+          fi
 
       # The old builds, cleaned up as they are replaced.
       #
