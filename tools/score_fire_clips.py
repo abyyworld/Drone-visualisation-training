@@ -47,6 +47,20 @@ def main():
     if not clips:
         raise SystemExit(f"no clip folders in {args.clips}")
 
+    # A clip folder with no frames in it is not a clip the model missed. Without this the
+    # first run of this tool reported "0 of 9 clips ever marked" from nine empty folders,
+    # because the decoder was not installed on the runner - a recall figure of zero,
+    # printed with a straight face, for a model that had not been shown anything. It is
+    # the same failure as a scorer dividing by an empty truth list, and it is worth failing
+    # loudly for the same reason.
+    empty = [c.name for c in clips if not evaluate_fire.pictures(c)]
+    if empty:
+        raise SystemExit(
+            f"{len(empty)} of {len(clips)} clip folders hold no frames "
+            f"({', '.join(empty[:3])}...). Nothing was decoded, so there is nothing to "
+            f"score, and a zero printed from this would be about the decoder rather than "
+            f"about the model.")
+
     lines = []
 
     def say(text=""):

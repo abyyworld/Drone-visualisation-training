@@ -49,7 +49,10 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install numpy pillow onnxruntime
+          # imageio-ffmpeg carries its own ffmpeg binary. The runner image does not have
+          # one - the first run of this discovered that by producing no frames at all and
+          # then scoring them - and a pip wheel is faster and more predictable than apt.
+          pip install numpy pillow onnxruntime imageio-ffmpeg
 
       - name: What fire video is published
         run: |
@@ -168,15 +171,25 @@ jobs:
           # never get. 640 on the long edge for the same reason: that is what the device
           # reads back.
           set -e
+          FFMPEG="$(python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+          echo "decoder: $FFMPEG"
           for clip in clips/*/*.mp4; do
             name="$(basename "${clip%.*}")"
             label="$(basename "$(dirname "$clip")")"
             dir="frames/$label/$name"
             mkdir -p "$dir"
-            ffmpeg -loglevel error -i "$clip" -vf               "fps=4,scale=w=640:h=640:force_original_aspect_ratio=decrease"               -frames:v 40 "$dir/%04d.jpg" || echo "could not decode $clip"
+            "$FFMPEG" -loglevel error -i "$clip" -vf "fps=4,scale=w=640:h=640:force_original_aspect_ratio=decrease" -frames:v 40 "$dir/%04d.jpg" || echo "could not decode $clip"
           done
-          find frames -name '*.jpg' | wc -l
+          frames=$(find frames -name '*.jpg' | wc -l)
+          echo "$frames frames"
           du -sh frames
+          # Loudly. A run that decodes nothing and carries on scores empty folders and
+          # reports a recall of zero that is about the decoder rather than about the
+          # model. That is exactly what the first run of this did.
+          if [ "$frames" -lt 20 ]; then
+            echo "::error::only $frames frames came out of the clips; nothing to measure"
+            exit 1
+          fi
 
       - name: The model, on video
         run: |
