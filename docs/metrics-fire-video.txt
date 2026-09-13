@@ -32,10 +32,36 @@ an operator is ever told, the frame figure says how steady the box is.
     A clip with nothing marked has not been cleared of anything; it failed to
     meet a threshold.
 
+THE SAME MODEL ON THE SAME SOURCE'S CLIPS WITH NO FIRE IN THEM
+
+    model      wildfire-640.onnx
+    threshold  0.25, as shipped
+    clips      5
+
+    clip                               frames  marked   best  found at
+    1816720483_clip_001                    40      13   0.65      0.10
+    1870284209_clip_003                    25       0   0.07         -
+    1885952980_clip_003                    11       0   0.23      0.10
+    1946578184_clip_003                     2       0   0.00         -
+    fire28_clip_007                        40       5   0.45      0.10
+
+     threshold   clips found   frames marked
+          0.10           3/5               -
+          0.15           3/5               -
+          0.20           3/5               -
+          0.25           2/5              18
+          0.35           2/5               -
+          0.50           1/5               -
+
+    At the shipped 0.25: 2 of 5 clips ever marked, and 18 of 118 frames.
+    A clip with nothing marked has not been cleared of anything; it failed to
+    meet a threshold.
+
   The flame scanner on the same clips. Consecutive frames, which is the
   input its method needs and the input it has never been scored on.
 
   clip                          frames         marked         flame         smoke
+  The fire clips first, then the same source's clips with no fire in them.
   0c49baf8-38e711ad           15 frames       15 marked      15 flame       6 smoke     0.95 worst
   13283125_2160_3840_24fps      40 frames       40 marked      40 flame       0 smoke     0.97 worst
   14296772_3840_2160_24fps      40 frames        3 marked       3 flame       3 smoke     0.59 worst
@@ -45,3 +71,8 @@ an operator is ever told, the frame figure says how steady the box is.
   2392279700                  40 frames        4 marked       3 flame       1 smoke     0.79 worst
   240_F_1243984490_0VnKlJGRR1o1RUgnFdQmENnp8xIPEMgT_ST      31 frames       31 marked      31 flame       1 smoke     1.00 worst
   700_F_176038377_s1HshVJIOtjwAFuDjVE3ugv7EKSY84pq_ST      40 frames       40 marked      40 flame       0 smoke     1.00 worst
+  1816720483_clip_001         40 frames        6 marked       0 flame       6 smoke     1.00 worst
+  1870284209_clip_003         25 frames        3 marked       0 flame       3 smoke     0.97 worst
+  1885952980_clip_003         11 frames        0 marked       0 flame       0 smoke     0.00 worst
+  1946578184_clip_003          2 frames        2 marked       2 flame       0 smoke     0.54 worst
+  fire28_clip_007             40 frames        0 marked       0 flame       0 smoke     0.00 worst
