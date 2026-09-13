@@ -465,28 +465,51 @@ async function main() {
       !(await page.locator('#summary').textContent()).includes('Clear'),
       await page.locator('#summary').textContent());
 
-    // A subject this engine cannot speak to must be refused, not answered.
+    // A subject with a deployed model must be ANSWERED BY THAT MODEL, and a subject
+    // without one must be refused. Both halves, because they used to be one mistake.
     //
     // THE BUG THIS PINS
     //     Asking for a wind turbine fell through to the crowd vocabulary, because that was
     //     the fallback for any subject this engine does not cover. A photograph of a blade
     //     snapped clean through came back reading "no pressure pattern scored in this
     //     frame", score 0.00, badged green, and counted under Clear. The green is the
-    //     dangerous part: this engine has no opinion at all about a blade, and an engine
-    //     with no opinion must not return the word for nothing being wrong.
+    //     dangerous part: an engine with no opinion must not return the word for nothing
+    //     being wrong.
+    //
+    //     The first fix refused the subject outright, which was right while nothing was
+    //     deployed for it and wrong the moment something was. A trained model for the
+    //     subject now runs on the same image - which is what makes uploading a wildfire
+    //     photograph find fire rather than only people - so what is pinned here is that
+    //     the model deployed for the subject answers, IN ITS OWN WORDS. A turbine model
+    //     that finds nothing must say so as a turbine model, not borrow the sentence this
+    //     engine uses about people.
     await page.locator('#domain-override').selectOption('turbine');
     await page.locator('#file-input').setInputFiles(join(FIXTURES, 'turbine_red.png'));
-    const refused = await cardFor(page, 'turbine_red.png');
-    await refused.locator('.card__message').waitFor({ timeout: 60000 });
-    check('the card is marked refused rather than assessed',
-      (await refused.getAttribute('class')).includes('card--rejected'));
-    const said = await refused.textContent();
-    check('a subject with no model is refused rather than scored',
-      !/score 0\.00/.test(said), said.slice(0, 200));
-    check('and says a model for it is not deployed',
-      /no.{0,20}model|needs a trained model/i.test(said), said.slice(0, 200));
+    const turbineCard = await cardFor(page, 'turbine_red.png');
+    await turbineCard.locator('.badge, .card__message').first()
+      .waitFor({ timeout: 60000 });
+    const turbineSaid = await turbineCard.textContent();
+    check('the deployed turbine model answers rather than the subject being refused',
+      !(await turbineCard.getAttribute('class')).includes('card--rejected'), turbineSaid.slice(0, 200));
     check('and does not borrow the crowd vocabulary',
-      !/pressure pattern/i.test(said), said.slice(0, 200));
+      !/pressure pattern/i.test(turbineSaid), turbineSaid.slice(0, 200));
+    check('and the report names the turbine model that ran',
+      /turbine\.onnx/.test(turbineSaid) || /turbine/i.test(turbineSaid),
+      turbineSaid.slice(0, 300));
+    await page.locator('#domain-override').selectOption('auto');
+
+    // And the case the whole change is for: a wildfire upload on the engine that ships as
+    // the default. This used to get people, vehicles and a colour scan that caps its own
+    // confidence on a single frame, while a trained fire model sat in web/models unused.
+    await page.locator('#domain-override').selectOption('wildfire');
+    await page.locator('#file-input').setInputFiles(join(FIXTURES, 'wildfire_magenta.png'));
+    const fireCard = await cardFor(page, 'wildfire_magenta.png');
+    await fireCard.locator('.badge, .card__message').first().waitFor({ timeout: 60000 });
+    const fireSaid = await fireCard.textContent();
+    check('a wildfire upload is analysed rather than refused',
+      !(await fireCard.getAttribute('class')).includes('card--rejected'), fireSaid.slice(0, 200));
+    check('and the trained fire model is what ran on it',
+      /wildfire\.onnx/.test(fireSaid), fireSaid.slice(0, 300));
     await page.locator('#domain-override').selectOption('auto');
 
     // The delegate matters more than it looks. On GPU this detector returns an empty list

@@ -678,6 +678,34 @@ function subjectName(key) {
   return state.manifest?.[key]?.displayName ?? key;
 }
 
+/** Does this model report fire or smoke itself? See the scan's place in analyseOnDevice. */
+function marksFire(spec) {
+  return (spec?.labels ?? []).some((label) => /fire|smoke|flame/i.test(label));
+}
+
+/**
+ * The deployed model for a subject, when it says something this engine cannot.
+ *
+ * Deployed is checked rather than assumed: the manifest names a turbine model and no such
+ * file has ever been on the site, so a manifest entry is a promise and state.available is
+ * the fact. See the HEAD requests at startup.
+ *
+ * "Says something this engine cannot" is the second test. The crowd model reports people
+ * and vehicles, which is exactly what this engine reports, so running it as well would be
+ * two detectors disagreeing about one frame and a 10 MB download to do it. A fire model
+ * and a panel-defect model answer questions this engine has no vocabulary for at all.
+ */
+function extraModelFor(requested) {
+  if (requested === 'auto') return null;
+  if (!state.available[requested]) return null;
+  const spec = state.manifest?.[requested];
+  if (!spec?.file) return null;
+  const covered = new Set(['person', 'pedestrian', 'people', 'bicycle', 'car', 'motorcycle',
+    'motor', 'bus', 'truck', 'van', 'boat', 'train', 'airplane']);
+  const says = (spec.labels ?? []).filter((label) => !covered.has(String(label).toLowerCase()));
+  return says.length ? spec : null;
+}
+
 async function analyseOnDevice(image, base) {
   // Refused before anything is run, when this engine cannot speak to the subject asked
   // about.
@@ -694,7 +722,26 @@ async function analyseOnDevice(image, base) {
   //     blade, and an engine with no opinion must say so rather than return the word for
   //     nothing being wrong.
   const requested = el['domain-override'].value;
-  if (requested !== 'auto' && !onDeviceHandles(requested)) {
+  // The trained model for this subject, when one is actually deployed.
+  //
+  // WHY THIS IS HERE AND WAS NOT
+  //     A trained fire model has shipped in web/models for weeks and nothing on the upload
+  //     screen ran it. This engine is the default, so uploading a photograph or a video of
+  //     a wildfire got people, vehicles and the colour scan - and the scan on a single
+  //     photograph caps its own confidence, because with one frame the motion evidence it
+  //     works from does not exist. The one engine that can answer "is that fire" from a
+  //     still was sitting on disk unused.
+  //
+  //     So: whatever model is deployed for the subject asked about runs on the same image,
+  //     and its boxes go in the report beside the rest.
+  //
+  //     Only when it ADDS something. The crowd model reports people and vehicles, which is
+  //     what this engine already does, and running both would be two detectors disagreeing
+  //     about the same frame for no gain. A fire model or a panel-defect model says things
+  //     this engine cannot say at all, and those are the ones worth the download.
+  const trained = extraModelFor(requested);
+
+  if (requested !== 'auto' && !trained && !onDeviceHandles(requested)) {
     return {
       ...base, image, status: 'rejected', gate: null,
       message: `${subjectName(requested)} needs a trained model, and none is deployed. `
@@ -702,6 +749,33 @@ async function analyseOnDevice(image, base) {
         + 'you anything about the condition of one. Use a provider key for this subject, '
         + 'or pick a subject this engine covers.',
     };
+  }
+
+  // The trained pass first, because it is the one that can need a download, and a progress
+  // bar that moves before the people pass reads as the page working rather than hanging.
+  let trainedFindings = [];
+  if (trained) {
+    try {
+      trainedFindings = await detect(
+        requested,
+        trained,
+        `${MODELS_BASE}${trained.file}`,
+        image,
+        (loaded, total) => setProgress(
+          (loaded / total) * 100,
+          `Downloading the ${subjectName(requested).toLowerCase()} model - `
+          + `${(loaded / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(1)} MB`,
+        ),
+      );
+    } catch (problem) {
+      // Never fatal. Losing the trained boxes is bad; losing the people in the same frame
+      // because of it would be worse, and a frame reported as empty is the one outcome
+      // this application must never produce by accident.
+      trainedFindings = [];
+      showBanner('warning',
+        `The ${subjectName(requested).toLowerCase()} model could not run: ${problem.message}. `
+        + 'People, vehicles and the colour scan still ran.');
+    }
   }
 
   let detections = await detectOnDevice(image, (label) => setProgress(50, label));
@@ -728,24 +802,58 @@ async function analyseOnDevice(image, base) {
     }));
   }
 
-  // Flame and smoke, computed rather than detected - see firescan.js. Appended after the
-  // tracker rather than through it: a fire has no identity to follow. It is not one thing
-  // moving through the shot, it is a region that grows, splits and dies, and giving it a
-  // number would say something about it that is not true.
-  for (const region of scanForFire(image, base.track)) detections.push(region);
+  // The trained model's findings, appended rather than tracked. A defect does not move
+  // through a clip and a fire has no identity to follow: it is a region that grows, splits
+  // and dies, and giving it a number would say something about it that is not true.
+  for (const finding of trainedFindings) {
+    detections.push({
+      label: finding.label,
+      classId: finding.classId,
+      confidence: Number(finding.confidence.toFixed(3)),
+      box: finding.box.map((v) => Math.round(v)),
+    });
+  }
+
+  // Flame and smoke, computed rather than detected - see firescan.js.
+  //
+  // Only when no trained fire model ran. Measured on video of real fire, the scan finds it
+  // and so does the model; measured on real drone footage with nothing burning, the scan
+  // marks 53% of frames against the model's 6%. Two engines marking the same fire twice is
+  // a smaller problem than the one that fires on half of everything drowning the one that
+  // does not. Same decision as the tablet, for the same reason and the same numbers. See
+  // docs/metrics-fire-video.txt.
+  if (!marksFire(trained)) {
+    for (const region of scanForFire(image, base.track)) detections.push(region);
+  }
 
   const domain = requested !== 'auto' ? requested : 'crowd';
   const spec = state.manifest?.ondevice ?? {};
-  const { score, severity } = assess(detections, spec.severityWeights ?? {});
+  // Weighted by the model that actually answered for the subject, when one did. The
+  // on-device weights are about people and vehicles and say nothing about a cracked panel.
+  const weights = trained?.severityWeights ?? spec.severityWeights ?? {};
+  const { score, severity } = assess(detections, weights);
 
   return {
     ...base, image, status: 'analysed',
     domain,
-    displayName: spec.displayName ?? 'People and vehicles',
-    notes: spec.notes,
-    zeroDetectionNote: spec.zeroDetectionNote,
+    // The words come from whichever model answered for the subject.
+    //
+    // This is the half of the turbine bug that survives deploying a turbine model. The
+    // engine's own zeroDetectionNote is about people and vehicles - "no pressure pattern
+    // scored in this frame" - and printing that under a photograph of a snapped blade is
+    // the crowd vocabulary answering for a turbine again, only now with a model running
+    // that simply found nothing. A model that finds nothing has to say nothing in ITS OWN
+    // words, or the report reads as a clean bill of health from the wrong examiner.
+    displayName: trained?.displayName ?? spec.displayName ?? 'People and vehicles',
+    notes: trained?.notes ?? spec.notes,
+    zeroDetectionNote: trained?.zeroDetectionNote ?? spec.zeroDetectionNote,
     gate: null,
-    engine: { provider: ENGINE_ONDEVICE, model: spec.file ?? 'detector.tflite' },
+    // Both of them, when both ran. A report that names one engine while two answered is a
+    // report nobody can reproduce.
+    engine: {
+      provider: ENGINE_ONDEVICE,
+      model: [spec.file ?? 'detector.tflite', trained?.file].filter(Boolean).join(' + '),
+    },
     detections,
     unlocated: [],
     people: await countPeople(image, detections),
