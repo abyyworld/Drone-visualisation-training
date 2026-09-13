@@ -48,8 +48,18 @@ jobs:
       # having known this would be wanted.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.oldRef || github.sha }}
           fetch-depth: 0
+
+      # Checked out here rather than by the action above, which resolves a ref by asking
+      # whether it is a branch or a tag and fails on anything else - a short commit sha
+      # included, which is exactly what anyone naming an old build will type. The whole
+      # history is already fetched, so git itself can resolve whatever form it is given.
+      - name: Move to the commit being rebuilt
+        if: inputs.oldRef != ''
+        run: |
+          set -e
+          git checkout --detach "${{ inputs.oldRef }}"
+          git --no-pager log -1 --format='rebuilding %H%n%cI%n%s'
 
       # A second identity for the old build, so both can sit on the tablet at once.
       #
