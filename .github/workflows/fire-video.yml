@@ -202,7 +202,18 @@ jobs:
             echo "an operator is ever told, the frame figure says how steady the box is."
             echo
           } > docs/metrics-fire-video.txt
-          python tools/score_fire_clips.py --clips frames/fire             --report docs/metrics-fire-video.txt
+          python tools/score_fire_clips.py --clips frames/fire --report docs/metrics-fire-video.txt
+          # And the same source's own clips with no fire in them. This is the comparison
+          # that decides anything: the fire-free footage this project already has is urban
+          # drone video, so an engine could look good on fire clips and bad on that for
+          # reasons with nothing to do with fire. Same camera, same kind of scene, fire or
+          # not, is the only way to read a recall figure.
+          {
+            echo
+            echo "THE SAME MODEL ON THE SAME SOURCE'S CLIPS WITH NO FIRE IN THEM"
+            echo
+          } >> docs/metrics-fire-video.txt
+          python tools/score_fire_clips.py --clips frames/control --report docs/metrics-fire-video.txt
 
       - name: The flame scanner, on the same clips
         run: |
@@ -212,7 +223,9 @@ jobs:
           import pathlib
           from PIL import Image
 
-          for clip in sorted(pathlib.Path("frames/fire").iterdir()):
+          import itertools
+          for clip in sorted(itertools.chain(pathlib.Path("frames/fire").iterdir(),
+                                             pathlib.Path("frames/control").iterdir())):
               if not clip.is_dir():
                   continue
               frames = sorted(clip.glob("*.jpg"))
@@ -232,8 +245,9 @@ jobs:
             echo "  input its method needs and the input it has never been scored on."
             echo
             printf "  %-22s%14s%15s%14s%14s\n" "clip" "frames" "marked" "flame" "smoke"
+            echo "  The fire clips first, then the same source's clips with no fire in them."
           } >> docs/metrics-fire-video.txt
-          for clip in frames/fire/*/; do
+          for clip in frames/fire/*/ frames/control/*/; do
             size=$(python -c "
           import pathlib, sys
           from PIL import Image
