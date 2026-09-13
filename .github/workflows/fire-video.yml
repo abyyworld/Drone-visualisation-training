@@ -1,0 +1,111 @@
+name: Find and score fire on VIDEO
+
+# WHY THIS IS SEPARATE FROM fire-eval.yml
+#     fire-eval scores still pictures. Stills cannot answer the question that decides
+#     whether either fire engine is worth anything on a flight.
+#
+#     The model is a single-frame detector, so stills are a fair test of it. FireScan is
+#     not: its whole method is that fire flickers and a red car does not, so a scanner shown
+#     one photograph is being asked a question it explicitly declines to answer, and caps
+#     its own confidence when asked. Every number this project has about FireScan is
+#     therefore either a false-alarm rate (measured, and bad: 113 of 213 frames of drone
+#     video with nothing burning) or nothing at all.
+#
+#     Recall on real fire, for either engine, on consecutive frames, has never been
+#     measured. This looks for footage that would allow it and then measures it.
+#
+# WHAT "FOUND" HAS TO MEAN
+#     Consecutive frames of the same fire. Either a video file, or a numbered sequence from
+#     a fixed camera. A folder of unrelated fire photographs is not that, and a run that
+#     quietly scores one of those instead would produce a FireScan recall figure that is
+#     fiction. So the search prints what is actually inside each candidate and the scoring
+#     step refuses anything that is not a sequence.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clips:
+        description: 'How many clips to score'
+        required: false
+        default: '12'
+
+permissions:
+  contents: write
+
+jobs:
+  look:
+    name: Look for fire video
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow onnxruntime
+
+      - name: What fire video is published
+        run: |
+          python - <<'PY'
+          import json, urllib.parse, urllib.request
+
+          # Sequences, not photographs. FIgLib is named explicitly because it is the one
+          # public set built as time sequences of wildfire smoke - fixed cameras, frames
+          # before and after ignition - which is exactly the input FireScan claims to need.
+          TERMS = ["fire video", "wildfire video", "smoke video", "fire detection video",
+                   "FIgLib", "HPWREN smoke", "wildfire smoke sequences", "pyronear",
+                   "fire video classification", "smoke timelapse", "flame video dataset",
+                   "aerial wildfire video", "drone fire video"]
+
+          found = {}
+          for term in TERMS:
+              url = ("https://huggingface.co/api/datasets?search="
+                     + urllib.parse.quote(term) + "&limit=10&full=false")
+              try:
+                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      listing = json.load(response)
+              except Exception as problem:
+                  print(f"  could not search for {term!r}: {problem}", flush=True)
+                  continue
+              for entry in listing:
+                  name = entry.get("id")
+                  if name and name not in found:
+                      found[name] = term
+
+          print(f"\n{len(found)} candidate datasets\n", flush=True)
+
+          # What is INSIDE decides whether it is usable, and the names are the only way to
+          # tell a video set from a folder of photographs without downloading it.
+          VIDEO = (".mp4", ".avi", ".mov", ".mkv", ".webm", ".mpg", ".mpeg")
+          for name, term in sorted(found.items()):
+              files, size = [], 0
+              try:
+                  url = f"https://huggingface.co/api/datasets/{name}?blobs=true"
+                  request = urllib.request.Request(url, headers={"User-Agent": "curl/8"})
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      blob = json.load(response)
+                  for s in blob.get("siblings", []):
+                      f = s.get("rfilename", "")
+                      files.append(f)
+                      size += s.get("size") or 0
+              except Exception as problem:
+                  print(f"  {name}: could not list ({problem})", flush=True)
+                  continue
+              clips = [f for f in files if f.lower().endswith(VIDEO)]
+              mark = "VIDEO" if clips else "     "
+              print(f"  {mark} {name}  ({len(files)} files, {size/1e6:.0f} MB, "
+                    f"matched {term!r})", flush=True)
+              for f in (clips or files)[:8]:
+                  print(f"          {f}", flush=True)
+          if not found:
+              print("::warning::Nothing published that this can reach. That is a fact "
+                    "about what exists, not a fault in the fetching.", flush=True)
+          PY
