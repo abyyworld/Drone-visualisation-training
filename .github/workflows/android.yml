@@ -200,11 +200,20 @@ jobs:
       # blank screen on the tablet. This is the failure a green build would otherwise hide:
       # the Gradle copy task silently doing nothing.
       - name: Check the web app is actually inside it
+        env:
+          OLD_REF: ${{ inputs.oldRef }}
         run: |
           python3 - "${{ steps.apk.outputs.path }}" <<'CHECK'
-          import sys, zipfile
+          import os, sys, zipfile
 
           names = set(zipfile.ZipFile(sys.argv[1]).namelist())
+          # An old commit is rebuilt exactly as it was, and what the live screen loaded
+          # then is not what it loads now - person-320 rather than person-640, and before
+          # that no aerial model at all. Naming today's files here would fail every old
+          # build for being old, which is the one thing it is allowed to be. So the parts
+          # that must be there whatever the era are checked by name, and the model is
+          # checked by shape: a people model and the class list beside it, whichever one.
+          old_build = bool(os.environ.get("OLD_REF"))
           required = [
               "assets/www/index.html",
               "assets/www/js/app.js",
@@ -224,8 +233,8 @@ jobs:
               # The aerial people model the live screen runs, and the class list that goes
               # with it. NativeDetector reads both out of the assets at startup, so either
               # one missing is a live screen that cannot open its detector at all.
-              "assets/www/models/person-640-float.tflite",
-              "assets/www/models/person-640.json",
+              *([] if old_build else ["assets/www/models/person-640-float.tflite",
+                                      "assets/www/models/person-640.json"]),
               "assets/www/css/app.css",
               "assets/www/prompts/inspection.json",
               "assets/www/models/manifest.json",
@@ -237,6 +246,18 @@ jobs:
           missing = [name for name in required if name not in names]
           if missing:
               sys.exit(f"The APK is missing the web app: {missing}")
+
+          if old_build:
+              # By shape rather than by name, so this still catches the failure it exists
+              # for - a shell with no model in it, which on the tablet is a live screen
+              # that opens, shows video, and silently never boxes anything.
+              weights = [n for n in names if n.startswith("assets/www/models/person-")
+                         and n.endswith(".tflite")]
+              spec = [n for n in names if n.startswith("assets/www/models/person-")
+                      and n.endswith(".json")]
+              if not weights or not spec:
+                  sys.exit(f"No people model in the old build: weights {weights}, spec {spec}")
+              print(f"Old build, people model present: {sorted(weights + spec)}")
 
           # sw.js is excluded on purpose - inside the APK every file it would cache is
           # already local, and a stale cached shell would survive an app update.
