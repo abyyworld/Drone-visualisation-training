@@ -19,6 +19,15 @@ on:
       - 'android/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+    inputs:
+      oldRef:
+        description: >-
+          Rebuild an EARLIER commit and publish it as the "old" download instead of the
+          latest one. Leave empty for a normal build. The build gets its own application
+          id, name and icon colour, so it installs beside the current one rather than
+          replacing it - two apps on the tablet, not one upgraded over the other.
+        required: false
+        default: ''
   release:
     types: [published]
 
@@ -34,7 +43,35 @@ jobs:
     # a runner for six hours.
     timeout-minutes: 25
     steps:
+      # The code comes from whatever is being built; the STEPS always come from main, which
+      # is what makes rebuilding an old commit possible at all without its workflow file
+      # having known this would be wanted.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.oldRef || github.sha }}
+          fetch-depth: 0
+
+      # A second identity for the old build, so both can sit on the tablet at once.
+      #
+      # Android decides "same app" by application id and nothing else. A different name and
+      # a different icon on the same id is still an upgrade: installing one removes the
+      # other, which is the exact thing this is for. So the id changes too, and the name and
+      # the icon change with it so the two are told apart on the launcher rather than by
+      # guessing which is which.
+      #
+      # Nothing else is touched. The point of the old build is that it is the old build.
+      - name: Give the old build its own identity
+        if: inputs.oldRef != ''
+        run: |
+          set -e
+          sed -i "s/applicationId 'world.abyy.droneinspection'/applicationId 'world.abyy.droneinspection.old'/"             android/app/build.gradle
+          sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">Drone Inspection OLD</string>|'             android/app/src/main/res/values/strings.xml
+          # The launcher icon's background, which is the fastest way to tell two icons
+          # apart at a glance on a controller in daylight.
+          sed -i 's|<color name="brand">[^<]*</color>|<color name="brand">#B23A1F</color>|'             android/app/src/main/res/values/colors.xml
+          grep -n "applicationId" android/app/build.gradle
+          grep -n "app_name" android/app/src/main/res/values/strings.xml
+          grep -n '"brand"' android/app/src/main/res/values/colors.xml
 
       - uses: actions/setup-java@v4
         with:
@@ -228,8 +265,32 @@ jobs:
       # The asset is a stable name rather than a versioned one, because the URL above is
       # built from the file name: a version in it would change the address every build,
       # which is the problem being solved. The version is in the release notes instead.
+      - name: Publish it as the old download
+        if: inputs.oldRef != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "${{ steps.apk.outputs.path }}" drone-inspection-old.apk
+
+          gh release create old \
+            --title "Previous build" \
+            --notes "An earlier build, kept alongside the latest one." || true
+
+          gh release edit old \
+            --notes "Rebuilt from ${{ inputs.oldRef }} on $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          Version ${{ steps.version.outputs.name }}.
+
+          The same code as that commit. Its application id, name and launcher colour are
+          the only things changed, so this installs BESIDE the current app rather than
+          replacing it: two icons on the tablet, 'Drone Inspection OLD' in red.
+
+          Download **drone-inspection-old.apk** below." || true
+
+          gh release upload old drone-inspection-old.apk --clobber
+
       - name: Publish it as the latest download
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && inputs.oldRef == ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -258,7 +319,7 @@ jobs:
       # can download by mistake. Only the newest is worth keeping, and the run that made it
       # is the one running now.
       - name: Delete the previous builds' artifacts
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && inputs.oldRef == ''
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

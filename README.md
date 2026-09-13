@@ -5,14 +5,25 @@ video.
 Static site, no server, hosted on GitHub Pages, and installable on a tablet as an app with an
 icon.
 
-### [⬇ Download the app for the tablet (.apk)](https://github.com/abyyworld/Drone-visualisation-training/releases/latest/download/drone-inspection.apk)
+### [⬇ Latest build (.apk)](https://github.com/abyyworld/Drone-visualisation-training/releases/latest/download/drone-inspection.apk) · [⬇ Previous build (.apk)](https://github.com/abyyworld/Drone-visualisation-training/releases/download/old/drone-inspection-old.apk)
 
 **Or open it in a browser:** https://abyyworld.github.io/Drone-visualisation-training/
 
-The download link above always serves the newest build and never changes. Copy the file to
-the tablet, open it with the file manager, and allow installs from that source when Android
-asks. Full instructions, and the reasons to prefer one route over the other, are in
-[`docs/INSTALL-tablet.md`](docs/INSTALL-tablet.md).
+Two builds, on purpose, and both links are permanent.
+
+**Latest** is the newest build, rebuilt on every push. It carries every fix but the newest
+of them have not been flown.
+
+**Previous** is an earlier build kept deliberately, because a change that measures better
+does not always fly better and the older one is worth being able to go back to. It installs
+BESIDE the latest rather than over it - a second icon, **Drone Inspection OLD**, in red -
+so both can be on the controller at once and compared on the same flight. The only things
+changed from that commit are its application id, its name and its icon colour, which is what
+Android needs to treat it as a separate app; the code is exactly what it was.
+
+Copy the file to the tablet, open it with the file manager, and allow installs from that
+source when Android asks. Full instructions, and the reasons to prefer one route over the
+other, are in [`docs/INSTALL-tablet.md`](docs/INSTALL-tablet.md).
 
 ## Three engines
 
