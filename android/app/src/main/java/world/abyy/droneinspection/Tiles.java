@@ -26,9 +26,25 @@ import java.util.List;
  *     milliseconds and cover the whole frame every cycle.
  *
  *     Measured on four crowded VisDrone frames at the real cadence: 45% of the people
- *     reached and 1.92 numbers each, against 60% reached and 1.69 numbers each. Recall
- *     against tile count saturates at two - three, four and six tiles all measure 70% on a
- *     still frame - so the extra tiles were buying latency and nothing else.
+ *     reached and 1.92 numbers each, against 60% reached and 1.69 numbers each.
+ *
+ * AND WHY NOT THREE, RE-ASKED PROPERLY
+ *     The old answer was that recall saturates at two, because three, four and six tiles
+ *     all measured 70% on a still frame. That measurement is not worth much: it was taken
+ *     on panned stills, and with the asymmetric region above still in place - which made
+ *     edge tiles oversized, and penalised higher tile counts specifically, since more tiles
+ *     means more edge tiles.
+ *
+ *     Asked again on five real VisDrone flights, with the geometry fixed, each grid flown
+ *     at the cycle its own inference leaves:
+ *
+ *         grid   cycle    reached   numbers each   on nobody
+ *         2x1    250 ms      66%       1.43           197
+ *         3x1    380 ms      61%       1.45           201
+ *
+ *     Three tiles does give each person more pixels. It also costs half again the
+ *     inference per cycle, and the slower cadence takes back more than the magnification
+ *     gives. Two stands. See docs/metrics-video-380ms-3x1.txt.
  */
 final class Tiles {
 
