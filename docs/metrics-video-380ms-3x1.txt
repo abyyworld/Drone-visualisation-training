@@ -1,0 +1,96 @@
+Real VisDrone MOT sequences, flown at the tablet's cadence.
+Consecutive frames of real flights; every person carries a target id, so a
+second number issued to somebody is a measured identity switch.
+Detector: web/models/person-640.onnx
+Whole-frame pass alongside the tiles: 0
+Cycle: 380 ms, detector floor 0.15, grid 3x1
+
+3 tile/cycle, 3x1, 380 ms, person-640.onnx, 31.5 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000117_02622_v     103       60       83       23     97          12%
+  TOTAL              103       60       83       23     97        12.3%
+  reached 58% of the people, and gave them 1.38 numbers each
+
+3 tile/cycle, 3x1, 380 ms, person-640.onnx, 31.4 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000137_00458_v      77       49       71       22     25          40%
+  TOTAL               77       49       71       22     25        40.3%
+  reached 64% of the people, and gave them 1.45 numbers each
+
+3 tile/cycle, 3x1, 380 ms, person-640.onnx, 31.4 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000086_00000_v      75       56       84       28     13          73%
+  TOTAL               75       56       84       28     13        73.3%
+  reached 75% of the people, and gave them 1.50 numbers each
+
+3 tile/cycle, 3x1, 380 ms, person-640.onnx, 31.4 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000339_00001_v      34       16       27       11     17          34%
+  TOTAL               34       16       27       11     17        34.1%
+  reached 47% of the people, and gave them 1.69 numbers each
+
+3 tile/cycle, 3x1, 380 ms, person-640.onnx, 31.4 ms a look
+  flight         present  reached  numbers  repeats  stray  on a person
+  uav0000182_00000_v      21        7        8        1     49           4%
+  TOTAL               21        7        8        1     49         3.8%
+  reached 33% of the people, and gave them 1.14 numbers each
+
+
+  The flame scanner on the same footage, none of which is on fire.
+  Marked is frames where it drew anything at all; worst is the highest
+  confidence it reached. Recall is NOT measured here: that needs video of
+  real fire, which no machine in this project can reach.
+
+  sequence                      frames         marked         flame         smoke
+  uav0000086_00000_v          58 frames        1 marked       1 flame       0 smoke     0.32 worst
+  uav0000117_02622_v          44 frames       44 marked      44 flame       0 smoke     0.94 worst
+  uav0000137_00458_v          30 frames       24 marked       0 flame      24 smoke     1.00 worst
+  uav0000182_00000_v          46 frames       17 marked       0 flame      17 smoke     1.00 worst
+  uav0000339_00001_v          35 frames       27 marked       0 flame      27 smoke     1.00 worst
+
+  5 real sequences
+
+  setting                             reached         each          stray
+  as shipped                              61%    +0     1.45+0.00     201
+
+  minIou 0.1                              59%    -1     1.49+0.04     202
+  minIou 0.15                             60%    -1     1.48+0.03     197
+  minIou 0.2                              59%    -1     1.48+0.03     201
+  minIou 0.3                              62%    +1     1.46+0.01     193
+  maxCoastMs 800                          57%    -4     1.44-0.01     191
+  maxCoastMs 1200                         61%    +0     1.45+0.00     201
+  maxCoastMs 2000                         63%    +2     1.54+0.09     213
+  maxCoastMs 3000                         62%    +2     1.65+0.20     229
+  maxCoastMs 4000                         65%    +4     1.65+0.19     233
+  confirmAfter 2                          73%   +12     1.86+0.41     296
+  confirmAfter 3                          65%    +4     1.65+0.20     247
+  confirmAfter 4                          61%    +0     1.45+0.00     201
+  confirmAfter 5                          54%    -7     1.42-0.04     171
+  confirmAfter 6                          51%   -10     1.34-0.11     152
+  confirmAfter 8                          42%   -19     1.27-0.18     107
+  newTrackConfidence 0.2                  60%    -1     1.49+0.04     233
+  newTrackConfidence 0.25                 61%    +0     1.45+0.00     201
+  newTrackConfidence 0.3                  58%    -3     1.50+0.05     168
+  newTrackConfidence 0.35                 56%    -5     1.45-0.01     159
+  maxMisses 3                             61%    +0     1.45+0.00     201
+  maxMisses 5                             61%    +0     1.45+0.00     201
+  maxMisses 10                            61%    +0     1.45+0.00     201
+  maxMisses 20                            61%    +0     1.45+0.00     201
+
+  reidSimilarity 0.45                     59%    -2     1.46+0.01     196
+  reidSimilarity 0.55                     61%    +0     1.45+0.00     201
+  reidSimilarity 0.62                     60%    -1     1.48+0.03     207
+  reidSimilarity 0.7                      61%    +0     1.50+0.05     213
+  reidSimilarity 0.8                      63%    +2     1.54+0.08     224
+  reidWindowMs 30s                        61%    +0     1.45+0.00     201
+  reidWindowMs 120s                       61%    +0     1.45+0.00     201
+  reidWindowMs 300s                       61%    +0     1.45+0.00     201
+
+  coast 800 confirm 4 reid 0.55           57%    -4     1.44-0.01     191
+  coast 800 confirm 4 reid 0.62           58%    -3     1.45+0.00     196
+  coast 800 confirm 5 reid 0.55           52%    -9     1.36-0.09     171
+  coast 800 confirm 5 reid 0.62           52%    -8     1.38-0.08     172
+  coast 1200 confirm 4 reid 0.55          61%    +0     1.45+0.00     201
+  coast 1200 confirm 4 reid 0.62          60%    -1     1.48+0.03     207
+  coast 1200 confirm 5 reid 0.55          54%    -7     1.42-0.04     171
+  coast 1200 confirm 5 reid 0.62          54%    -7     1.41-0.04     178
