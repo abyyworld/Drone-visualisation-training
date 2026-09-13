@@ -13,7 +13,7 @@
     },
     "ENOT-AutoDL/yolov8s_visdrone": {
       "matched": "visdrone",
-      "downloads": 194,
+      "downloads": 204,
       "likes": 11,
       "weights": [
         [
@@ -59,7 +59,7 @@
       ]
     },
     "Mahadih534/YoloV8-VisDrone": {
-      "matched": "visdrone yolo",
+      "matched": "visdrone",
       "downloads": 0,
       "likes": 4,
       "weights": [
@@ -71,7 +71,7 @@
     },
     "RISEF/yolov11s-visdrone": {
       "matched": "visdrone yolov11",
-      "downloads": 52,
+      "downloads": 48,
       "likes": 0,
       "weights": [
         [
@@ -103,9 +103,20 @@
         ]
       ]
     },
+    "dgural/yolo_visdrone": {
+      "matched": "visdrone yolo",
+      "downloads": 0,
+      "likes": 0,
+      "weights": [
+        [
+          "yolov10x-visdrone.pt",
+          64.123122
+        ]
+      ]
+    },
     "dronefreak/visdrone-yolov11l": {
       "matched": "visdrone yolov11",
-      "downloads": 46,
+      "downloads": 49,
       "likes": 7,
       "weights": [
         [
@@ -116,7 +127,7 @@
     },
     "dronefreak/visdrone-yolov11m": {
       "matched": "visdrone yolov11",
-      "downloads": 1439,
+      "downloads": 1440,
       "likes": 4,
       "weights": [
         [
@@ -127,7 +138,7 @@
     },
     "dronefreak/visdrone-yolov11n": {
       "matched": "visdrone yolov11",
-      "downloads": 284,
+      "downloads": 286,
       "likes": 6,
       "weights": [
         [
@@ -136,9 +147,20 @@
         ]
       ]
     },
+    "dronefreak/visdrone-yolov11s": {
+      "matched": "visdrone yolov11",
+      "downloads": 286,
+      "likes": 5,
+      "weights": [
+        [
+          "best.pt",
+          19.184538
+        ]
+      ]
+    },
     "dronefreak/visdrone-yolov11x": {
       "matched": "visdrone yolov11",
-      "downloads": 243,
+      "downloads": 216,
       "likes": 6,
       "weights": [
         [
@@ -170,8 +192,8 @@
       ]
     },
     "erbayat/yolov11n-visdrone": {
-      "matched": "visdrone yolov11",
-      "downloads": 33,
+      "matched": "visdrone yolo",
+      "downloads": 34,
       "likes": 0,
       "weights": [
         [
@@ -204,7 +226,7 @@
     },
     "mshamrai/yolov8l-visdrone": {
       "matched": "visdrone",
-      "downloads": 81,
+      "downloads": 84,
       "likes": 5,
       "weights": [
         [
@@ -226,7 +248,7 @@
     },
     "mshamrai/yolov8n-visdrone": {
       "matched": "visdrone",
-      "downloads": 358,
+      "downloads": 361,
       "likes": 1,
       "weights": [
         [
@@ -237,7 +259,7 @@
     },
     "mshamrai/yolov8s-visdrone": {
       "matched": "visdrone",
-      "downloads": 678,
+      "downloads": 669,
       "likes": 8,
       "weights": [
         [
@@ -248,7 +270,7 @@
     },
     "mshamrai/yolov8x-visdrone": {
       "matched": "visdrone",
-      "downloads": 272,
+      "downloads": 277,
       "likes": 15,
       "weights": [
         [
@@ -287,7 +309,7 @@
   "fire from the air": {
     "sanqierere/yolo26m-UAV-fire-smoke-detection": {
       "matched": "UAV fire smoke",
-      "downloads": 34,
+      "downloads": 38,
       "likes": 0,
       "weights": [
         [
@@ -298,7 +320,7 @@
     },
     "xiazh0219/yolo26m-UAV-fire-smoke-detection": {
       "matched": "UAV fire smoke",
-      "downloads": 1352,
+      "downloads": 1356,
       "likes": 1,
       "weights": [
         [
