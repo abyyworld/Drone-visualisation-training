@@ -24,7 +24,15 @@
  *
  *     So on the tablet it is now the FALLBACK - what runs when no fire model loaded - and
  *     not a second opinion running beside one. See LiveActivity, docs/metrics-video.txt,
- *     tools/scan_fire_video.mjs, and tools/evaluate_fire.py for the model's own numbers.
+ *     tools/scan_fire_video.mjs, and tools/evaluate_fire.py for the model's own numbers. *
+ *     AND THEN IT WAS SHOWN REAL FIRE, WHICH CHANGED HALF THE PICTURE
+ *     Nine clips of real fire, cut at the device's cadence: it marked all nine and three
+ *     quarters of their frames, and on the same source's fire-free clips it stayed quiet on
+ *     91% of them. It is NOT blind to fire, which nothing here knew before.
+ *
+ *     The fault is narrower than "it does not work", and worse for a drone: 9% of frames on
+ *     a near-still camera against 53% on real drone footage. The difference is the camera
+ *     moving, not fire. See docs/metrics-fire-video.txt.
  *
  *     In this browser's live view it is still the only thing looking for fire, because the
  *     live engine here is a COCO detector with no fire class. Read its regions with the

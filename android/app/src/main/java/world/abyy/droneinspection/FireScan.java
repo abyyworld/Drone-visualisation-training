@@ -35,7 +35,20 @@ import java.util.List;
  *     this project takes AGPL-3.0 deliberately and a fire model ships now.
  *
  *     So LiveActivity runs this only when no fire model is loaded. See
- *     docs/metrics-video.txt and tools/scan_fire_video.mjs.
+ *     docs/metrics-video.txt and tools/scan_fire_video.mjs. *
+ *     AND THEN IT WAS SHOWN REAL FIRE, WHICH CHANGED HALF THE PICTURE
+ *         Nine clips of real fire, cut at this device's cadence: the scan marked all nine
+ *         and three quarters of their frames, and on the same source's fire-free clips it
+ *         stayed quiet on 91% of them. So it is NOT blind to fire, which nothing here
+ *         knew before, and on a nearly still camera it is a working detector.
+ *
+ *         The fault is narrower than "it does not work", and worse for this use: 9% of
+ *         frames on a near-still camera against 53% on a drone. The difference is not fire,
+ *         it is the camera moving. On the tablet the camera is always moving, so 53% is the
+ *         number that applies and this stays the fallback. What would reverse it is drone
+ *         video of real fire, which needs an IEEE DataPort account nobody here has.
+ *
+ *         See docs/metrics-fire-video.txt for both runs and their caveats.
  */
 final class FireScan {
 

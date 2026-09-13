@@ -106,6 +106,21 @@ this flies are not reachable: FLAME and FLAME2 are behind an IEEE DataPort accou
 is a Google Drive link. Fire seen from 100 metres up is a different problem from fire seen
 across a room, and nothing here has measured the first one.
 
+## What the model does on VIDEO, which is what it will actually see
+
+Nine clips of real fire, cut at four frames a second, which is the cadence the tablet
+detects at, and the same source's own clips with nothing burning:
+
+| | clips found | frames marked |
+|---|---|---|
+| burning | **9 of 9** | 249 of 301, 83% |
+| the same source, no fire | 2 of 5 | 18 of 118, 15% |
+
+Better than the stills suggested, and worth knowing why: these are close, well-framed fires,
+not the distant plumes it misses. It finds a fire in front of it and it is still poor at
+smoke on a horizon, where it marked 26 of 120. Full numbers and caveats in
+[`docs/metrics-fire-video.txt`](../../docs/metrics-fire-video.txt).
+
 ## Why the colour scan is now the fallback and not a second opinion
 
 [`web/js/firescan.js`](../js/firescan.js) and `FireScan.java` used to run beside this model
@@ -134,6 +149,15 @@ A marker that fires on half the frames of an empty field is not a second opinion
 stops an operator reading any of the boxes. So on the tablet the scan now runs only when no
 fire model is loaded, which is the job its own header always gave it. The browser's live
 view still runs it alone, because the engine there is a COCO detector with no fire class.
+
+**And then it was shown real fire, which changed half of that.** On the nine burning clips
+the scan marked all nine and 226 of 301 frames, and on the same source's fire-free clips it
+stayed quiet on 91% of them. It is not blind to fire. The fault is narrower and worse for
+this use: 9% of frames on a near-still camera against 53% on real drone footage, and the
+difference between those is the camera moving rather than anything about fire. On the tablet
+the camera is always moving, so the demotion stands on the number that applies. What would
+settle it properly is drone video of real fire - recall on a moving camera - and that is the
+one thing still behind an account nobody here has.
 
 Method in [`tools/scan_fire_video.mjs`](../../tools/scan_fire_video.mjs), numbers in
 [`docs/metrics-video.txt`](../../docs/metrics-video.txt).

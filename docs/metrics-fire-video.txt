@@ -1,4 +1,47 @@
 ==============================================================================
+WHAT THE TWO VIDEO RUNS SAY TOGETHER, AND WHAT THEY DO NOT
+
+  engine     fire clips     same-source control     real drone video, no fire
+  model      249/301 83%    18/118  15%             9/150   6%
+  scan       226/301 75%    11/118   9%             113/213 53%
+
+  The first recall figure either engine has ever had. Two things follow, and
+  they point in opposite directions.
+
+  THE SCAN IS NOT BLIND TO FIRE, WHICH NOBODY KNEW
+    It marked 9 of 9 burning clips and three quarters of their frames, and on
+    the same source's fire-free clips it stayed quiet on 91% of frames. On
+    that evidence alone it is a working detector and the demotion was wrong.
+
+  AND IT STILL FALLS APART ON A MOVING CAMERA, WHICH IS THE ONLY CASE THAT
+  MATTERS HERE
+    The same scanner marks 53% of frames of real drone footage with nothing
+    burning in it. The difference between 9% and 53% is not fire, it is that
+    one camera is nearly still and the other is a drone. Its method reads a
+    cell changing between looks as flicker and as texture being veiled, and a
+    drone's own motion changes every cell whatever is in it.
+
+    So the fault is specific: not that the method cannot see fire, but that
+    ego-motion swamps the evidence it works from. An alarm that fires on half
+    of everything carries almost no information about the half it should.
+
+  WHY THE DEMOTION STANDS ANYWAY, AND WHAT WOULD REVERSE IT
+    On the tablet the camera is always moving, so 53% is the number that
+    applies and the scan stays the fallback for a build with no fire model.
+    What would settle it properly is drone video of real fire - recall on a
+    MOVING camera - and that does not exist in any form reachable from here.
+    FLAME and FLAME2 are the sets; they need an IEEE DataPort account.
+
+  TWO HONEST CAVEATS ABOUT THE CONTROL COLUMN
+    It is five clips and 118 frames, which is thin. And its labelling is not
+    clean: one clip in the no-fire folder is named fire28_clip_007, and the
+    model reaches 0.65 on another. If those do contain fire then the marks on
+    them are not false alarms at all and both engines look better still -
+    which does not change the drone column, and the drone column is the one
+    this flies against.
+==============================================================================
+
+==============================================================================
 THE FIRE MODEL ON VIDEO OF REAL FIRE
 Clips from zwanderer/smolvlm2-fire-videos, cut at 4 frames a second, which
 is the cycle the tablet detects at, and 640 on the long edge, which is what
