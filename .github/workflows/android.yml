@@ -303,9 +303,17 @@ jobs:
         run: |
           cp "${{ steps.apk.outputs.path }}" drone-inspection-old.apk
 
+          # --latest=false is load-bearing. GitHub points /releases/latest at whichever
+          # release was published most recently unless told otherwise, and publishing this
+          # one took that pointer - which broke the main download link, because this
+          # release has no drone-inspection.apk in it. The old build is a second door, not
+          # the front one.
           gh release create old \
             --title "Previous build" \
+            --latest=false \
             --notes "An earlier build, kept alongside the latest one." || true
+
+          gh release edit old --latest=false || true
 
           gh release edit old \
             --notes "Rebuilt from ${{ inputs.oldRef }} on $(date -u '+%Y-%m-%d %H:%M UTC').
@@ -334,7 +342,10 @@ jobs:
             --notes "The newest APK, rebuilt on every push to main." \
             --latest || true
 
+          # --latest on every build, not only the first. The pointer can be taken by any
+          # release published afterwards, and this is the one the README links to.
           gh release edit latest \
+            --latest \
             --notes "Built from ${{ github.sha }} on $(date -u '+%Y-%m-%d %H:%M UTC').
 
           Version ${{ steps.version.outputs.name }}.
