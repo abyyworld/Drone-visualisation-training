@@ -42,6 +42,10 @@ on:
         description: 'The floor a box needs to reach the tracker at all, matching DETECT_FLOOR. Below it a box cannot even keep a track alive.'
         required: false
         default: '0.15'
+      grid:
+        description: 'Tile grid, as columns x rows. Every tile is looked at every cycle, so this also sets the cost: 3x1 is half again the inference of 2x1 and needs a period to match.'
+        required: false
+        default: '2x1'
 
 permissions:
   contents: write
@@ -123,6 +127,7 @@ jobs:
           WIDE: ${{ inputs.wide }}
           PERIOD: ${{ inputs.period }}
           CONF: ${{ inputs.conf }}
+          GRID: ${{ inputs.grid }}
         run: |
           python - <<'PY'
           import os, pathlib, subprocess, sys
@@ -151,6 +156,11 @@ jobs:
           wide = os.environ.get("WIDE") or "0"
           period = os.environ.get("PERIOD") or "250"
           conf = os.environ.get("CONF") or "0.15"
+          grid = os.environ.get("GRID") or "2x1"
+          # Every tile every cycle, which is what the device does.
+          tiles = 1
+          for part in grid.lower().split("x"):
+              tiles *= int(part)
           if not pathlib.Path(model).exists():
               raise SystemExit(f"no such model in the repo: {model}")
           print(f"flying {model}", flush=True)
@@ -164,7 +174,8 @@ jobs:
               subprocess.run([sys.executable, "tools/fly_video.py",
                               "--sequence", str(sequence), "--annotations", str(path),
                               "--model", model, "--wide", wide, "--period", period,
-                              "--conf", conf,
+                              "--conf", conf, "--grid", grid,
+                              "--tiles-per-cycle", str(tiles),
                               "--seconds", str(seconds), "--out", out], check=True)
               flown.append(out)
           # The trailing newline is load-bearing. `while read` returns false on a last line
@@ -225,6 +236,7 @@ jobs:
           WIDE: ${{ inputs.wide }}
           PERIOD: ${{ inputs.period }}
           CONF: ${{ inputs.conf }}
+          GRID: ${{ inputs.grid }}
         run: |
           # A candidate writes its own report. Overwriting the shipped one with a model
           # the app does not load would leave the repo claiming numbers for a detector
@@ -247,6 +259,9 @@ jobs:
           if [ "${CONF:-0.15}" != "0.15" ]; then
             REPORT="${REPORT%.txt}-conf${CONF}.txt"
           fi
+          if [ "${GRID:-2x1}" != "2x1" ]; then
+            REPORT="${REPORT%.txt}-${GRID}.txt"
+          fi
           echo "REPORT=$REPORT" >> "$GITHUB_ENV"
           {
             echo "Real VisDrone MOT sequences, flown at the tablet's cadence."
@@ -254,7 +269,7 @@ jobs:
             echo "second number issued to somebody is a measured identity switch."
             echo "Detector: $MODEL"
             echo "Whole-frame pass alongside the tiles: ${WIDE:-0}"
-            echo "Cycle: ${PERIOD:-250} ms, detector floor ${CONF:-0.15}"
+            echo "Cycle: ${PERIOD:-250} ms, detector floor ${CONF:-0.15}, grid ${GRID:-2x1}"
             echo
           } > "$REPORT"
           # `|| [ -n "$f" ]` so a file list without a trailing newline still scores its last
